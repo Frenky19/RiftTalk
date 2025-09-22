@@ -1,5 +1,4 @@
 import socketio
-from app.config import settings
 from app.services.voice_service import voice_service
 from app.utils.security import verify_token
 

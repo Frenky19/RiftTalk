@@ -5,6 +5,7 @@ from app.utils.security import get_current_user
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
+
 @router.post("/start", response_model=VoiceRoomResponse)
 async def start_voice_chat(
     request: MatchStartRequest,
@@ -18,10 +19,10 @@ async def start_voice_chat(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to create voice chat for this match"
             )
-        
         # Create voice room
-        voice_room = voice_service.create_voice_room(request.match_id, request.players)
-        
+        voice_room = voice_service.create_voice_room(
+            request.match_id, request.players
+        )
         return VoiceRoomResponse(
             room_id=voice_room.room_id,
             match_id=voice_room.match_id,
@@ -33,6 +34,7 @@ async def start_voice_chat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create voice chat: {str(e)}"
         )
+
 
 @router.post("/end")
 async def end_voice_chat(
@@ -47,7 +49,6 @@ async def end_voice_chat(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No active voice chat found for this match"
             )
-        
         return {"status": "success", "message": "Voice chat ended"}
     except Exception as e:
         raise HTTPException(

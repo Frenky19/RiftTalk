@@ -1,29 +1,39 @@
 import os
 from dotenv import load_dotenv
-from pydantic import BaseSettings
+from pydantic import BaseSettings, Field
+from typing import Optional
 
 load_dotenv()
 
 
 class Settings(BaseSettings):
     # Server
-    SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
-    SERVER_PORT: int = int(os.getenv("SERVER_PORT", 8000))
+    SERVER_HOST: str = Field(default="0.0.0.0", env="SERVER_HOST")
+    SERVER_PORT: int = Field(default=8000, env="SERVER_PORT")
     # Redis
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
-    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_URL: str = Field(default="redis://localhost:6379", env="REDIS_URL")
+    REDIS_PASSWORD: Optional[str] = Field(default=None, env="REDIS_PASSWORD")
+    REDIS_SSL: bool = Field(default=False, env="REDIS_SSL")
+    REDIS_MAX_CONNECTIONS: int = Field(default=20, env="REDIS_MAX_CONNECTIONS")
     # JWT
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-secret-key")
-    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+    JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
+    JWT_ALGORITHM: str = Field(default="HS256", env="JWT_ALGORITHM")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
     # WebRTC
-    TURN_SERVER_URL: str = os.getenv("TURN_SERVER_URL", "")
-    TURN_SERVER_USERNAME: str = os.getenv("TURN_SERVER_USERNAME", "")
-    TURN_SERVER_PASSWORD: str = os.getenv("TURN_SERVER_PASSWORD", "")
+    TURN_SERVER_URL: Optional[str] = Field(default=None, env="TURN_SERVER_URL")
+    TURN_SERVER_USERNAME: Optional[str] = Field(
+        default=None, env="TURN_SERVER_USERNAME"
+    )
+    TURN_SERVER_PASSWORD: Optional[str] = Field(
+        default=None, env="TURN_SERVER_PASSWORD"
+    )
     # LCU API
-    LCU_UPDATE_INTERVAL: int = int(os.getenv("LCU_UPDATE_INTERVAL", 5))
+    LCU_UPDATE_INTERVAL: int = Field(default=5, env="LCU_UPDATE_INTERVAL")
+    # Application
+    DEBUG: bool = Field(default=False, env="DEBUG")
+    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
 
     class Config:
         env_file = ".env"
