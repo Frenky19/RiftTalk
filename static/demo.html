@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoL Voice Chat Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #ff8a00, #e52e71);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .status-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #00ff88;
+        }
+        
+        .status-card.warning {
+            border-left-color: #ffaa00;
+        }
+        
+        .status-card.error {
+            border-left-color: #ff4444;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .results {
+            margin-top: 30px;
+        }
+        
+        .result-item {
+            background: rgba(255, 255, 255, 0.05);
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .result-item.success {
+            border-left-color: #00ff88;
+        }
+        
+        .result-item.error {
+            border-left-color: #ff4444;
+        }
+        
+        pre {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #00ff88;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 LoL Voice Chat API Demo</h1>
+            <p>Test the backend API endpoints for the League of Legends Voice Chat application</p>
+        </header>
+        
+        <div class="status-panel">
+            <div class="status-card" id="api-status">
+                <h3>API Status</h3>
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Checking API status...</p>
+                </div>
+            </div>
+            
+            <div class="status-card" id="redis-status">
+                <h3>Redis Status</h3>
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Checking Redis connection...</p>
+                </div>
+            </div>
+            
+            <div class="status-card" id="lcu-status">
+                <h3>LCU Status</h3>
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Checking LCU connection...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="testEndpoint('/')">Test Root Endpoint</button>
+            <button onclick="testEndpoint('/health')">Test Health Check</button>
+            <button onclick="testEndpoint('/api/info')">Test API Info</button>
+            <button onclick="testAuth()">Test Authentication</button>
+            <button onclick="testVoiceRoom()">Test Voice Room</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+        
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        
+        // Initialize status checks
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAllStatuses();
+        });
+        
+        async function checkAllStatuses() {
+            await checkApiStatus();
+            await checkHealthStatus();
+        }
+        
+        async function checkApiStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/`);
+                const data = await response.json();
+                updateStatus('api-status', '✅ API is running', 'success', data);
+            } catch (error) {
+                updateStatus('api-status', '❌ API connection failed', 'error', {error: error.message});
+            }
+        }
+        
+        async function checkHealthStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                // Update Redis status
+                const redisStatus = data.redis.includes('healthy') ? 'success' : 'error';
+                const redisMessage = data.redis.includes('healthy') ? '✅ Redis connected' : '❌ Redis connection issue';
+                updateStatus('redis-status', redisMessage, redisStatus, {status: data.redis});
+                
+                // Update LCU status
+                const lcuMessage = '⚠️ LCU not connected (normal for development)';
+                updateStatus('lcu-status', lcuMessage, 'warning', {note: 'LCU will connect when League Client is running'});
+                
+            } catch (error) {
+                updateStatus('health-status', '❌ Health check failed', 'error', {error: error.message});
+            }
+        }
+        
+        function updateStatus(elementId, message, type, data) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `
+                <h3>${element.querySelector('h3').textContent}</h3>
+                <p><strong>${message}</strong></p>
+                <pre class="hidden">${JSON.stringify(data, null, 2)}</pre>
+                <button onclick="toggleDetails(this)">Show Details</button>
+            `;
+            element.className = `status-card ${type}`;
+        }
+        
+        function toggleDetails(button) {
+            const pre = button.previousElementSibling;
+            pre.classList.toggle('hidden');
+            button.textContent = pre.classList.contains('hidden') ? 'Show Details' : 'Hide Details';
+        }
+        
+        async function testEndpoint(endpoint) {
+            showLoading('results');
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                const data = await response.json();
+                showResult(`GET ${endpoint}`, data, response.status === 200);
+            } catch (error) {
+                showResult(`GET ${endpoint}`, {error: error.message}, false);
+            }
+        }
+        
+        async function testAuth() {
+            showLoading('results');
+            try {
+                const formData = new FormData();
+                formData.append('username', 'test_player');
+                formData.append('password', 'test_password');
+                
+                const response = await fetch(`${API_BASE}/api/auth/token`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                showResult('Authentication', data, response.status === 200);
+            } catch (error) {
+                showResult('Authentication', {error: error.message}, false);
+            }
+        }
+        
+        async function testVoiceRoom() {
+            showLoading('results');
+            try {
+                // First get a token
+                const formData = new FormData();
+                formData.append('username', 'test_player');
+                formData.append('password', 'test_password');
+                
+                const authResponse = await fetch(`${API_BASE}/api/auth/token`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!authResponse.ok) {
+                    throw new Error(`Authentication failed: ${authResponse.status}`);
+                }
+                
+                const authData = await authResponse.json();
+                
+                // Then create voice room
+                const roomData = {
+                    match_id: 'demo_match_' + Date.now(),
+                    players: ['player1', 'player2', 'player3', 'player4', 'player5']
+                };
+                
+                const response = await fetch(`${API_BASE}/api/voice/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authData.access_token}`
+                    },
+                    body: JSON.stringify(roomData)
+                });
+                const data = await response.json();
+                showResult('Voice Room Creation', data, response.status === 200);
+            } catch (error) {
+                showResult('Voice Room Creation', {error: error.message}, false);
+            }
+        }
+        
+        function showResult(title, data, success = true) {
+            const results = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result-item ${success ? 'success' : 'error'}`;
+            resultDiv.innerHTML = `
+                <strong>${title}</strong>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+                <small>${new Date().toLocaleTimeString()}</small>
+            `;
+            results.appendChild(resultDiv);
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading';
+            loadingDiv.innerHTML = '<div class="spinner"></div><p>Testing...</p>';
+            element.appendChild(loadingDiv);
+            
+            // Remove loading after a short delay if still there
+            setTimeout(() => {
+                if (loadingDiv.parentNode) {
+                    loadingDiv.remove();
+                }
+            }, 5000);
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
