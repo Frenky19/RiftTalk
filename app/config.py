@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Application
     DEBUG: bool = Field(default=False, env="DEBUG")
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
+    # Discord Integration
+    DISCORD_BOT_TOKEN: Optional[str] = Field(default=None, env="DISCORD_BOT_TOKEN")
+    DISCORD_GUILD_ID: Optional[int] = Field(default=None, env="DISCORD_GUILD_ID")
+    DISCORD_AUTO_CREATE_CHANNELS: bool = Field(default=True, env="DISCORD_AUTO_CREATE_CHANNELS")
 
     class Config:
         env_file = ".env"

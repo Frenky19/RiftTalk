@@ -1,61 +1,71 @@
 import uuid
+import logging
 from datetime import datetime, timezone, timedelta
 from app.config import settings
 from app.database import redis_manager
-from app.models import VoiceRoom, WebRTCConfig
+from app.models import VoiceRoom
 from app.utils.exceptions import VoiceServiceException
+from app.services.discord_service import discord_service
 
+logger = logging.getLogger(__name__)
 
 class VoiceService:
     def __init__(self):
         self.redis = redis_manager
+        self.discord_enabled = bool(settings.DISCORD_BOT_TOKEN)
 
-    def create_voice_room(self, match_id: str, players: list) -> VoiceRoom:
-        """Create a new voice room for a match"""
+    async def create_voice_room(self, match_id: str, players: list, team_data: dict = None) -> VoiceRoom:
+        """Create a new voice room for a match with Discord integration"""
         room_id = f"voice_{match_id}_{uuid.uuid4().hex[:8]}"
-        if not self.redis.create_voice_room(room_id, match_id, players):
+        
+        discord_channels = None
+        if self.discord_enabled and team_data:
+            try:
+                discord_channels = await discord_service.create_team_channels(
+                    match_id, 
+                    team_data.get('blue_team', []),
+                    team_data.get('red_team', [])
+                )
+                logger.info(f"Created Discord channels for match {match_id}")
+            except Exception as e:
+                logger.error(f"Failed to create Discord channels: {e}")
+                # Продолжаем без Discord, не прерываем создание комнаты
+
+        # Save to Redis
+        room_data = {
+            "room_id": room_id,
+            "match_id": match_id,
+            "players": players,
+            "discord_channels": discord_channels,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=2700)).isoformat(),
+            "is_active": True
+        }
+        
+        if not self.redis.create_voice_room(room_id, match_id, room_data):
             raise VoiceServiceException("Failed to create voice room")
-        webrtc_config = WebRTCConfig(
-            ice_servers=[
-                {
-                    "urls": [
-                        "stun:stun.l.google.com:19302",
-                        "stun:stun1.l.google.com:19302"
-                    ]
-                }
-            ],
-            room_id=room_id
-        )
-        # Add TURN server if configured
-        if settings.TURN_SERVER_URL:
-            webrtc_config.ice_servers.append({
-                "urls": settings.TURN_SERVER_URL,
-                "username": settings.TURN_SERVER_USERNAME,
-                "credential": settings.TURN_SERVER_PASSWORD
-            })
+        
         return VoiceRoom(
             room_id=room_id,
             match_id=match_id,
             players=players,
+            discord_channels=discord_channels,
             created_at=datetime.now(timezone.utc),
-            expires_at=datetime.now(timezone.utc) + timedelta(seconds=2700),
-            webrtc_config=webrtc_config.dict()
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=2700)
         )
 
-    def close_voice_room(self, match_id: str) -> bool:
-        """Close all voice rooms for a match"""
+    async def close_voice_room(self, match_id: str) -> bool:
+        """Close voice room and cleanup Discord channels"""
         try:
-            # Find all rooms for this match
-            rooms = self.redis.get_all_active_rooms()
-            match_rooms = [
-                room for room in rooms if room["match_id"] == match_id
-            ]
-            # Close each room
-            for room in match_rooms:
-                self.redis.delete_voice_room(room["room_id"])
-            return True
+            # Get room data
+            room_data = self.redis.get_voice_room_by_match(match_id)
+            if room_data and room_data.get('discord_channels'):
+                await discord_service.cleanup_match_channels(room_data['discord_channels'])
+            
+            # Delete from Redis
+            return self.redis.delete_voice_room(match_id)
         except Exception as e:
-            raise VoiceServiceException(f"Failed to close voice rooms: {e}")
+            raise VoiceServiceException(f"Failed to close voice room: {e}")
 
     def validate_player_access(self, room_id: str, summoner_id: str) -> bool:
         """Check if a player has access to a voice room"""
@@ -63,6 +73,5 @@ class VoiceService:
         if not room_data or not room_data.get("is_active"):
             return False
         return summoner_id in room_data.get("players", [])
-
 
 voice_service = VoiceService()

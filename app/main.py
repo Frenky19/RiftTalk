@@ -1,96 +1,116 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+import os
+from datetime import datetime, timezone
+
 from app.config import settings
 from app.database import redis_manager
 from app.services.lcu_service import lcu_service
-from app.endpoints import voice, auth, lcu
+from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
-from app.websocket.voice_server import sio
-from socketio import ASGIApp
-from fastapi.staticfiles import StaticFiles
-import os  # Добавьте эту строку
-
+from app.endpoints import voice, auth, lcu
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan context manager."""
     # Startup
     logger.info("Starting up LoL Voice Chat API...")
-    # Initialize LCU service (optional - only if League Client is running)
+    # Initialize Discord service
+    discord_initialized = False
+    try:
+        if settings.DISCORD_BOT_TOKEN:
+            discord_initialized = await discord_service.connect()
+            if discord_initialized:
+                logger.info("✅ Discord service initialized successfully")
+            else:
+                logger.warning("⚠️ Discord service not available")
+        else:
+            logger.info("🔧 Discord integration disabled (no token provided)")
+    except Exception as e:
+        logger.error(f"❌ Discord service failed: {e}")
+    # Initialize LCU service (optional)
     lcu_initialized = False
     try:
-        await lcu_service.initialize()
-        asyncio.create_task(lcu_service.start_monitoring(handle_game_event))
-        lcu_initialized = True
-        logger.info("✅ LCU service initialized successfully")
+        lcu_initialized = await lcu_service.initialize()
+        if lcu_initialized:
+            asyncio.create_task(
+                lcu_service.start_monitoring(handle_game_event)
+            )
+            logger.info("✅ LCU service initialized successfully")
+        else:
+            logger.info("🔧 LCU service not available")
     except Exception as e:
-        logger.warning(f"⚠️ LCU service not available: {e}")
-        logger.info("🔧 Application will run in standalone mode (without automatic game detection)")
-
-    # Health check endpoint with LCU status
-    @app.get("/health")
-    async def health_check():
-        redis_status = "unknown"
-        try:
-            redis_status = "healthy" if redis_manager.redis.ping() else "unhealthy"
-        except:
-            redis_status = "unhealthy"
-        return {
-            "status": "healthy",
-            "redis": redis_status,
-            "lcu_initialized": lcu_initialized,
-            "mode": "standalone" if not lcu_initialized else "integrated"
-        }
+        logger.warning(f"⚠️ LCU service failed: {e}")
     yield
     # Shutdown
     logger.info("Shutting down...")
     try:
+        if discord_initialized:
+            await discord_service.disconnect()
+            logger.info("✅ Discord service disconnected")
         if lcu_initialized:
             await lcu_service.stop_monitoring()
+            logger.info("✅ LCU service stopped")
     except Exception as e:
-        logger.error(f"Error during LCU shutdown: {e}")
+        logger.error(f"❌ Error during shutdown: {e}")
 
 
 async def handle_game_event(event_type: str, data: dict):
-    """Handle game events from LCU"""
+    """Handle game events from LCU."""
     try:
         if event_type == "match_start":
-            logger.info(f"🎮 Match started: {data.get('match_id', 'unknown')}")
-            # Here you could automatically create voice rooms
+            match_id = data.get('match_id', 'unknown')
+            logger.info(f"🎮 Match started: {match_id}")
+            # Здесь можно автоматически создавать Discord каналы
         elif event_type == "match_end":
-            logger.info(f"🎮 Match ended: {data.get('match_id', 'unknown')}")
-            # Automatically close voice rooms
+            match_id = data.get('match_id', 'unknown')
+            logger.info(f"🎮 Match ended: {match_id}")
+            # Автоматически закрывать комнаты
             try:
-                voice_service.close_voice_room(data['match_id'])
+                await voice_service.close_voice_room(match_id)
+                logger.info(f"✅ Voice room closed for match: {match_id}")
             except Exception as e:
-                logger.error(f"Error closing voice room: {e}")
+                logger.error(f"❌ Error closing voice room: {e}")
     except Exception as e:
-        logger.error(f"Error handling game event: {e}")
+        logger.error(f"❌ Error handling game event: {e}")
+
 
 # Create FastAPI app
 app = FastAPI(
     title="LoL Voice Chat API",
-    description="Voice chat overlay for League of Legends",
+    description="Discord voice chat integration for League of Legends",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# Serve static files if static directory exists
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
 
-    @app.get("/demo")
-    async def demo_page():
-        """Serve demo page for testing"""
-        return FileResponse("static/demo.html")
+# Serve static files with error handling
+static_dir = "static"
+if os.path.exists(static_dir):
+    try:
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+        @app.get("/demo")
+        async def demo_page():
+            """Serve demo page for testing."""
+            demo_file = os.path.join(static_dir, "demo.html")
+            if os.path.exists(demo_file):
+                return FileResponse(demo_file)
+            raise HTTPException(status_code=404, detail="Demo file not found")
+        logger.info(f"✅ Static files mounted from {static_dir}")
+    except Exception as e:
+        logger.error(f"❌ Failed to mount static files: {e}")
 else:
-    logger.warning("Static directory not found, skipping static file serving")
+    logger.warning(f"⚠️ Static directory '{static_dir}' not found")
+
 
 # CORS middleware
 app.add_middleware(
@@ -101,40 +121,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Include routers
 app.include_router(voice.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(lcu.router, prefix="/api")
 
-# Socket.IO app
-sio_app = ASGIApp(sio, app)
-
 
 @app.get("/")
 async def root():
+    """Root endpoint with API information."""
     return {
-        "message": "LoL Voice Chat API is running!",
+        "message": "LoL Voice Chat API with Discord integration is running! 🎮",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "demo": "/demo" if os.path.exists(static_dir) else None
     }
 
 
-@app.get("/api/info")
-async def api_info():
-    """Get API information"""
-    return {
-        "name": "LoL Voice Chat API",
-        "version": "1.0.0",
-        "status": "operational",
-        "features": [
-            "Voice room management",
-            "WebRTC signaling",
-            "LCU integration (optional)",
-            "JWT authentication"
-        ]
-    }
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    redis_status = "unknown"
+    try:
+        redis_status = "healthy" if redis_manager.redis.ping() else "unhealthy"
+    except Exception as e:
+        redis_status = f"unhealthy: {str(e)}"
+    discord_status = "enabled" if settings.DISCORD_BOT_TOKEN else "disabled"
+    return JSONResponse(
+        content={
+            "status": "healthy",
+            "redis": redis_status,
+            "discord": discord_status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
 
-# For running with uvicorn directly
+
+@app.exception_handler(500)
+async def internal_server_error_handler(request, exc):
+    """Handle internal server errors."""
+    logger.error(f"Internal server error: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(sio_app, host=settings.SERVER_HOST, port=settings.SERVER_PORT)
+    uvicorn.run(
+        app,
+        host=settings.SERVER_HOST,
+        port=settings.SERVER_PORT,
+        log_level="info"
+    )

@@ -349,6 +349,57 @@
         function clearResults() {
             document.getElementById('results').innerHTML = '';
         }
+
+        async function testDiscordIntegration() {
+    showLoading('results');
+    try {
+        // First get a token
+        const formData = new FormData();
+        formData.append('username', 'test_player');
+        formData.append('password', 'test_password');
+        
+        const authResponse = await fetch(`${API_BASE}/api/auth/token`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!authResponse.ok) {
+            throw new Error(`Authentication failed: ${authResponse.status}`);
+        }
+        
+        const authData = await authResponse.json();
+        
+        // Create voice room with team data for Discord
+        const roomData = {
+            match_id: 'discord_test_' + Date.now(),
+            players: ['test_player', 'player2', 'player3', 'player4', 'player5'],
+            blue_team: ['test_player', 'player2', 'player3'],
+            red_team: ['player4', 'player5']
+        };
+        
+        const response = await fetch(`${API_BASE}/api/voice/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authData.access_token}`
+            },
+            body: JSON.stringify(roomData)
+        });
+        const data = await response.json();
+        showResult('Discord Voice Room Creation', data, response.status === 200);
+        
+        // Show Discord invites if available
+        if (data.discord_channels) {
+            let discordInfo = "Discord Channels Created:\n";
+            for (const [team, channel] of Object.entries(data.discord_channels)) {
+                discordInfo += `${team}: ${channel.invite_url}\n`;
+            }
+            alert(discordInfo);
+        }
+    } catch (error) {
+        showResult('Discord Integration Test', {error: error.message}, false);
+    }
+}
     </script>
 </body>
 </html>

@@ -1,10 +1,12 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional, Dict, Any
 
 
 class MatchStartRequest(BaseModel):
     match_id: str
     players: List[str]
+    blue_team: Optional[List[str]] = None
+    red_team: Optional[List[str]] = None
 
 
 class MatchEndRequest(BaseModel):
@@ -21,8 +23,16 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class DiscordChannelResponse(BaseModel):
+    channel_id: str
+    channel_name: str
+    invite_url: str
+    team_name: str
+
+
 class VoiceRoomResponse(BaseModel):
     room_id: str
     match_id: str
-    webrtc_config: dict
     players: List[str]
+    discord_channels: Optional[Dict[str, DiscordChannelResponse]] = None
+    created_at: str
