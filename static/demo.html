@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LoL Voice Chat Demo</title>
+    <title>LoL Voice Chat - Demo</title>
     <style>
         * {
             margin: 0;
@@ -22,7 +22,7 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             border-radius: 15px;
             padding: 30px;
             backdrop-filter: blur(10px);
@@ -143,14 +143,26 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .demo-info {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎮 LoL Voice Chat API Demo</h1>
-            <p>Test the backend API endpoints for the League of Legends Voice Chat application</p>
+            <h1>🎮 LoL Voice Chat - Demo</h1>
+            <p>Тестовая страница для проверки работы API голосового чата для League of Legends</p>
         </header>
+        
+        <div class="demo-info">
+            <strong>💡 Режим разработки:</strong> Discord работает в MOCK-режиме. Для полноценной работы установите Discord и настройте бота.
+        </div>
         
         <div class="status-panel">
             <div class="status-card" id="api-status">
@@ -169,11 +181,11 @@
                 </div>
             </div>
             
-            <div class="status-card" id="lcu-status">
-                <h3>LCU Status</h3>
+            <div class="status-card" id="discord-status">
+                <h3>Discord Status</h3>
                 <div class="loading">
                     <div class="spinner"></div>
-                    <p>Checking LCU connection...</p>
+                    <p>Checking Discord connection...</p>
                 </div>
             </div>
         </div>
@@ -181,9 +193,9 @@
         <div class="controls">
             <button onclick="testEndpoint('/')">Test Root Endpoint</button>
             <button onclick="testEndpoint('/health')">Test Health Check</button>
-            <button onclick="testEndpoint('/api/info')">Test API Info</button>
             <button onclick="testAuth()">Test Authentication</button>
             <button onclick="testVoiceRoom()">Test Voice Room</button>
+            <button onclick="testDiscordIntegration()">Test Discord Integration</button>
             <button onclick="clearResults()">Clear Results</button>
         </div>
         
@@ -191,18 +203,19 @@
     </div>
 
     <script>
-        const API_BASE = 'http://127.0.0.1:8000';
-        
+        const API_BASE = 'http://localhost:8000';
+        let currentToken = '';
+
         // Initialize status checks
         document.addEventListener('DOMContentLoaded', function() {
             checkAllStatuses();
         });
-        
+
         async function checkAllStatuses() {
             await checkApiStatus();
             await checkHealthStatus();
         }
-        
+
         async function checkApiStatus() {
             try {
                 const response = await fetch(`${API_BASE}/`);
@@ -212,20 +225,33 @@
                 updateStatus('api-status', '❌ API connection failed', 'error', {error: error.message});
             }
         }
-        
+
         async function checkHealthStatus() {
             try {
                 const response = await fetch(`${API_BASE}/health`);
                 const data = await response.json();
-                
+
                 // Update Redis status
                 const redisStatus = data.redis.includes('healthy') ? 'success' : 'error';
                 const redisMessage = data.redis.includes('healthy') ? '✅ Redis connected' : '❌ Redis connection issue';
                 updateStatus('redis-status', redisMessage, redisStatus, {status: data.redis});
-                
-                // Update LCU status
-                const lcuMessage = '⚠️ LCU not connected (normal for development)';
-                updateStatus('lcu-status', lcuMessage, 'warning', {note: 'LCU will connect when League Client is running'});
+
+                // Update Discord status
+                let discordMessage, discordType;
+                if (data.discord === 'connected') {
+                    discordMessage = '✅ Discord connected';
+                    discordType = 'success';
+                } else if (data.discord === 'mock_mode') {
+                    discordMessage = '🔶 Discord MOCK mode';
+                    discordType = 'warning';
+                } else if (data.discord === 'disabled') {
+                    discordMessage = '🔶 Discord disabled';
+                    discordType = 'warning';
+                } else {
+                    discordMessage = '❌ Discord connection failed';
+                    discordType = 'error';
+                }
+                updateStatus('discord-status', discordMessage, discordType, {status: data.discord, details: data.discord_details});
                 
             } catch (error) {
                 updateStatus('health-status', '❌ Health check failed', 'error', {error: error.message});
@@ -272,42 +298,42 @@
                     body: formData
                 });
                 const data = await response.json();
-                showResult('Authentication', data, response.status === 200);
+                
+                if (response.ok && data.access_token) {
+                    currentToken = data.access_token;
+                    showResult('Authentication', {...data, note: 'Token saved for future requests'}, true);
+                } else {
+                    showResult('Authentication', data, false);
+                }
             } catch (error) {
                 showResult('Authentication', {error: error.message}, false);
             }
         }
-        
+
         async function testVoiceRoom() {
             showLoading('results');
             try {
-                // First get a token
-                const formData = new FormData();
-                formData.append('username', 'test_player');
-                formData.append('password', 'test_password');
-                
-                const authResponse = await fetch(`${API_BASE}/api/auth/token`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (!authResponse.ok) {
-                    throw new Error(`Authentication failed: ${authResponse.status}`);
+                // First get a token if we don't have one
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
                 }
-                
-                const authData = await authResponse.json();
-                
-                // Then create voice room
+
+                // Create voice room
                 const roomData = {
                     match_id: 'demo_match_' + Date.now(),
-                    players: ['player1', 'player2', 'player3', 'player4', 'player5']
+                    players: ['player1', 'player2', 'player3', 'player4', 'player5'],
+                    blue_team: ['player1', 'player2', 'player3'],
+                    red_team: ['player4', 'player5']
                 };
                 
                 const response = await fetch(`${API_BASE}/api/voice/start`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authData.access_token}`
+                        'Authorization': `Bearer ${currentToken}`
                     },
                     body: JSON.stringify(roomData)
                 });
@@ -315,6 +341,60 @@
                 showResult('Voice Room Creation', data, response.status === 200);
             } catch (error) {
                 showResult('Voice Room Creation', {error: error.message}, false);
+            }
+        }
+
+        async function testDiscordIntegration() {
+            showLoading('results');
+            try {
+                // First get a token if we don't have one
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                // Create voice room with team data for Discord
+                const roomData = {
+                    match_id: 'discord_test_' + Date.now(),
+                    players: ['test_player', 'player2', 'player3', 'player4', 'player5'],
+                    blue_team: ['test_player', 'player2', 'player3'],
+                    red_team: ['player4', 'player5']
+                };
+
+                const response = await fetch(`${API_BASE}/api/voice/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify(roomData)
+                });
+                const data = await response.json();
+                
+                let resultMessage = 'Discord Voice Room Creation';
+                if (data.discord_channels && data.discord_channels.mock_mode) {
+                    resultMessage += ' (MOCK MODE)';
+                }
+
+                showResult(resultMessage, data, response.status === 200);
+                // Show Discord invites if available
+                if (data.discord_channels) {
+                    let discordInfo = "Discord Channels:\n";
+                    if (data.discord_channels.blue_team) {
+                        discordInfo += `Blue Team: ${data.discord_channels.blue_team.invite_url}\n`;
+                    }
+                    if (data.discord_channels.red_team) {
+                        discordInfo += `Red Team: ${data.discord_channels.red_team.invite_url}\n`;
+                    }
+                    if (data.discord_channels.note) {
+                        discordInfo += `Note: ${data.discord_channels.note}\n`;
+                    }
+                    alert(discordInfo);
+                }
+            } catch (error) {
+                showResult('Discord Integration Test', {error: error.message}, false);
             }
         }
         
@@ -337,7 +417,6 @@
             loadingDiv.className = 'loading';
             loadingDiv.innerHTML = '<div class="spinner"></div><p>Testing...</p>';
             element.appendChild(loadingDiv);
-            
             // Remove loading after a short delay if still there
             setTimeout(() => {
                 if (loadingDiv.parentNode) {
@@ -349,57 +428,6 @@
         function clearResults() {
             document.getElementById('results').innerHTML = '';
         }
-
-        async function testDiscordIntegration() {
-    showLoading('results');
-    try {
-        // First get a token
-        const formData = new FormData();
-        formData.append('username', 'test_player');
-        formData.append('password', 'test_password');
-        
-        const authResponse = await fetch(`${API_BASE}/api/auth/token`, {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (!authResponse.ok) {
-            throw new Error(`Authentication failed: ${authResponse.status}`);
-        }
-        
-        const authData = await authResponse.json();
-        
-        // Create voice room with team data for Discord
-        const roomData = {
-            match_id: 'discord_test_' + Date.now(),
-            players: ['test_player', 'player2', 'player3', 'player4', 'player5'],
-            blue_team: ['test_player', 'player2', 'player3'],
-            red_team: ['player4', 'player5']
-        };
-        
-        const response = await fetch(`${API_BASE}/api/voice/start`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authData.access_token}`
-            },
-            body: JSON.stringify(roomData)
-        });
-        const data = await response.json();
-        showResult('Discord Voice Room Creation', data, response.status === 200);
-        
-        // Show Discord invites if available
-        if (data.discord_channels) {
-            let discordInfo = "Discord Channels Created:\n";
-            for (const [team, channel] of Object.entries(data.discord_channels)) {
-                discordInfo += `${team}: ${channel.invite_url}\n`;
-            }
-            alert(discordInfo);
-        }
-    } catch (error) {
-        showResult('Discord Integration Test', {error: error.message}, false);
-    }
-}
     </script>
 </body>
 </html>

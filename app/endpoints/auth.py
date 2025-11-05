@@ -37,9 +37,9 @@ async def login_for_access_token(
     redis_manager.redis.hset(user_key, mapping={
         "summoner_id": summoner_id,
         "summoner_name": summoner_name,
-        "last_login": datetime.now(timezone.utc).isoformat()  # Исправлено
+        "last_login": datetime.now(timezone.utc).isoformat()
     })
-    redis_manager.redis.expire(user_key, 3600 * 24 * 7)  # Храним неделю
+    redis_manager.redis.expire(user_key, 3600 * 24 * 7)
     return TokenResponse(access_token=access_token, token_type="bearer")
 
 

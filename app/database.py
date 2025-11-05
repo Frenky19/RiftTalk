@@ -1,132 +1,117 @@
 import redis
-from redis.connection import ConnectionPool
-from datetime import datetime, timezone, timedelta
-from app.config import settings
-from app.utils.exceptions import DatabaseException
 import logging
+from typing import Dict, Any
+from urllib.parse import urlparse
+import os
+
+from app.utils.exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
 
 class RedisManager:
     def __init__(self):
-        try:
-            # Создаем пул соединений
-            self.connection_pool = ConnectionPool.from_url(
-                settings.REDIS_URL,
-                max_connections=settings.REDIS_MAX_CONNECTIONS,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
-                health_check_interval=30
-            )
-            self.redis = redis.Redis(connection_pool=self.connection_pool)
-            # Тестируем соединение
-            self.redis.ping()
-            logger.info("✅ Redis connection established successfully")
-        except redis.ConnectionError as e:
-            logger.error(f"❌ Redis connection failed: {e}")
-            raise DatabaseException(f"Redis connection failed: {e}")
-        except Exception as e:
-            logger.error(
-                f"❌ Unexpected error during Redis initialization: {e}"
-            )
-            raise DatabaseException(f"Redis initialization failed: {e}")
+        self._init_redis()
+
+    def _init_redis(self):
+        """Initialize Redis connection with proper error handling."""
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                # Parse Redis URL for Docker compatibility
+                redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                parsed = urlparse(redis_url)
+                # Connection parameters
+                connection_params = {
+                    'host': parsed.hostname or 'localhost',
+                    'port': parsed.port or 6379,
+                    'db': int(parsed.path.lstrip('/')) if parsed.path else 0,
+                    'decode_responses': True,
+                    'socket_connect_timeout': 5,
+                    'retry_on_timeout': True,
+                    'health_check_interval': 30
+                }
+                # Add password if present
+                if parsed.password:
+                    connection_params['password'] = parsed.password
+                self.redis = redis.Redis(**connection_params)
+                # Test connection
+                self.redis.ping()
+                logger.info(
+                    f"✅ Redis connected to {connection_params['host']}:{connection_params['port']}"
+                )
+                break
+            except redis.ConnectionError as e:
+                logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise DatabaseException(f"Redis connection failed after {max_retries} attempts")
+                import time
+                time.sleep(2)
+            except Exception as e:
+                logger.error(f"Unexpected Redis error: {e}")
+                raise DatabaseException(f"Redis initialization failed: {e}")
 
     def create_voice_room(
-            self,
-            room_id: str,
-            match_id: str,
-            players: list,
-            ttl: int = 2700) -> bool:
-        """Create a voice room with expiration"""
+            self, room_id: str, match_id: str, room_data: Dict[str, Any], ttl: int = 3600
+    ) -> bool:
+        """Create voice room with proper data serialization."""
         try:
-            room_data = {
-                "room_id": room_id,
-                "match_id": match_id,
-                "players": ",".join(players),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "expires_at": (
-                    datetime.now(timezone.utc) + timedelta(seconds=ttl)
-                ).isoformat(),
-                "is_active": "true"
-            }
             pipeline = self.redis.pipeline()
-            pipeline.hset(f"room:{room_id}", mapping=room_data)
+            serialized_data = room_data.copy()
+            if 'players' in serialized_data and isinstance(serialized_data['players'], list):
+                serialized_data['players'] = ','.join(serialized_data['players'])
+            if 'discord_channels' in serialized_data:
+                import json
+                serialized_data['discord_channels'] = json.dumps(serialized_data['discord_channels'])
+            pipeline.hset(f"room:{room_id}", mapping=serialized_data)
             pipeline.expire(f"room:{room_id}", ttl)
-            # Сохраняем связь match_id -> room_id для быстрого поиска
             pipeline.set(f"match_room:{match_id}", room_id, ex=ttl)
             results = pipeline.execute()
             return all(results)
-        except redis.RedisError as e:
-            logger.error(f"Failed to create voice room {room_id}: {e}")
-            raise DatabaseException(f"Failed to create room: {e}")
+        except Exception as e:
+            logger.error(f"Failed to create voice room: {e}")
+            return False
 
-    def get_voice_room_by_match(self, match_id: str) -> dict:
-        """Get voice room by match ID"""
-        try:
-            room_id = self.redis.get(f"match_room:{match_id}")
-            if not room_id:
-                return {}
-            return self.get_voice_room(room_id)
-        except redis.RedisError as e:
-            logger.error(f"Failed to get room for match {match_id}: {e}")
-            return {}
-
-    def get_voice_room(self, room_id: str) -> dict:
-        """Get voice room data"""
+    def get_voice_room(self, room_id: str) -> Dict[str, Any]:
+        """Get voice room with proper deserialization."""
         try:
             room_data = self.redis.hgetall(f"room:{room_id}")
             if not room_data:
                 return {}
-            # Преобразуем данные обратно в правильные типы
-            if "players" in room_data:
-                room_data["players"] = room_data["players"].split(",")
-            if "is_active" in room_data:
-                room_data["is_active"] = room_data["is_active"].lower() == "true"
+            if 'players' in room_data:
+                room_data['players'] = room_data['players'].split(',')
+            if 'discord_channels' in room_data and room_data['discord_channels']:
+                import json
+                room_data['discord_channels'] = json.loads(room_data['discord_channels'])
+            if 'is_active' in room_data:
+                room_data['is_active'] = room_data['is_active'].lower() == 'true'
             return room_data
-        except redis.RedisError as e:
-            logger.error(f"Failed to get room {room_id}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to get voice room: {e}")
+            return {}
+
+    def get_voice_room_by_match(self, match_id: str) -> Dict[str, Any]:
+        """Get voice room by match ID."""
+        try:
+            room_id = self.redis.get(f"match_room:{match_id}")
+            return self.get_voice_room(room_id) if room_id else {}
+        except Exception as e:
+            logger.error(f"Failed to get room by match: {e}")
             return {}
 
     def delete_voice_room(self, match_id: str) -> bool:
-        """Delete a voice room by match ID"""
+        """Delete voice room by match ID."""
         try:
             room_id = self.redis.get(f"match_room:{match_id}")
-            if room_id:
-                pipeline = self.redis.pipeline()
-                pipeline.delete(f"room:{room_id}")
-                pipeline.delete(f"match_room:{match_id}")
-                results = pipeline.execute()
-                return all(results)
-            return False
-        except redis.RedisError as e:
-            logger.error(f"Failed to delete room for match {match_id}: {e}")
-            return False
-
-    def is_room_active(self, room_id: str) -> bool:
-        """Check if room exists and is active"""
-        try:
-            room_data = self.get_voice_room(room_id)
-            return room_data.get("is_active", False)
-        except redis.RedisError:
+            if not room_id:
+                return False
+            pipeline = self.redis.pipeline()
+            pipeline.delete(f"room:{room_id}")
+            pipeline.delete(f"match_room:{match_id}")
+            return all(pipeline.execute())
+        except Exception as e:
+            logger.error(f"Failed to delete voice room: {e}")
             return False
 
-    def get_redis_info(self) -> dict:
-        """Get Redis server information"""
-        try:
-            info = self.redis.info()
-            return {
-                "version": info.get("redis_version"),
-                "used_memory": info.get("used_memory_human"),
-                "connected_clients": info.get("connected_clients"),
-                "keyspace_hits": info.get("keyspace_hits"),
-                "keyspace_misses": info.get("keyspace_misses")
-            }
-        except redis.RedisError as e:
-            logger.error(f"Failed to get Redis info: {e}")
-            return {}
 
-
-# Global Redis instance
 redis_manager = RedisManager()

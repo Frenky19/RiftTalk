@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from app.services.lcu_service import lcu_service
 from app.utils.security import get_current_user
+from app.database import redis_manager
 
 router = APIRouter(prefix="/lcu", tags=["lcu-integration"])
 

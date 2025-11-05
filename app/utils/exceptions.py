@@ -42,37 +42,7 @@ class ValidationException(AppException):
         super().__init__(message, code)
 
 
-# Добавьте Discord исключение
 class DiscordServiceException(AppException):
     """Исключение, связанное с сервисом Discord"""
     def __init__(self, message: str, code: str = "DISCORD_ERROR"):
         super().__init__(message, code)
-
-
-# Глобальные обработчики исключений (добавьте в main.py)
-exception_handlers = {
-    DatabaseException: lambda request, exc: JSONResponse(
-        status_code=500,
-        content={"error": exc.code, "message": exc.message}
-    ),
-    VoiceServiceException: lambda request, exc: JSONResponse(
-        status_code=500,
-        content={"error": exc.code, "message": exc.message}
-    ),
-    LCUException: lambda request, exc: JSONResponse(
-        status_code=503,
-        content={"error": exc.code, "message": exc.message}
-    ),
-    WebRTCException: lambda request, exc: JSONResponse(
-        status_code=500,
-        content={"error": exc.code, "message": exc.message}
-    ),
-    AuthenticationException: lambda request, exc: JSONResponse(
-        status_code=401,
-        content={"error": exc.code, "message": exc.message}
-    ),
-    ValidationException: lambda request, exc: JSONResponse(
-        status_code=400,
-        content={"error": exc.code, "message": exc.message}
-    )
-}
