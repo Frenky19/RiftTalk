@@ -13,7 +13,6 @@ from app.services.lcu_service import lcu_service
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
 from app.endpoints import voice, auth, lcu
-from app.utils.exceptions import exception_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +120,6 @@ app = FastAPI(
     description="Discord voice chat integration for League of Legends",
     version="1.0.0",
     lifespan=lifespan,
-    exception_handlers=exception_handlers
 )
 
 # CORS middleware
