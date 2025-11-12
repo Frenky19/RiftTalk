@@ -30,5 +30,6 @@ websockets==15.0.1
 wsproto==1.2.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-aiohttp
-discord.py
+aiohttp==3.13.2
+discord.py==2.6.4
+discord==2.3.2

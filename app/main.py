@@ -12,7 +12,7 @@ from app.database import redis_manager
 from app.services.lcu_service import lcu_service
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
-from app.endpoints import voice, auth, lcu
+from app.endpoints import voice, auth, lcu, discord
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ else:
 app.include_router(voice.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(lcu.router, prefix="/api")
-
+app.include_router(discord.router, prefix="/api")
 
 @app.get("/")
 async def root():

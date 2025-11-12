@@ -1,6 +1,6 @@
 [flake8]
 ignore = E265, F811, PT001, DJ05, D100, D105, D104, W504, W292
-max-line-length = 120
+max-line-length = 125
 paths = 
     ./app
 max-complexity = 15

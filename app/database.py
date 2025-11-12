@@ -120,5 +120,26 @@ class RedisManager:
             logger.error(f"Failed to delete voice room: {e}")
             return False
 
+    def get_all_active_rooms(self) -> list:
+        """Get all active voice rooms."""
+        try:
+            rooms = []
+            pattern = "room:*"
+            for key in self.redis.scan_iter(match=pattern):
+                room_id = key.replace("room:", "")
+                room_data = self.get_voice_room(room_id)
+                if room_data and room_data.get('is_active'):
+                    rooms.append({
+                        'room_id': room_id,
+                        'match_id': room_data.get('match_id'),
+                        'players': room_data.get('players', []),
+                        'created_at': room_data.get('created_at'),
+                        'is_active': room_data.get('is_active', False)
+                    })
+            return rooms
+        except Exception as e:
+            logger.error(f"Failed to get active rooms: {e}")
+            return []
+
 
 redis_manager = RedisManager()

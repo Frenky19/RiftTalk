@@ -20,7 +20,7 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: rgba(0, 0, 0, 0.8);
             border-radius: 15px;
@@ -71,15 +71,53 @@
             margin-bottom: 30px;
         }
         
+        .advanced-controls {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .advanced-controls h3 {
+            margin-bottom: 15px;
+            color: #ffaa00;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid #444;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
         button {
             background: linear-gradient(45deg, #667eea, #764ba2);
             color: white;
             border: none;
-            padding: 15px 20px;
+            padding: 12px 20px;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 14px;
             transition: transform 0.2s, box-shadow 0.2s;
+            margin: 5px;
         }
         
         button:hover {
@@ -89,6 +127,18 @@
         
         button:active {
             transform: translateY(0);
+        }
+        
+        button.danger {
+            background: linear-gradient(45deg, #ff416c, #ff4b2b);
+        }
+        
+        button.success {
+            background: linear-gradient(45deg, #00b09b, #96c93d);
+        }
+        
+        button.warning {
+            background: linear-gradient(45deg, #ffaa00, #ff7700);
         }
         
         .results {
@@ -111,6 +161,10 @@
             border-left-color: #ff4444;
         }
         
+        .result-item.warning {
+            border-left-color: #ffaa00;
+        }
+        
         pre {
             background: rgba(0, 0, 0, 0.3);
             padding: 10px;
@@ -118,6 +172,8 @@
             overflow-x: auto;
             margin-top: 10px;
             font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
         }
         
         .hidden {
@@ -150,6 +206,30 @@
             border-radius: 8px;
             padding: 15px;
             margin: 20px 0;
+        }
+
+        .rooms-list {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .room-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+        }
+
+        .match-id-display {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            word-break: break-all;
         }
     </style>
 </head>
@@ -189,14 +269,50 @@
                 </div>
             </div>
         </div>
-        
+
+        <!-- Основные контролы -->
         <div class="controls">
             <button onclick="testEndpoint('/')">Test Root Endpoint</button>
             <button onclick="testEndpoint('/health')">Test Health Check</button>
             <button onclick="testAuth()">Test Authentication</button>
             <button onclick="testVoiceRoom()">Test Voice Room</button>
             <button onclick="testDiscordIntegration()">Test Discord Integration</button>
+            <button onclick="getActiveRooms()">Get Active Rooms</button>
+            <button class="danger" onclick="forceCleanup()">Force Cleanup All</button>
             <button onclick="clearResults()">Clear Results</button>
+        </div>
+
+        <!-- Расширенные контролы для управления комнатами -->
+        <div class="advanced-controls">
+            <h3>🎯 Управление голосовыми комнатами</h3>
+            
+            <div class="input-group">
+                <label for="matchIdInput">Match ID (автозаполняется при создании комнаты):</label>
+                <input type="text" id="matchIdInput" placeholder="Введите match_id или он заполнится автоматически">
+            </div>
+            
+            <div>
+                <button class="success" onclick="endVoiceChat()">End Voice Chat</button>
+                <button class="warning" onclick="disconnectMembers()">Disconnect Members</button>
+                <button onclick="assignToTeam('Blue Team')">Assign to Blue Team</button>
+                <button onclick="assignToTeam('Red Team')">Assign to Red Team</button>
+            </div>
+
+            <div class="match-id-display" id="currentMatchId" style="display: none;">
+                <strong>Текущий Match ID:</strong> <span id="matchIdValue"></span>
+            </div>
+        </div>
+
+        <!-- Список активных комнат -->
+        <div class="advanced-controls">
+            <h3>📊 Активные голосовые комнаты</h3>
+            <button onclick="getActiveRooms()">Обновить список</button>
+            <div id="activeRoomsList" class="rooms-list">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading active rooms...</p>
+                </div>
+            </div>
         </div>
         
         <div class="results" id="results"></div>
@@ -205,17 +321,19 @@
     <script>
         const API_BASE = 'http://localhost:8000';
         let currentToken = '';
-
+        let lastMatchId = '';
+        
         // Initialize status checks
         document.addEventListener('DOMContentLoaded', function() {
             checkAllStatuses();
+            getActiveRooms();
         });
-
+        
         async function checkAllStatuses() {
             await checkApiStatus();
             await checkHealthStatus();
         }
-
+        
         async function checkApiStatus() {
             try {
                 const response = await fetch(`${API_BASE}/`);
@@ -225,17 +343,17 @@
                 updateStatus('api-status', '❌ API connection failed', 'error', {error: error.message});
             }
         }
-
+        
         async function checkHealthStatus() {
             try {
                 const response = await fetch(`${API_BASE}/health`);
                 const data = await response.json();
-
+                
                 // Update Redis status
                 const redisStatus = data.redis.includes('healthy') ? 'success' : 'error';
                 const redisMessage = data.redis.includes('healthy') ? '✅ Redis connected' : '❌ Redis connection issue';
                 updateStatus('redis-status', redisMessage, redisStatus, {status: data.redis});
-
+                
                 // Update Discord status
                 let discordMessage, discordType;
                 if (data.discord === 'connected') {
@@ -309,7 +427,7 @@
                 showResult('Authentication', {error: error.message}, false);
             }
         }
-
+        
         async function testVoiceRoom() {
             showLoading('results');
             try {
@@ -320,7 +438,7 @@
                         throw new Error('Authentication failed - no token available');
                     }
                 }
-
+                
                 // Create voice room
                 const roomData = {
                     match_id: 'demo_match_' + Date.now(),
@@ -338,7 +456,20 @@
                     body: JSON.stringify(roomData)
                 });
                 const data = await response.json();
+                
+                // Сохраняем match_id для последующих операций
+                if (data.match_id) {
+                    lastMatchId = data.match_id;
+                    document.getElementById('matchIdInput').value = lastMatchId;
+                    document.getElementById('matchIdValue').textContent = lastMatchId;
+                    document.getElementById('currentMatchId').style.display = 'block';
+                }
+                
                 showResult('Voice Room Creation', data, response.status === 200);
+                
+                // Обновляем список активных комнат
+                getActiveRooms();
+                
             } catch (error) {
                 showResult('Voice Room Creation', {error: error.message}, false);
             }
@@ -354,7 +485,7 @@
                         throw new Error('Authentication failed - no token available');
                     }
                 }
-
+                
                 // Create voice room with team data for Discord
                 const roomData = {
                     match_id: 'discord_test_' + Date.now(),
@@ -362,7 +493,7 @@
                     blue_team: ['test_player', 'player2', 'player3'],
                     red_team: ['player4', 'player5']
                 };
-
+                
                 const response = await fetch(`${API_BASE}/api/voice/start`, {
                     method: 'POST',
                     headers: {
@@ -373,12 +504,24 @@
                 });
                 const data = await response.json();
                 
+                // Сохраняем match_id для последующих операций
+                if (data.match_id) {
+                    lastMatchId = data.match_id;
+                    document.getElementById('matchIdInput').value = lastMatchId;
+                    document.getElementById('matchIdValue').textContent = lastMatchId;
+                    document.getElementById('currentMatchId').style.display = 'block';
+                }
+                
                 let resultMessage = 'Discord Voice Room Creation';
                 if (data.discord_channels && data.discord_channels.mock_mode) {
                     resultMessage += ' (MOCK MODE)';
                 }
-
+                
                 showResult(resultMessage, data, response.status === 200);
+                
+                // Обновляем список активных комнат
+                getActiveRooms();
+                
                 // Show Discord invites if available
                 if (data.discord_channels) {
                     let discordInfo = "Discord Channels:\n";
@@ -396,6 +539,227 @@
             } catch (error) {
                 showResult('Discord Integration Test', {error: error.message}, false);
             }
+        }
+
+        async function endVoiceChat() {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/voice/end`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({ match_id: matchId })
+                });
+                const data = await response.json();
+                showResult(`End Voice Chat for ${matchId}`, data, response.status === 200);
+                
+                // Обновляем список активных комнат
+                getActiveRooms();
+                
+            } catch (error) {
+                showResult(`End Voice Chat for ${matchId}`, {error: error.message}, false);
+            }
+        }
+
+        async function disconnectMembers() {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/voice/${matchId}/disconnect-members`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult(`Disconnect Members for ${matchId}`, data, response.status === 200);
+                
+            } catch (error) {
+                showResult(`Disconnect Members for ${matchId}`, {error: error.message}, false);
+            }
+        }
+
+        async function forceCleanup() {
+            if (!confirm('⚠️ Вы уверены? Это отключит всех участников и удалит ВСЕ голосовые комнаты!')) {
+                return;
+            }
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/voice/admin/force-cleanup`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('Force Cleanup All Matches', data, response.status === 200);
+                
+                // Обновляем список активных комнат
+                getActiveRooms();
+                
+            } catch (error) {
+                showResult('Force Cleanup All Matches', {error: error.message}, false);
+            }
+        }
+
+        async function getActiveRooms() {
+            showLoading('activeRoomsList');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        document.getElementById('activeRoomsList').innerHTML = '<p>❌ Authentication required</p>';
+                        return;
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/voice/active-rooms`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayActiveRooms(data);
+                } else {
+                    document.getElementById('activeRoomsList').innerHTML = `<p>❌ Error: ${data.detail || 'Unknown error'}</p>`;
+                }
+                
+            } catch (error) {
+                document.getElementById('activeRoomsList').innerHTML = `<p>❌ Error: ${error.message}</p>`;
+            }
+        }
+
+        function displayActiveRooms(data) {
+            const container = document.getElementById('activeRoomsList');
+            
+            if (data.active_rooms && data.active_rooms.length > 0) {
+                let html = `<h4>Активные комнаты (${data.count}):</h4>`;
+                
+                data.active_rooms.forEach(room => {
+                    html += `
+                        <div class="room-item">
+                            <strong>Match ID:</strong> ${room.match_id}<br>
+                            <strong>Room ID:</strong> ${room.room_id}<br>
+                            <strong>Players:</strong> ${room.players ? room.players.length : 0}<br>
+                            <strong>Created:</strong> ${new Date(room.created_at).toLocaleString()}<br>
+                            <button onclick="setMatchId('${room.match_id}')">Use this Match ID</button>
+                            <button class="warning" onclick="disconnectMembersForRoom('${room.match_id}')">Disconnect</button>
+                            <button class="danger" onclick="endRoom('${room.match_id}')">End</button>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<p>🚫 Нет активных голосовых комнат</p>';
+            }
+        }
+
+        async function assignToTeam(teamName) {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                // Сначала линкуем Discord аккаунт (для демо используем фиктивный ID)
+                const discordUserId = 123456789; // Замените на реальный Discord ID для тестирования
+                
+                const linkResponse = await fetch(`${API_BASE}/api/discord/link-account`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({ discord_user_id: discordUserId })
+                });
+                
+                if (!linkResponse.ok) {
+                    throw new Error('Failed to link Discord account');
+                }
+
+                // Затем назначаем на команду
+                const assignResponse = await fetch(`${API_BASE}/api/discord/assign-to-team`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({ 
+                        match_id: matchId,
+                        team_name: teamName
+                    })
+                });
+                
+                const data = await assignResponse.json();
+                showResult(`Assign to ${teamName} for ${matchId}`, data, assignResponse.status === 200);
+                
+            } catch (error) {
+                showResult(`Assign to ${teamName} for ${matchId}`, {error: error.message}, false);
+            }
+        }
+
+        // Вспомогательные функции
+        function getMatchId() {
+            const input = document.getElementById('matchIdInput').value;
+            if (!input) {
+                alert('⚠️ Пожалуйста, введите Match ID или создайте новую комнату');
+                return null;
+            }
+            return input;
+        }
+
+        function setMatchId(matchId) {
+            document.getElementById('matchIdInput').value = matchId;
+            document.getElementById('matchIdValue').textContent = matchId;
+            document.getElementById('currentMatchId').style.display = 'block';
+        }
+
+        async function disconnectMembersForRoom(matchId) {
+            setMatchId(matchId);
+            await disconnectMembers();
+        }
+
+        async function endRoom(matchId) {
+            setMatchId(matchId);
+            await endVoiceChat();
         }
         
         function showResult(title, data, success = true) {
@@ -417,6 +781,7 @@
             loadingDiv.className = 'loading';
             loadingDiv.innerHTML = '<div class="spinner"></div><p>Testing...</p>';
             element.appendChild(loadingDiv);
+            
             // Remove loading after a short delay if still there
             setTimeout(() => {
                 if (loadingDiv.parentNode) {
