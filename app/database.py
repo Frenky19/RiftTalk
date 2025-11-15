@@ -1,8 +1,7 @@
 import redis
 import json
-import datetime
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 import os
 
@@ -58,13 +57,16 @@ class RedisManager:
         """Create voice room with proper data serialization."""
         try:
             pipeline = self.redis.pipeline()
+            
             # Простая проверка - если room_data не dict, преобразуем
             if not hasattr(room_data, 'items'):
                 logger.error(f"room_data is not a dict: {type(room_data)}")
                 return False
+                
             pipeline.hset(f"room:{room_id}", mapping=room_data)
             pipeline.expire(f"room:{room_id}", ttl)
             pipeline.set(f"match_room:{match_id}", room_id, ex=ttl)
+            
             results = pipeline.execute()
             return all(results)
         except Exception as e:
@@ -77,6 +79,7 @@ class RedisManager:
             room_data = self.redis.hgetall(f"room:{room_id}")
             if not room_data:
                 return {}
+            
             # Десериализация полей
             result = {}
             for key, value in room_data.items():
@@ -95,7 +98,9 @@ class RedisManager:
                     result[key] = value.lower() == 'true'
                 else:
                     result[key] = value
+                    
             return result
+            
         except Exception as e:
             logger.error(f"Failed to get voice room: {e}")
             return {}
@@ -123,7 +128,7 @@ class RedisManager:
             logger.error(f"Failed to delete voice room: {e}")
             return False
 
-    def get_all_active_rooms(self) -> list:
+    def get_all_active_rooms(self) -> List[Dict[str, Any]]:
         """Get all active voice rooms."""
         try:
             rooms = []
@@ -143,6 +148,26 @@ class RedisManager:
         except Exception as e:
             logger.error(f"Failed to get active rooms: {e}")
             return []
+
+    def save_user_match_info(self, discord_user_id: int, match_info: dict, ttl: int = 3600) -> bool:
+        """Save user match information for automatic voice channel management."""
+        try:
+            key = f"user_discord:{discord_user_id}"
+            self.redis.setex(key, ttl, json.dumps(match_info))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save user match info: {e}")
+            return False
+
+    def get_user_match_info(self, discord_user_id: int) -> Optional[dict]:
+        """Get user match information."""
+        try:
+            key = f"user_discord:{discord_user_id}"
+            data = self.redis.get(key)
+            return json.loads(data) if data else None
+        except Exception as e:
+            logger.error(f"Failed to get user match info: {e}")
+            return None
 
 
 redis_manager = RedisManager()

@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.services.discord_service import discord_service
 from app.utils.security import get_current_user
 from app.database import redis_manager
+from app.schemas import DiscordLinkRequest, DiscordAssignRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/discord", tags=["discord-integration"])
@@ -10,20 +11,22 @@ router = APIRouter(prefix="/discord", tags=["discord-integration"])
 
 @router.post("/link-account")
 async def link_discord_account(
-    discord_user_id: int,
+    request: DiscordLinkRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """Link Discord account to LoL summoner."""
     try:
         # Save Discord user ID to Redis
         user_key = f"user:{current_user['sub']}"
-        redis_manager.redis.hset(user_key, "discord_user_id", str(discord_user_id))
+        redis_manager.redis.hset(user_key, "discord_user_id", str(request.discord_user_id))
         redis_manager.redis.expire(user_key, 604800)  # 7 days
-        logger.info(f"Linked Discord account {discord_user_id} to summoner {current_user['sub']}")
+        
+        logger.info(f"Linked Discord account {request.discord_user_id} to summoner {current_user['sub']}")
+        
         return {
             "status": "success",
             "message": "Discord account linked successfully",
-            "discord_user_id": discord_user_id,
+            "discord_user_id": request.discord_user_id,
             "summoner_id": current_user['sub']
         }
     except Exception as e:
@@ -36,8 +39,7 @@ async def link_discord_account(
 
 @router.post("/assign-to-team")
 async def assign_to_team(
-    match_id: str,
-    team_name: str,
+    request: DiscordAssignRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """Assign Discord user to team role."""
@@ -45,25 +47,35 @@ async def assign_to_team(
         # Get Discord user ID from Redis
         user_key = f"user:{current_user['sub']}"
         discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        
         if not discord_user_id:
             raise HTTPException(
                 status_code=400,
                 detail="Discord account not linked. Please link your Discord account first using /api/discord/link-account"
             )
+
+        # Validate team name
+        if request.team_name not in ["Blue Team", "Red Team"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Team name must be either 'Blue Team' or 'Red Team'"
+            )
+
         # Assign to team role
         success = await discord_service.assign_player_to_team(
             int(discord_user_id),
-            match_id,
-            team_name
+            request.match_id,
+            request.team_name
         )
+        
         if success:
-            logger.info(f"Assigned user {discord_user_id} to {team_name} in match {match_id}")
+            logger.info(f"Assigned user {discord_user_id} to {request.team_name} in match {request.match_id}")
             return {
                 "status": "success",
-                "message": f"Assigned to {team_name} in match {match_id}",
+                "message": f"Assigned to {request.team_name} in match {request.match_id}",
                 "discord_user_id": discord_user_id,
-                "team_name": team_name,
-                "match_id": match_id
+                "team_name": request.team_name,
+                "match_id": request.match_id
             }
         else:
             raise HTTPException(
@@ -88,6 +100,7 @@ async def get_linked_discord_account(
     try:
         user_key = f"user:{current_user['sub']}"
         discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        
         return {
             "summoner_id": current_user['sub'],
             "discord_user_id": discord_user_id,
@@ -109,7 +122,9 @@ async def unlink_discord_account(
     try:
         user_key = f"user:{current_user['sub']}"
         redis_manager.redis.hdel(user_key, "discord_user_id")
+        
         logger.info(f"Unlinked Discord account for summoner {current_user['sub']}")
+        
         return {
             "status": "success",
             "message": "Discord account unlinked successfully"
@@ -119,4 +134,21 @@ async def unlink_discord_account(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to unlink Discord account: {str(e)}"
+        )
+
+
+@router.get("/status")
+async def get_discord_status():
+    """Get Discord service status."""
+    try:
+        status = discord_service.get_status()
+        return {
+            "status": "success",
+            "discord_service": status
+        }
+    except Exception as e:
+        logger.error(f"Failed to get Discord status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get Discord status: {str(e)}"
         )

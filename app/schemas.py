@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 
 class MatchStartRequest(BaseModel):
@@ -31,6 +31,7 @@ class MatchStartRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError('Match ID cannot be empty')
         return v.strip()
+
     model_config = {
         "str_strip_whitespace": True,
         "validate_assignment": True
@@ -78,6 +79,7 @@ class DiscordChannelResponse(BaseModel):
         if not v or not v.strip():
             raise ValueError('Discord channel fields cannot be empty')
         return v.strip()
+
     model_config = {
         "str_strip_whitespace": True
     }
@@ -98,7 +100,7 @@ class VoiceRoomResponse(BaseModel):
         ...,
         description="List of summoner IDs in the voice room"
     )
-    discord_channels: Optional[Dict[str, DiscordChannelResponse]] = Field(
+    discord_channels: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Discord channels created for the voice room"
     )
@@ -114,6 +116,27 @@ class VoiceRoomResponse(BaseModel):
         if not v or not v.strip():
             raise ValueError('IDs cannot be empty')
         return v.strip()
+
     model_config = {
         "str_strip_whitespace": True
     }
+
+
+class DiscordLinkRequest(BaseModel):
+    """Schema for Discord account linking."""
+    discord_user_id: int = Field(
+        ...,
+        description="Discord user ID to link"
+    )
+
+
+class DiscordAssignRequest(BaseModel):
+    """Schema for Discord team assignment."""
+    match_id: str = Field(
+        ...,
+        description="Match ID for team assignment"
+    )
+    team_name: str = Field(
+        ...,
+        description="Team name (Blue Team or Red Team)"
+    )

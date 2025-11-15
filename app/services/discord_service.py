@@ -1,11 +1,12 @@
 import asyncio
 import discord
 import logging
+import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 from discord import Guild, VoiceChannel, CategoryChannel, Role
 from app.config import settings
-# from app.utils.exceptions import DiscordServiceException
+from app.database import redis_manager
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,9 @@ class DiscordService:
             intents.voice_states = True
 
             self.client = discord.Client(intents=intents)
-            # Event handlers
+            
+            # Setup event handlers
+            self.setup_event_handlers()
 
             @self.client.event
             async def on_ready():
@@ -50,6 +53,7 @@ class DiscordService:
             async def on_disconnect():
                 logger.warning("🔌 Discord bot disconnected")
                 self.connected = False
+                
             # Start connection in background
             self.connection_task = asyncio.create_task(self._connect_internal())
             # Wait for connection
@@ -64,6 +68,58 @@ class DiscordService:
             logger.error(f"❌ Discord connection error: {e}")
             self.mock_mode = True
             return True
+
+    def setup_event_handlers(self):
+        """Setup Discord event handlers for automatic voice channel management."""
+        if not self.client:
+            return
+
+        @self.client.event
+        async def on_voice_state_update(member, before, after):
+            """Automatically move players to their team channels when they join any voice channel."""
+            try:
+                # Игнорируем события от бота
+                if member.bot:
+                    return
+
+                # Если пользователь подключился к голосовому каналу
+                if after.channel and after.channel != before.channel:
+                    logger.info(f"👤 User {member.display_name} joined voice channel: {after.channel.name}")
+                    
+                    # Ищем активные матчи для этого пользователя
+                    user_key = f"user_discord:{member.id}"
+                    match_data = redis_manager.redis.get(user_key)
+                    
+                    if match_data:
+                        match_info = json.loads(match_data)
+                        match_id = match_info.get('match_id')
+                        team_name = match_info.get('team_name')
+                        
+                        if match_id and team_name:
+                            # Ищем голосовой канал команды
+                            target_channel = await self.find_team_channel(match_id, team_name)
+                            if target_channel and target_channel.id != after.channel.id:
+                                try:
+                                    await member.move_to(target_channel)
+                                    logger.info(f"✅ Automatically moved {member.display_name} to {team_name} channel")
+                                except discord.Forbidden:
+                                    logger.error(f"❌ No permission to move {member.display_name}")
+                                except discord.HTTPException as e:
+                                    logger.error(f"❌ Failed to move user: {e}")
+                
+            except Exception as e:
+                logger.error(f"❌ Error in voice state update: {e}")
+
+    async def find_team_channel(self, match_id: str, team_name: str) -> Optional[VoiceChannel]:
+        """Find voice channel for specific team in match."""
+        if not self.guild or not self.category:
+            return None
+            
+        channel_name = f"LoL Match {match_id} - {team_name}"
+        for channel in self.category.voice_channels:
+            if channel.name == channel_name:
+                return channel
+        return None
 
     async def _connect_internal(self):
         """Internal method to handle Discord connection."""
@@ -296,30 +352,50 @@ class DiscordService:
         return result
 
     async def assign_player_to_team(self, discord_user_id: int, match_id: str, team_name: str) -> bool:
-        """Assign a Discord user to a team role."""
-        if self.mock_mode or not self.connected or not self.guild:
+        """Assign a Discord user to a team role and save match info."""
+        if self.mock_mode:
+            logger.info(f"🎮 MOCK: Assigning user {discord_user_id} to {team_name} in match {match_id}")
+            return True
+            
+        if not self.connected or not self.guild:
             logger.warning("Discord not connected - cannot assign role")
             return False
+            
         try:
             # Find team role
             role_name = f"LoL {match_id} - {team_name}"
             team_role = None
+            
             for role in self.guild.roles:
                 if role.name == role_name:
                     team_role = role
                     break
+                    
             if not team_role:
                 logger.error(f"Team role not found: {role_name}")
                 return False
+
             # Find member
             member = self.guild.get_member(discord_user_id)
             if not member:
                 logger.error(f"Discord user {discord_user_id} not found in guild")
                 return False
+
             # Assign role
             await member.add_roles(team_role, reason=f"Assigned to {team_name} in match {match_id}")
             logger.info(f"✅ Assigned {member.display_name} to role {team_role.name}")
+
+            # Сохраняем информацию о матче для автоматического перемещения
+            user_key = f"user_discord:{discord_user_id}"
+            match_info = {
+                'match_id': match_id,
+                'team_name': team_name,
+                'assigned_at': datetime.now(timezone.utc).isoformat()
+            }
+            redis_manager.redis.setex(user_key, 3600, json.dumps(match_info))  # Храним 1 час
+            
             return True
+            
         except Exception as e:
             logger.error(f"❌ Failed to assign player to team: {e}")
             return False
@@ -365,45 +441,6 @@ class DiscordService:
         except Exception as e:
             logger.error(f"❌ Failed to cleanup match channels and roles: {e}")
 
-    async def delete_voice_channel(self, channel_id: int):
-        """Delete a voice channel by ID."""
-        if self.mock_mode or not self.client:
-            return
-        try:
-            channel = self.client.get_channel(channel_id)
-            if isinstance(channel, VoiceChannel):
-                await channel.delete(reason="LoL match ended")
-                logger.info(f"✅ Deleted Discord voice channel: {channel_id}")
-        except Exception as e:
-            logger.error(f"❌ Failed to delete Discord channel {channel_id}: {e}")
-
-    async def disconnect(self):
-        """Disconnect from Discord."""
-        try:
-            if self.connection_task:
-                self.connection_task.cancel()
-                try:
-                    await self.connection_task
-                except asyncio.CancelledError:
-                    pass
-            if self.client:
-                await self.client.close()
-            self.connected = False
-            self.mock_mode = False
-            logger.info("✅ Discord service disconnected")
-        except Exception as e:
-            logger.error(f"Error during Discord disconnect: {e}")
-
-    def get_status(self) -> Dict[str, Any]:
-        """Get Discord service status."""
-        return {
-            "connected": self.connected,
-            "mock_mode": self.mock_mode,
-            "guild_available": self.guild is not None,
-            "category_available": self.category is not None,
-            "status": "mock" if self.mock_mode else "connected" if self.connected else "disconnected"
-        }
-
     async def disconnect_all_members(self, channel_id: int):
         """Disconnect all members from a voice channel."""
         if self.mock_mode or not self.client:
@@ -443,37 +480,16 @@ class DiscordService:
         except Exception as e:
             logger.error(f"❌ Failed to delete Discord channel {channel_id}: {e}")
 
-    async def cleanup_match_channels(self, match_data: Dict[str, Any]):
-        """Cleanup channels and roles after match ends."""
-        if self.mock_mode:
-            logger.info(f"🎮 MOCK: Cleaning up channels for match {match_data.get('match_id')}")
-            return
-        try:
-            tasks = []
-            # Отключаем и удаляем каналы
-            if 'blue_team' in match_data and not match_data['blue_team'].get('mock', True):
-                channel_id = int(match_data['blue_team']['channel_id'])
-                tasks.append(self.delete_voice_channel(channel_id))
-            if 'red_team' in match_data and not match_data['red_team'].get('mock', True):
-                channel_id = int(match_data['red_team']['channel_id'])
-                tasks.append(self.delete_voice_channel(channel_id))
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            # Удаляем роли команд
-            match_id = match_data.get('match_id')
-            if match_id:
-                await self.cleanup_team_roles(match_id)
-            logger.info(f"✅ Cleaned up secured channels and roles for match {match_data['match_id']}")
-        except Exception as e:
-            logger.error(f"❌ Failed to cleanup match channels and roles: {e}")
-
     async def force_disconnect_all_matches(self):
         """Force disconnect all members from all LoL voice channels (emergency cleanup)."""
         if self.mock_mode or not self.guild or not self.category:
-            return
+            logger.info("🎮 MOCK: Force disconnect all matches")
+            return {"disconnected_members": 0, "channels_processed": 0}
+        
         try:
             disconnected_count = 0
             channel_count = 0
+            
             for channel in self.category.voice_channels:
                 if "LoL Match" in channel.name and isinstance(channel, VoiceChannel):
                     channel_count += 1
@@ -486,6 +502,7 @@ class DiscordService:
                                 disconnected_count += 1
                             except Exception as e:
                                 logger.warning(f"⚠️ Failed to force disconnect {member.display_name}: {e}")
+            
             logger.info(f"✅ Force disconnected {disconnected_count} members from {channel_count} LoL channels")
             return {
                 "disconnected_members": disconnected_count,
@@ -494,6 +511,33 @@ class DiscordService:
         except Exception as e:
             logger.error(f"❌ Failed to force disconnect all matches: {e}")
             return None
+
+    async def disconnect(self):
+        """Disconnect from Discord."""
+        try:
+            if self.connection_task:
+                self.connection_task.cancel()
+                try:
+                    await self.connection_task
+                except asyncio.CancelledError:
+                    pass
+            if self.client:
+                await self.client.close()
+            self.connected = False
+            self.mock_mode = False
+            logger.info("✅ Discord service disconnected")
+        except Exception as e:
+            logger.error(f"Error during Discord disconnect: {e}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get Discord service status."""
+        return {
+            "connected": self.connected,
+            "mock_mode": self.mock_mode,
+            "guild_available": self.guild is not None,
+            "category_available": self.category is not None,
+            "status": "mock" if self.mock_mode else "connected" if self.connected else "disconnected"
+        }
 
 
 # Global instance
