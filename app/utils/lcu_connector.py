@@ -19,23 +19,23 @@ class LCUConnector:
         self._initialized = False
 
     def _get_lockfile_path(self) -> Optional[str]:
-        """Get the path to League of Legends lockfile.
-
-        Returns:
-            Path to lockfile or None if not found
-        """
+        """Get the path to League of Legends lockfile for Windows."""
         possible_paths = [
-            # Riot Client
+            # Windows paths
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "Riot Client", "Config", "lockfile"),
-            # League Client
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "League of Legends", "Config", "lockfile"),
-            # ProgramData alternative
-            os.path.join(os.getenv('PROGRAMDATA', ''), "Riot Games", "Riot Client", "Config", "lockfile"),
+            # WSL2 paths
+            "/mnt/c/Users/%s/AppData/Local/Riot Games/Riot Client/Config/lockfile" % os.getenv('USERNAME', 'user'),
+            "/mnt/c/Users/%s/AppData/Local/Riot Games/League of Legends/Config/lockfile" % os.getenv('USERNAME', 'user'),
         ]
         for path in possible_paths:
-            if os.path.exists(path):
-                logger.info(f"Found lockfile at: {path}")
-                return path
+            try:
+                expanded_path = os.path.expandvars(path) if '%' not in path else path % os.getenv('USERNAME', 'user')
+                if os.path.exists(expanded_path):
+                    logger.info(f"✅ Found lockfile at: {expanded_path}")
+                    return expanded_path
+            except Exception:
+                continue
         logger.debug("League client lockfile not found (game not running)")
         return None
 

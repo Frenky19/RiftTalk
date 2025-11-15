@@ -12,38 +12,36 @@ router = APIRouter(prefix="/voice", tags=["voice"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/start", response_model=VoiceRoomResponse)
+@router.post("/start")
 async def start_voice_chat(
     request: MatchStartRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Create a new voice chat room for a match with Discord integration"""
+    """Create a new voice chat room for a match"""
     try:
-        # В режиме разработки пропускаем проверку авторизации
-        if not settings.DEBUG and current_user["sub"] not in request.players:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to create voice chat for this match"
-            )
-        # Подготавливаем данные команд для Discord
+        # Подготавливаем данные команд
         team_data = {
             'blue_team': request.blue_team or [],
             'red_team': request.red_team or []
         }
-        # Создаем голосовую комнату с Discord каналами
-        voice_room = await voice_service.create_voice_room(
+        
+        # Создаем голосовую комнату
+        result = await voice_service.create_voice_room(
             request.match_id,
             request.players,
             team_data
         )
-        return VoiceRoomResponse(
-            room_id=voice_room.room_id,
-            match_id=voice_room.match_id,
-            players=voice_room.players,
-            discord_channels=voice_room.discord_channels,
-            created_at=voice_room.created_at.isoformat()
-        )
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+            
+        return result
+        
     except Exception as e:
+        logger.error(f"Voice chat creation failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create voice chat: {str(e)}"

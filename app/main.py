@@ -95,24 +95,40 @@ async def cleanup_services():
 async def handle_game_event(event_type: str, data: dict):
     """Handle game events from LCU."""
     try:
-        logger.info(f"Game event: {event_type}")
+        logger.info(f"🎮 Game event received: {event_type}")
         if event_type == "match_start":
             match_id = data.get('match_id')
-            if match_id:
-                await voice_service.create_voice_room(
-                    match_id,
-                    data.get('players', []),
-                    {
-                        'blue_team': data.get('blue_team', []),
-                        'red_team': data.get('red_team', [])
-                    }
-                )
+            players = data.get('players', [])
+            if match_id and players:
+                logger.info(f"🚀 Creating voice room for match {match_id} with {len(players)} players")
+                try:
+                    await voice_service.create_voice_room(
+                        match_id,
+                        players,
+                        {
+                            'blue_team': data.get('blue_team', []),
+                            'red_team': data.get('red_team', [])
+                        }
+                    )
+                    logger.info(f"✅ Successfully created voice room for match {match_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to create voice room for match {match_id}: {e}")
+            else:
+                logger.warning(f"⚠️ Invalid match data for event {event_type}: {data}")
         elif event_type == "match_end":
             match_id = data.get('match_id')
             if match_id:
-                await voice_service.close_voice_room(match_id)
+                logger.info(f"🛑 Closing voice room for match {match_id}")
+                try:
+                    success = await voice_service.close_voice_room(match_id)
+                    if success:
+                        logger.info(f"✅ Successfully closed voice room for match {match_id}")
+                    else:
+                        logger.warning(f"⚠️ No active voice room found for match {match_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to close voice room for match {match_id}: {e}")
     except Exception as e:
-        logger.error(f"Error handling game event: {e}")
+        logger.error(f"❌ Error handling game event {event_type}: {e}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -155,6 +171,7 @@ app.include_router(voice.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(lcu.router, prefix="/api")
 app.include_router(discord.router, prefix="/api")
+
 
 @app.get("/")
 async def root():

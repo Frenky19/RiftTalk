@@ -404,100 +404,96 @@ class DiscordService:
             "status": "mock" if self.mock_mode else "connected" if self.connected else "disconnected"
         }
 
-
-async def disconnect_all_members(self, channel_id: int):
-    """Disconnect all members from a voice channel."""
-    if self.mock_mode or not self.client:
-        return
-    try:
-        channel = self.client.get_channel(channel_id)
-        if isinstance(channel, VoiceChannel):
-            members = channel.members
-            if members:
-                logger.info(f"🔌 Disconnecting {len(members)} members from channel {channel.name}")
-                for member in members:
-                    try:
-                        await member.move_to(None)  # Отключаем пользователя
-                        logger.debug(f"✅ Disconnected {member.display_name} from voice channel")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to disconnect {member.display_name}: {e}")
-                logger.info(f"✅ Successfully disconnected all members from {channel.name}")
-            else:
-                logger.info(f"🔍 No members in channel {channel.name} to disconnect")
-    except Exception as e:
-        logger.error(f"❌ Failed to disconnect members from channel {channel_id}: {e}")
-
-
-async def delete_voice_channel(self, channel_id: int):
-    """Delete a voice channel by ID, first disconnecting all members."""
-    if self.mock_mode or not self.client:
-        return
-    try:
-        channel = self.client.get_channel(channel_id)
-        if isinstance(channel, VoiceChannel):
-            # Сначала отключаем всех участников
-            await self.disconnect_all_members(channel_id)
-            # Затем удаляем канал
-            await channel.delete(reason="LoL match ended")
-            logger.info(f"✅ Deleted Discord voice channel: {channel.name} (ID: {channel_id})")
-    except discord.NotFound:
-        logger.warning(f"⚠️ Channel {channel_id} not found (already deleted)")
-    except Exception as e:
-        logger.error(f"❌ Failed to delete Discord channel {channel_id}: {e}")
-
-
-async def cleanup_match_channels(self, match_data: Dict[str, Any]):
-    """Cleanup channels and roles after match ends."""
-    if self.mock_mode:
-        logger.info(f"🎮 MOCK: Cleaning up channels for match {match_data.get('match_id')}")
-        return
-    try:
-        tasks = []
-        # Отключаем и удаляем каналы
-        if 'blue_team' in match_data and not match_data['blue_team'].get('mock', True):
-            channel_id = int(match_data['blue_team']['channel_id'])
-            tasks.append(self.delete_voice_channel(channel_id))
-        if 'red_team' in match_data and not match_data['red_team'].get('mock', True):
-            channel_id = int(match_data['red_team']['channel_id'])
-            tasks.append(self.delete_voice_channel(channel_id))
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        # Удаляем роли команд
-        match_id = match_data.get('match_id')
-        if match_id:
-            await self.cleanup_team_roles(match_id)
-        logger.info(f"✅ Cleaned up secured channels and roles for match {match_data['match_id']}")
-    except Exception as e:
-        logger.error(f"❌ Failed to cleanup match channels and roles: {e}")
-
-
-async def force_disconnect_all_matches(self):
-    """Force disconnect all members from all LoL voice channels (emergency cleanup)."""
-    if self.mock_mode or not self.guild or not self.category:
-        return
-    try:
-        disconnected_count = 0
-        channel_count = 0
-        for channel in self.category.voice_channels:
-            if "LoL Match" in channel.name and isinstance(channel, VoiceChannel):
-                channel_count += 1
+    async def disconnect_all_members(self, channel_id: int):
+        """Disconnect all members from a voice channel."""
+        if self.mock_mode or not self.client:
+            return
+        try:
+            channel = self.client.get_channel(channel_id)
+            if isinstance(channel, VoiceChannel):
                 members = channel.members
                 if members:
-                    logger.info(f"🔌 Force disconnecting {len(members)} members from {channel.name}")
+                    logger.info(f"🔌 Disconnecting {len(members)} members from channel {channel.name}")
                     for member in members:
                         try:
-                            await member.move_to(None)
-                            disconnected_count += 1
+                            await member.move_to(None)  # Отключаем пользователя
+                            logger.debug(f"✅ Disconnected {member.display_name} from voice channel")
                         except Exception as e:
-                            logger.warning(f"⚠️ Failed to force disconnect {member.display_name}: {e}")
-        logger.info(f"✅ Force disconnected {disconnected_count} members from {channel_count} LoL channels")
-        return {
-            "disconnected_members": disconnected_count,
-            "channels_processed": channel_count
-        }
-    except Exception as e:
-        logger.error(f"❌ Failed to force disconnect all matches: {e}")
-        return None
+                            logger.warning(f"⚠️ Failed to disconnect {member.display_name}: {e}")
+                    logger.info(f"✅ Successfully disconnected all members from {channel.name}")
+                else:
+                    logger.info(f"🔍 No members in channel {channel.name} to disconnect")
+        except Exception as e:
+            logger.error(f"❌ Failed to disconnect members from channel {channel_id}: {e}")
+
+    async def delete_voice_channel(self, channel_id: int):
+        """Delete a voice channel by ID, first disconnecting all members."""
+        if self.mock_mode or not self.client:
+            return
+        try:
+            channel = self.client.get_channel(channel_id)
+            if isinstance(channel, VoiceChannel):
+                # Сначала отключаем всех участников
+                await self.disconnect_all_members(channel_id)
+                # Затем удаляем канал
+                await channel.delete(reason="LoL match ended")
+                logger.info(f"✅ Deleted Discord voice channel: {channel.name} (ID: {channel_id})")
+        except discord.NotFound:
+            logger.warning(f"⚠️ Channel {channel_id} not found (already deleted)")
+        except Exception as e:
+            logger.error(f"❌ Failed to delete Discord channel {channel_id}: {e}")
+
+    async def cleanup_match_channels(self, match_data: Dict[str, Any]):
+        """Cleanup channels and roles after match ends."""
+        if self.mock_mode:
+            logger.info(f"🎮 MOCK: Cleaning up channels for match {match_data.get('match_id')}")
+            return
+        try:
+            tasks = []
+            # Отключаем и удаляем каналы
+            if 'blue_team' in match_data and not match_data['blue_team'].get('mock', True):
+                channel_id = int(match_data['blue_team']['channel_id'])
+                tasks.append(self.delete_voice_channel(channel_id))
+            if 'red_team' in match_data and not match_data['red_team'].get('mock', True):
+                channel_id = int(match_data['red_team']['channel_id'])
+                tasks.append(self.delete_voice_channel(channel_id))
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            # Удаляем роли команд
+            match_id = match_data.get('match_id')
+            if match_id:
+                await self.cleanup_team_roles(match_id)
+            logger.info(f"✅ Cleaned up secured channels and roles for match {match_data['match_id']}")
+        except Exception as e:
+            logger.error(f"❌ Failed to cleanup match channels and roles: {e}")
+
+    async def force_disconnect_all_matches(self):
+        """Force disconnect all members from all LoL voice channels (emergency cleanup)."""
+        if self.mock_mode or not self.guild or not self.category:
+            return
+        try:
+            disconnected_count = 0
+            channel_count = 0
+            for channel in self.category.voice_channels:
+                if "LoL Match" in channel.name and isinstance(channel, VoiceChannel):
+                    channel_count += 1
+                    members = channel.members
+                    if members:
+                        logger.info(f"🔌 Force disconnecting {len(members)} members from {channel.name}")
+                        for member in members:
+                            try:
+                                await member.move_to(None)
+                                disconnected_count += 1
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to force disconnect {member.display_name}: {e}")
+            logger.info(f"✅ Force disconnected {disconnected_count} members from {channel_count} LoL channels")
+            return {
+                "disconnected_members": disconnected_count,
+                "channels_processed": channel_count
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to force disconnect all matches: {e}")
+            return None
 
 
 # Global instance

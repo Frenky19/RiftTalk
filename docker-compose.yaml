@@ -31,12 +31,15 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # volumes для Windows
     volumes:
       - ./app:/app/app
-      - /c/Users:/host_users:ro  # Для WSL2
-      - /Users:/host_users:ro    # Для Mac
-      - ${LOCALAPPDATA}:/host_localappdata:ro  # Для Windows
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ./static:/app/static
+      - //var/run/docker.sock:/var/run/docker.sock
+      # Для доступа к LCU в Windows
+      - ${USERPROFILE}/AppData/Local/Riot Games:/host_riot_games:ro
+    # Добавляем привилегии для доступа к сокету Docker
+    privileged: true
 
 volumes:
   redis_data:

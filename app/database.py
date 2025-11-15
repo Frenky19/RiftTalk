@@ -1,5 +1,6 @@
 import redis
 import json
+import datetime
 import logging
 from typing import Dict, Any
 from urllib.parse import urlparse
@@ -53,18 +54,15 @@ class RedisManager:
                 logger.error(f"Unexpected Redis error: {e}")
                 raise DatabaseException(f"Redis initialization failed: {e}")
 
-    def create_voice_room(self, room_id: str, match_id: str, room_data: Dict[str, Any], ttl: int = 3600) -> bool:
+    def create_voice_room(self, room_id: str, match_id: str, room_data: dict, ttl: int = 3600) -> bool:
         """Create voice room with proper data serialization."""
         try:
             pipeline = self.redis.pipeline()
-            # Serialize complex fields
-            serialized_data = room_data.copy()
-            if 'players' in serialized_data and isinstance(serialized_data['players'], list):
-                serialized_data['players'] = ','.join(serialized_data['players'])
-            if 'discord_channels' in serialized_data:
-                # ⭐⭐⭐ Убедитесь, что используется json.dumps ⭐⭐⭐
-                serialized_data['discord_channels'] = json.dumps(serialized_data['discord_channels'])
-            pipeline.hset(f"room:{room_id}", mapping=serialized_data)
+            # Простая проверка - если room_data не dict, преобразуем
+            if not hasattr(room_data, 'items'):
+                logger.error(f"room_data is not a dict: {type(room_data)}")
+                return False
+            pipeline.hset(f"room:{room_id}", mapping=room_data)
             pipeline.expire(f"room:{room_id}", ttl)
             pipeline.set(f"match_room:{match_id}", room_id, ex=ttl)
             results = pipeline.execute()
@@ -79,20 +77,25 @@ class RedisManager:
             room_data = self.redis.hgetall(f"room:{room_id}")
             if not room_data:
                 return {}
-            # Deserialize fields
-            if 'players' in room_data:
-                room_data['players'] = room_data['players'].split(',')
-            if 'discord_channels' in room_data and room_data['discord_channels']:
-                try:
-                    # ⭐⭐⭐ Убедитесь, что используется json.loads ⭐⭐⭐
-                    room_data['discord_channels'] = json.loads(room_data['discord_channels'])
-                except json.JSONDecodeError:
-                    room_data['discord_channels'] = {}
-            if 'is_active' in room_data:
-                room_data['is_active'] = room_data['is_active'].lower() == 'true'
-            if 'mock_mode' in room_data:
-                room_data['mock_mode'] = room_data['mock_mode'].lower() == 'true'
-            return room_data
+            # Десериализация полей
+            result = {}
+            for key, value in room_data.items():
+                if key == 'players' and value:
+                    try:
+                        result[key] = json.loads(value)  # Десериализуем JSON
+                    except json.JSONDecodeError:
+                        # Fallback для старого формата (через запятую)
+                        result[key] = value.split(',') if value else []
+                elif key == 'discord_channels' and value:
+                    try:
+                        result[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        result[key] = {}
+                elif key in ['is_active', 'mock_mode']:
+                    result[key] = value.lower() == 'true'
+                else:
+                    result[key] = value
+            return result
         except Exception as e:
             logger.error(f"Failed to get voice room: {e}")
             return {}

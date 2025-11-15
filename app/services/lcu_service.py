@@ -99,6 +99,45 @@ class LCUService:
         except Exception as e:
             raise LCUException(f"Failed to parse match data: {e}")
 
+    def _parse_gameflow_session(self, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Parse gameflow session data from LCU."""
+        try:
+            if not session_data:
+                return None
+            game_data = session_data.get('gameData')
+            if not game_data:
+                return None
+            players = []
+            team_one = game_data.get('teamOne', [])
+            team_two = game_data.get('teamTwo', [])
+            # Парсим игроков из команды 1 (синяя)
+            for player in team_one:
+                players.append({
+                    "summoner_id": player.get('summonerId', ''),
+                    "summoner_name": player.get('summonerName', ''),
+                    "champion_id": player.get('championId', 0),
+                    "team_id": 100  # Синяя команда
+                })
+            # Парсим игроков из команды 2 (красная)
+            for player in team_two:
+                players.append({
+                    "summoner_id": player.get('summonerId', ''),
+                    "summoner_name": player.get('summonerName', ''),
+                    "champion_id": player.get('championId', 0),
+                    "team_id": 200  # Красная команда
+                })
+            return {
+                "match_id": str(game_data.get('gameId', '')),
+                "players": players,
+                "game_mode": game_data.get('gameMode', ''),
+                "start_time": datetime.now(timezone.utc),
+                "blue_team": [p['summoner_id'] for p in players if p['team_id'] == 100],
+                "red_team": [p['summoner_id'] for p in players if p['team_id'] == 200]
+            }
+        except Exception as e:
+            logger.error(f"Error parsing gameflow session: {e}")
+            return None
+
     async def start_monitoring(self, callback):
         """Start monitoring game state changes.
 
