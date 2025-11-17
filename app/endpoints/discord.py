@@ -152,3 +152,34 @@ async def get_discord_status():
             status_code=500,
             detail=f"Failed to get Discord status: {str(e)}"
         )
+
+
+@router.get("/user-info")
+async def get_discord_user_info(
+    discord_user_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get information about Discord user."""
+    try:
+        # This is a mock - in real implementation you'd fetch from Discord API
+        # For now, we'll just return basic info
+        user_exists = True  # Assume user exists for demo purposes
+        
+        # In a real implementation, you would check if the user exists in the Discord guild
+        # For example: 
+        # guild = discord_service.guild
+        # member = guild.get_member(discord_user_id)
+        # user_exists = member is not None
+        
+        return {
+            "status": "success",
+            "discord_user_id": discord_user_id,
+            "user_exists": user_exists,
+            "note": "This is a mock response. In production, would verify user exists in Discord guild."
+        }
+    except Exception as e:
+        logger.error(f"Failed to get Discord user info: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get Discord user info: {str(e)}"
+        )

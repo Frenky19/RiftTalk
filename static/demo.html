@@ -54,14 +54,43 @@
             padding: 20px;
             border-radius: 10px;
             border-left: 4px solid #00ff88;
+            transition: all 0.3s ease;
+        }
+        
+        .status-card.healthy {
+            border-left-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
         }
         
         .status-card.warning {
             border-left-color: #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
         }
         
         .status-card.error {
             border-left-color: #ff4444;
+            background: rgba(255, 68, 68, 0.1);
+        }
+        
+        .status-card.checking {
+            border-left-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+        
+        .status-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .status-message {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .status-details {
+            font-size: 0.9em;
+            opacity: 0.8;
         }
         
         .controls {
@@ -283,6 +312,28 @@
         .discord-help li {
             margin: 5px 0;
         }
+
+        .auto-refresh {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 0.9em;
+            opacity: 0.7;
+        }
+
+        .user-info {
+            background: rgba(88, 101, 242, 0.2);
+            border: 1px solid #5865F2;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        .user-management {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
@@ -292,33 +343,69 @@
             <p>Тестовая страница для проверки работы API голосового чата для League of Legends</p>
         </header>
         
-        <div class="demo-info">
-            <strong>💡 Режим разработки:</strong> Discord работает в MOCK-режиме. Для полноценной работы установите Discord и настройте бота.
+        <div class="demo-info" id="demoInfo">
+            <strong>💡 Статус:</strong> Загрузка...
+        </div>
+        
+        <div class="auto-refresh" id="autoRefresh">
+            🔄 Автообновление статуса каждые 10 секунд
         </div>
         
         <div class="status-panel">
-            <div class="status-card" id="api-status">
-                <h3>API Status</h3>
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Checking API status...</p>
+            <div class="status-card checking" id="api-status">
+                <div class="status-icon">🔄</div>
+                <div class="status-message">API Status</div>
+                <div class="status-details">Checking API status...</div>
+            </div>
+            
+            <div class="status-card checking" id="redis-status">
+                <div class="status-icon">🔄</div>
+                <div class="status-message">Redis Status</div>
+                <div class="status-details">Checking Redis connection...</div>
+            </div>
+            
+            <div class="status-card checking" id="discord-status">
+                <div class="status-icon">🔄</div>
+                <div class="status-message">Discord Status</div>
+                <div class="status-details">Checking Discord connection...</div>
+            </div>
+            
+            <div class="status-card checking" id="lcu-status">
+                <div class="status-icon">🔄</div>
+                <div class="status-message">LCU Status</div>
+                <div class="status-details">Checking LCU connection...</div>
+            </div>
+        </div>
+
+        <!-- Управление Discord пользователями -->
+        <div class="advanced-controls">
+            <h3>👤 Управление Discord пользователями</h3>
+            
+            <div class="input-group">
+                <label for="discordUserIdInput">Discord User ID:</label>
+                <input type="text" id="discordUserIdInput" placeholder="Введите ваш Discord ID">
+                <div style="margin-top: 10px;">
+                    <button onclick="saveDiscordUser()" class="success">Сохранить Discord ID</button>
+                    <button onclick="clearDiscordUser()" class="warning">Очистить</button>
+                    <button onclick="verifyDiscordUser()">Проверить пользователя</button>
                 </div>
             </div>
             
-            <div class="status-card" id="redis-status">
-                <h3>Redis Status</h3>
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Checking Redis connection...</p>
-                </div>
+            <div class="user-info" id="currentUserInfo" style="display: none;">
+                <strong>Текущий пользователь:</strong> 
+                <span id="currentUserId"></span>
+                <br>
+                <small>ID сохранен в localStorage</small>
             </div>
             
-            <div class="status-card" id="discord-status">
-                <h3>Discord Status</h3>
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Checking Discord connection...</p>
-                </div>
+            <div class="discord-help">
+                <strong>💡 Как найти Discord ID:</strong>
+                <ol>
+                    <li>Откройте Discord</li>
+                    <li>Перейдите в Настройки → Дополнительно</li>
+                    <li>Включите "Режим разработчика"</li>
+                    <li>Правой кнопкой по вашему аватару → "Копировать ID пользователя"</li>
+                </ol>
             </div>
         </div>
 
@@ -374,25 +461,140 @@
         const API_BASE = 'http://localhost:8000';
         let currentToken = '';
         let lastMatchId = '';
+        let refreshInterval;
+        let currentDiscordUserId = null;
         
         // Initialize status checks
         document.addEventListener('DOMContentLoaded', function() {
             checkAllStatuses();
             getActiveRooms();
+            loadDiscordUser();
+            // Автоматическое обновление статуса каждые 10 секунд
+            refreshInterval = setInterval(checkAllStatuses, 10000);
         });
+        
+        // Discord User Management
+        function loadDiscordUser() {
+            const savedUserId = localStorage.getItem('discordUserId');
+            if (savedUserId) {
+                currentDiscordUserId = savedUserId;
+                document.getElementById('discordUserIdInput').value = savedUserId;
+                document.getElementById('currentUserId').textContent = savedUserId;
+                document.getElementById('currentUserInfo').style.display = 'block';
+                console.log('✅ Discord user loaded:', savedUserId);
+            }
+        }
+
+        function saveDiscordUser() {
+            const userId = document.getElementById('discordUserIdInput').value.trim();
+            
+            if (!userId) {
+                alert('⚠️ Пожалуйста, введите Discord User ID');
+                return;
+            }
+            
+            // Basic Discord ID validation (Discord IDs are snowflakes, usually 17-19 digits)
+            if (!/^\d{17,20}$/.test(userId)) {
+                alert('❌ Неверный формат Discord ID. Должен содержать 17-20 цифр.\n\nКак найти ID: Настройки → Дополнительно → Режим разработчика → ПКМ по аватару → Копировать ID');
+                return;
+            }
+            
+            currentDiscordUserId = userId;
+            localStorage.setItem('discordUserId', userId);
+            
+            document.getElementById('currentUserId').textContent = userId;
+            document.getElementById('currentUserInfo').style.display = 'block';
+            
+            showResult('Discord User Saved', {
+                user_id: userId,
+                status: 'saved',
+                note: 'Discord ID сохранен в localStorage'
+            }, true);
+            
+            console.log('✅ Discord user saved:', userId);
+        }
+
+        function clearDiscordUser() {
+            currentDiscordUserId = null;
+            localStorage.removeItem('discordUserId');
+            document.getElementById('discordUserIdInput').value = '';
+            document.getElementById('currentUserInfo').style.display = 'none';
+            
+            showResult('Discord User Cleared', {
+                status: 'cleared',
+                note: 'Discord ID удален'
+            }, true);
+        }
+
+        // Helper function to get current Discord user with validation
+        function getCurrentDiscordUser() {
+            if (!currentDiscordUserId) {
+                const saved = localStorage.getItem('discordUserId');
+                if (saved) {
+                    currentDiscordUserId = saved;
+                    return saved;
+                }
+                return null;
+            }
+            return currentDiscordUserId;
+        }
+
+        // Updated function to require Discord user
+        function requireDiscordUser() {
+            const userId = getCurrentDiscordUser();
+            if (!userId) {
+                alert('❌ Сначала сохраните ваш Discord User ID в разделе "Управление Discord пользователями"');
+                return null;
+            }
+            return userId;
+        }
+
+        async function verifyDiscordUser() {
+            const discordUserId = requireDiscordUser();
+            if (!discordUserId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/discord/user-info?discord_user_id=${discordUserId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                const data = await response.json();
+                showResult('Discord User Verification', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('Discord User Verification', {error: error.message}, false);
+            }
+        }
         
         async function checkAllStatuses() {
             await checkApiStatus();
             await checkHealthStatus();
+            // Обновляем время последнего обновления
+            document.getElementById('autoRefresh').innerHTML = 
+                `🔄 Автообновление статуса (последнее: ${new Date().toLocaleTimeString()})`;
         }
         
         async function checkApiStatus() {
             try {
                 const response = await fetch(`${API_BASE}/`);
                 const data = await response.json();
-                updateStatus('api-status', '✅ API is running', 'success', data);
+                updateStatusCard('api-status', '✅ API is running', 'healthy', {
+                    message: data.message,
+                    status: data.status,
+                    timestamp: data.timestamp
+                });
             } catch (error) {
-                updateStatus('api-status', '❌ API connection failed', 'error', {error: error.message});
+                updateStatusCard('api-status', '❌ API connection failed', 'error', {error: error.message});
             }
         }
         
@@ -401,48 +603,70 @@
                 const response = await fetch(`${API_BASE}/health`);
                 const data = await response.json();
                 
+                // Update demo info message
+                document.getElementById('demoInfo').innerHTML = `<strong>💡 Статус:</strong> ${data.message}`;
+                
                 // Update Redis status
-                const redisStatus = data.redis.includes('healthy') ? 'success' : 'error';
-                const redisMessage = data.redis.includes('healthy') ? '✅ Redis connected' : '❌ Redis connection issue';
-                updateStatus('redis-status', redisMessage, redisStatus, {status: data.redis});
+                const redisStatus = data.services.redis;
+                if (redisStatus === 'healthy') {
+                    updateStatusCard('redis-status', '✅ Redis connected', 'healthy', {status: redisStatus});
+                } else if (redisStatus.includes('error')) {
+                    updateStatusCard('redis-status', '❌ Redis connection issue', 'error', {status: redisStatus});
+                } else {
+                    updateStatusCard('redis-status', '🔄 Redis checking', 'checking', {status: redisStatus});
+                }
                 
                 // Update Discord status
-                let discordMessage, discordType;
-                if (data.discord === 'connected') {
-                    discordMessage = '✅ Discord connected';
-                    discordType = 'success';
-                } else if (data.discord === 'mock_mode') {
-                    discordMessage = '🔶 Discord MOCK mode';
-                    discordType = 'warning';
-                } else if (data.discord === 'disabled') {
-                    discordMessage = '🔶 Discord disabled';
-                    discordType = 'warning';
+                const discordStatus = data.services.discord;
+                if (discordStatus === 'connected') {
+                    updateStatusCard('discord-status', '✅ Discord connected', 'healthy', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
+                } else if (discordStatus === 'mock_mode') {
+                    updateStatusCard('discord-status', '🔶 Discord MOCK mode', 'warning', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
+                } else if (discordStatus === 'disabled') {
+                    updateStatusCard('discord-status', '🔶 Discord disabled', 'warning', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
                 } else {
-                    discordMessage = '❌ Discord connection failed';
-                    discordType = 'error';
+                    updateStatusCard('discord-status', '❌ Discord connection failed', 'error', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
                 }
-                updateStatus('discord-status', discordMessage, discordType, {status: data.discord, details: data.discord_details});
+                
+                // Update LCU status
+                const lcuStatus = data.services.lcu;
+                if (lcuStatus === 'connected') {
+                    updateStatusCard('lcu-status', '✅ LCU connected', 'healthy', {status: lcuStatus});
+                } else if (lcuStatus === 'disconnected') {
+                    updateStatusCard('lcu-status', '🔶 LCU disconnected', 'warning', {status: lcuStatus});
+                } else {
+                    updateStatusCard('lcu-status', '🔄 LCU unavailable', 'checking', {status: lcuStatus});
+                }
                 
             } catch (error) {
-                updateStatus('health-status', '❌ Health check failed', 'error', {error: error.message});
+                updateStatusCard('health-status', '❌ Health check failed', 'error', {error: error.message});
             }
         }
         
-        function updateStatus(elementId, message, type, data) {
+        function updateStatusCard(elementId, message, type, data) {
             const element = document.getElementById(elementId);
+            const icon = type === 'healthy' ? '✅' : 
+                        type === 'warning' ? '🔶' : 
+                        type === 'error' ? '❌' : '🔄';
+            
             element.innerHTML = `
-                <h3>${element.querySelector('h3').textContent}</h3>
-                <p><strong>${message}</strong></p>
-                <pre class="hidden">${JSON.stringify(data, null, 2)}</pre>
-                <button onclick="toggleDetails(this)">Show Details</button>
+                <div class="status-icon">${icon}</div>
+                <div class="status-message">${message}</div>
+                <div class="status-details">${JSON.stringify(data, null, 2)}</div>
             `;
             element.className = `status-card ${type}`;
-        }
-        
-        function toggleDetails(button) {
-            const pre = button.previousElementSibling;
-            pre.classList.toggle('hidden');
-            button.textContent = pre.classList.contains('hidden') ? 'Show Details' : 'Hide Details';
         }
         
         async function testEndpoint(endpoint) {
@@ -576,6 +800,91 @@
                 
             } catch (error) {
                 showResult('Discord Integration Test', {error: error.message}, false);
+            }
+        }
+
+        async function assignToTeam(teamName) {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            // Get Discord user with validation
+            const discordUserId = requireDiscordUser();
+            if (!discordUserId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                // Получаем информацию о текущей комнате чтобы получить Discord ссылки
+                const activeRoomsResponse = await fetch(`${API_BASE}/api/voice/active-rooms`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const activeRooms = await activeRoomsResponse.json();
+                
+                let discordInvites = null;
+                if (activeRooms.active_rooms) {
+                    const currentRoom = activeRooms.active_rooms.find(room => room.match_id === matchId);
+                    if (currentRoom && currentRoom.discord_channels) {
+                        discordInvites = currentRoom.discord_channels;
+                    }
+                }
+
+                // Link Discord account
+                const linkResponse = await fetch(`${API_BASE}/api/discord/link-account`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({ 
+                        discord_user_id: parseInt(discordUserId)  // Convert to number for API
+                    })
+                });
+                
+                if (!linkResponse.ok) {
+                    const errorData = await linkResponse.json();
+                    throw new Error(`Failed to link Discord account: ${errorData.detail || linkResponse.statusText}`);
+                }
+
+                const linkResult = await linkResponse.json();
+                showResult(`Discord Account Linked`, linkResult, true);
+
+                // Затем назначаем на команду
+                const assignResponse = await fetch(`${API_BASE}/api/discord/assign-to-team`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({ 
+                        match_id: matchId,
+                        team_name: teamName
+                    })
+                });
+                
+                if (!assignResponse.ok) {
+                    const errorData = await assignResponse.json();
+                    throw new Error(`Failed to assign to team: ${errorData.detail || assignResponse.statusText}`);
+                }
+                
+                const data = await assignResponse.json();
+                
+                // Добавляем Discord ссылки в результат
+                if (discordInvites) {
+                    data.discord_channels = discordInvites;
+                }
+                
+                showResult(`Assign to ${teamName} for ${matchId}`, data, true);
+                
+            } catch (error) {
+                showResult(`Assign to ${teamName} for ${matchId}`, {error: error.message}, false);
             }
         }
 
@@ -721,89 +1030,6 @@
                 container.innerHTML = html;
             } else {
                 container.innerHTML = '<p>🚫 Нет активных голосовых комнат</p>';
-            }
-        }
-
-        async function assignToTeam(teamName) {
-            const matchId = getMatchId();
-            if (!matchId) return;
-
-            showLoading('results');
-            try {
-                if (!currentToken) {
-                    await testAuth();
-                    if (!currentToken) {
-                        throw new Error('Authentication failed - no token available');
-                    }
-                }
-
-                // Получаем информацию о текущей комнате чтобы получить Discord ссылки
-                const activeRoomsResponse = await fetch(`${API_BASE}/api/voice/active-rooms`, {
-                    headers: {
-                        'Authorization': `Bearer ${currentToken}`
-                    }
-                });
-                const activeRooms = await activeRoomsResponse.json();
-                
-                let discordInvites = null;
-                if (activeRooms.active_rooms) {
-                    const currentRoom = activeRooms.active_rooms.find(room => room.match_id === matchId);
-                    if (currentRoom && currentRoom.discord_channels) {
-                        discordInvites = currentRoom.discord_channels;
-                    }
-                }
-
-                // Link Discord account
-                const discordUserId = 1420374330742804500; // Ваш Discord ID
-                
-                const linkResponse = await fetch(`${API_BASE}/api/discord/link-account`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentToken}`
-                    },
-                    body: JSON.stringify({ 
-                        discord_user_id: discordUserId 
-                    })
-                });
-                
-                if (!linkResponse.ok) {
-                    const errorData = await linkResponse.json();
-                    throw new Error(`Failed to link Discord account: ${errorData.detail || linkResponse.statusText}`);
-                }
-
-                const linkResult = await linkResponse.json();
-                showResult(`Discord Account Linked`, linkResult, true);
-
-                // Затем назначаем на команду - теперь с правильным телом запроса
-                const assignResponse = await fetch(`${API_BASE}/api/discord/assign-to-team`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentToken}`
-                    },
-                    body: JSON.stringify({ 
-                        match_id: matchId,
-                        team_name: teamName
-                    })
-                });
-                
-                if (!assignResponse.ok) {
-                    const errorData = await assignResponse.json();
-                    throw new Error(`Failed to assign to team: ${errorData.detail || assignResponse.statusText}`);
-                }
-                
-                const data = await assignResponse.json();
-                
-                // Добавляем Discord ссылки в результат
-                if (discordInvites) {
-                    data.discord_channels = discordInvites;
-                }
-                
-                showResult(`Assign to ${teamName} for ${matchId}`, data, true);
-                
-            } catch (error) {
-                showResult(`Assign to ${teamName} for ${matchId}`, {error: error.message}, false);
             }
         }
 

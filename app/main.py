@@ -218,13 +218,48 @@ async def health_check():
         services["lcu"] = "connected" if lcu_health.get("connected") else "disconnected"
     except:
         services["lcu"] = "unavailable"
+    
+    # Правильное сообщение в зависимости от статуса Discord
+    if services["discord"] == "connected":
+        message = "✅ Приложение работает! Discord подключен и готов к работе."
+    elif services["discord"] == "mock_mode":
+        message = "🔶 Приложение работает! Discord в режиме заглушки - установите Discord для полноценной работы."
+    elif services["discord"] == "disabled":
+        message = "🔶 Приложение работает! Discord отключен - настройте DISCORD_BOT_TOKEN для подключения."
+    else:
+        message = "❌ Приложение работает! Discord не подключен."
+
     return JSONResponse(content={
         "status": "healthy",
         "services": services,
         "discord_details": discord_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "message": "Приложение работает! Discord в режиме заглушки - установите Discord для полноценной работы."
+        "message": message
     })
+
+
+@app.get("/status")
+async def quick_status():
+    """Quick status check for the demo page."""
+    discord_status = discord_service.get_status()
+    redis_healthy = False
+    try:
+        redis_healthy = redis_manager.redis.ping()
+    except:
+        pass
+        
+    lcu_connected = lcu_service.lcu_connector.is_connected()
+    
+    return {
+        "discord": {
+            "connected": discord_status["connected"],
+            "mock_mode": discord_status["mock_mode"],
+            "status": discord_status["status"]
+        },
+        "redis": "healthy" if redis_healthy else "unhealthy",
+        "lcu": "connected" if lcu_connected else "disconnected",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 @app.exception_handler(500)

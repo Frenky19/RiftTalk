@@ -22,8 +22,13 @@ class RedisManager:
             try:
                 # Parse Redis URL for Docker compatibility
                 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                
+                # Для Docker используем 'redis' как хост, для локальной разработки - 'localhost'
+                if "localhost" in redis_url and os.getenv('DOCKER_CONTAINER'):
+                    redis_url = redis_url.replace('localhost', 'redis')
+                    
                 parsed = urlparse(redis_url)
-                # Connection parameters
+                
                 connection_params = {
                     'host': parsed.hostname or 'localhost',
                     'port': parsed.port or 6379,
@@ -33,19 +38,32 @@ class RedisManager:
                     'retry_on_timeout': True,
                     'health_check_interval': 30
                 }
+                
                 # Add password if present
                 if parsed.password:
                     connection_params['password'] = parsed.password
+                    
                 self.redis = redis.Redis(**connection_params)
+                
                 # Test connection
                 self.redis.ping()
-                logger.info(
-                    f"✅ Redis connected to {connection_params['host']}:{connection_params['port']}"
-                )
+                logger.info(f"✅ Redis connected to {connection_params['host']}:{connection_params['port']}")
                 break
+                
             except redis.ConnectionError as e:
                 logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}")
                 if attempt == max_retries - 1:
+                    # Если в Docker, попробуем localhost как fallback
+                    if "redis" in str(connection_params.get('host')):
+                        logger.info("🔄 Trying localhost as fallback for Redis...")
+                        try:
+                            connection_params['host'] = 'localhost'
+                            self.redis = redis.Redis(**connection_params)
+                            self.redis.ping()
+                            logger.info("✅ Redis connected via localhost fallback")
+                            break
+                        except Exception:
+                            pass
                     raise DatabaseException(f"Redis connection failed after {max_retries} attempts")
                 import time
                 time.sleep(2)

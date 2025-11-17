@@ -24,18 +24,19 @@ class LCUConnector:
             # Windows paths
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "Riot Client", "Config", "lockfile"),
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "League of Legends", "Config", "lockfile"),
-            # WSL2 paths
-            "/mnt/c/Users/%s/AppData/Local/Riot Games/Riot Client/Config/lockfile" % os.getenv('USERNAME', 'user'),
-            "/mnt/c/Users/%s/AppData/Local/Riot Games/League of Legends/Config/lockfile" % os.getenv('USERNAME', 'user'),
+            # Docker paths (монтированные из Windows)
+            "/host_riot_games/Riot Client/Config/lockfile",
+            "/host_riot_games/League of Legends/Config/lockfile",
         ]
+        
         for path in possible_paths:
             try:
-                expanded_path = os.path.expandvars(path) if '%' not in path else path % os.getenv('USERNAME', 'user')
-                if os.path.exists(expanded_path):
-                    logger.info(f"✅ Found lockfile at: {expanded_path}")
-                    return expanded_path
+                if os.path.exists(path):
+                    logger.info(f"✅ Found lockfile at: {path}")
+                    return path
             except Exception:
                 continue
+                
         logger.debug("League client lockfile not found (game not running)")
         return None
 
@@ -50,6 +51,7 @@ class LCUConnector:
             if not self.lockfile_path:
                 logger.info("League client not running - LCU connector will remain disconnected")
                 return False
+                
             with open(self.lockfile_path, 'r', encoding='utf-8') as f:
                 lockfile_content = f.read().strip()
                 parts = lockfile_content.split(':')
@@ -62,24 +64,23 @@ class LCUConnector:
                     "password": parts[3],
                     "protocol": parts[4]
                 }
-            logger.info(
-                f"Found LCU lockfile on port {self.lockfile_data['port']}"
-            )
+                
+            logger.info(f"Found LCU lockfile on port {self.lockfile_data['port']}")
+            
             self.session = aiohttp.ClientSession(
-                auth=aiohttp.BasicAuth(
-                    'riot',
-                    self.lockfile_data['password']
-                ),
+                auth=aiohttp.BasicAuth('riot', self.lockfile_data['password']),
                 connector=aiohttp.TCPConnector(verify_ssl=False),
                 headers={'Content-Type': 'application/json'},
                 timeout=aiohttp.ClientTimeout(total=10)
             )
+
             # Test connection
             test_url = (
                 f"{self.lockfile_data['protocol']}://"
                 f"127.0.0.1:{self.lockfile_data['port']}"
                 "/lol-summoner/v1/current-summoner"
             )
+            
             async with self.session.get(test_url) as response:
                 if response.status == 200:
                     self.is_connected_flag = True
@@ -88,10 +89,8 @@ class LCUConnector:
                     return True
                 else:
                     error_text = await response.text()
-                    raise LCUException(
-                        f"LCU connection test failed: "
-                        f"{response.status} - {error_text}"
-                    )
+                    raise LCUException(f"LCU connection test failed: {response.status} - {error_text}")
+                    
         except LCUException as e:
             logger.warning(f"LCU connection failed: {e}")
             await self._cleanup()
@@ -133,26 +132,23 @@ class LCUConnector:
         """
         if not self.is_connected():
             raise LCUException("Not connected to LCU")
+            
         url = (
             f"{self.lockfile_data['protocol']}://"
             f"127.0.0.1:{self.lockfile_data['port']}{endpoint}"
         )
+        
         try:
-            async with self.session.request(
-                method, url, json=data
-            ) as response:
+            async with self.session.request(method, url, json=data) as response:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 204:
                     return None
                 else:
                     error_text = await response.text()
-                    logger.error(
-                        f"LCU API error {response.status}: {error_text}"
-                    )
-                    raise LCUException(
-                        f"LCU API error: {response.status} - {error_text}"
-                    )
+                    logger.error(f"LCU API error {response.status}: {error_text}")
+                    raise LCUException(f"LCU API error: {response.status} - {error_text}")
+                    
         except aiohttp.ClientError as e:
             logger.error(f"Network error during LCU request: {e}")
             raise LCUException(f"Request to LCU API failed: {str(e)}")
@@ -165,9 +161,7 @@ class LCUConnector:
         try:
             if not self.is_connected():
                 return None
-            return await self.make_request(
-                "GET", "/lol-summoner/v1/current-summoner"
-            )
+            return await self.make_request("GET", "/lol-summoner/v1/current-summoner")
         except LCUException:
             return None
 
@@ -176,9 +170,7 @@ class LCUConnector:
         try:
             if not self.is_connected():
                 return None
-            phase_data = await self.make_request(
-                "GET", "/lol-gameflow/v1/gameflow-phase"
-            )
+            phase_data = await self.make_request("GET", "/lol-gameflow/v1/gameflow-phase")
             return phase_data if isinstance(phase_data, str) else None
         except LCUException:
             return None
@@ -197,9 +189,7 @@ class LCUConnector:
         try:
             if not self.is_connected():
                 return None
-            return await self.make_request(
-                "GET", "/lol-gameflow/v1/session"
-            )
+            return await self.make_request("GET", "/lol-gameflow/v1/session")
         except LCUException:
             return None
 

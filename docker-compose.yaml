@@ -38,8 +38,8 @@ services:
       - //var/run/docker.sock:/var/run/docker.sock
       # Для доступа к LCU в Windows
       - ${USERPROFILE}/AppData/Local/Riot Games:/host_riot_games:ro
-    # Добавляем привилегии для доступа к сокету Docker
-    privileged: true
+    # # Добавляем привилегии для доступа к сокету Docker
+    # privileged: true
 
 volumes:
   redis_data:
