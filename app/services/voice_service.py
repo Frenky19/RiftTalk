@@ -5,8 +5,8 @@ from datetime import datetime, timezone, timedelta
 
 from app.config import settings
 from app.database import redis_manager
-from app.models import VoiceRoom
-from app.utils.exceptions import VoiceServiceException
+# from app.models import VoiceRoom
+# from app.utils.exceptions import VoiceServiceException
 from app.services.discord_service import discord_service
 
 logger = logging.getLogger(__name__)
@@ -22,13 +22,15 @@ class VoiceService:
         try:
             logger.info(f"🎮 Creating voice room for match {match_id}")
             
-            # Простая валидация
+            # Валидация и преобразование players
             if not players:
                 players = ["player1", "player2", "player3", "player4", "player5"]
                 logger.warning(f"Using default players for match {match_id}")
             
-            # Убедимся, что players - это список
-            if not hasattr(players, '__iter__'):
+            # Убедимся, что players - это список строк
+            if isinstance(players, str):
+                players = [players]
+            elif hasattr(players, '__iter__') and not isinstance(players, (list, tuple)):
                 players = list(players)
             
             room_id = f"voice_{match_id}_{uuid.uuid4().hex[:8]}"
@@ -71,6 +73,15 @@ class VoiceService:
                 "mock_mode": "true" if (discord_service.mock_mode if self.discord_enabled else True) else "false"
             }
 
+            # Сохраняем данные о командах
+            if team_data:
+                room_data["blue_team"] = json.dumps(team_data.get('blue_team', []))
+                room_data["red_team"] = json.dumps(team_data.get('red_team', []))
+            else:
+                # Демо-данные по умолчанию
+                room_data["blue_team"] = json.dumps(players[:3])
+                room_data["red_team"] = json.dumps(players[3:])
+
             # Сохраняем в Redis
             success = self.redis.create_voice_room(room_id, match_id, room_data)
             if not success:
@@ -86,6 +97,8 @@ class VoiceService:
                 "players": players,
                 "discord_channels": discord_channels,
                 "created_at": now.isoformat(),
+                "blue_team": team_data.get('blue_team', []) if team_data else players[:3],
+                "red_team": team_data.get('red_team', []) if team_data else players[3:],
                 "status": "success"
             }
             

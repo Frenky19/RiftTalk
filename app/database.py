@@ -107,6 +107,11 @@ class RedisManager:
                     except json.JSONDecodeError:
                         # Fallback для старого формата (через запятую)
                         result[key] = value.split(',') if value else []
+                elif key in ['blue_team', 'red_team'] and value:
+                    try:
+                        result[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        result[key] = value.split(',') if value else []
                 elif key == 'discord_channels' and value:
                     try:
                         result[key] = json.loads(value)
