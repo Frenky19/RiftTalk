@@ -1,13 +1,66 @@
 import logging
 import json
+import random
 from fastapi import APIRouter, HTTPException, Depends
 from app.services.discord_service import discord_service
 from app.utils.security import get_current_user
 from app.database import redis_manager
 from app.schemas import DiscordLinkRequest, DiscordAssignRequest
+from app.services.voice_service import voice_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/discord", tags=["discord-integration"])
+
+
+def determine_player_team(summoner_id: str, blue_team: list, red_team: list, demo_mode: bool = False) -> str:
+    """Determine which team the player belongs to."""
+    logger.info(f"🔍 Determining team for summoner_id: {summoner_id}")
+    logger.info(f"🔵 Blue team: {blue_team}")
+    logger.info(f"🔴 Red team: {red_team}")
+    logger.info(f"🎮 Demo mode: {demo_mode}")
+    
+    # Проверяем синюю команду
+    if summoner_id in blue_team:
+        logger.info(f"✅ Player {summoner_id} found in Blue Team")
+        return "Blue Team"
+    
+    # Проверяем красную команду
+    if summoner_id in red_team:
+        logger.info(f"✅ Player {summoner_id} found in Red Team")
+        return "Red Team"
+    
+    # Если игрок не найден в командах
+    logger.warning(f"⚠️ Player {summoner_id} not found in any team")
+    
+    if demo_mode:
+        # В демо-режиме назначаем случайно для тестирования
+        team = random.choice(["Blue Team", "Red Team"])
+        logger.info(f"🎲 Randomly assigned to {team} in demo mode")
+        return team
+    else:
+        # В реальном режиме - ошибка
+        raise HTTPException(
+            status_code=400,
+            detail=f"Player {summoner_id} not found in match teams"
+        )
+
+
+def safe_json_parse(data, default=None):
+    """Safely parse JSON data with detailed error logging."""
+    if data is None:
+        return default
+    if isinstance(data, (list, dict)):
+        return data
+    if isinstance(data, str):
+        try:
+            return json.loads(data)
+        except json.JSONDecodeError as e:
+            logger.warning(f"⚠️ Failed to parse JSON: {data}, error: {e}")
+            # Попробуем разобрать как список, разделенный запятыми
+            if ',' in data:
+                return [item.strip() for item in data.split(',') if item.strip()]
+            return default
+    return default
 
 
 @router.post("/link-account")
@@ -17,12 +70,14 @@ async def link_discord_account(
 ):
     """Link Discord account to LoL summoner."""
     try:
+        logger.info(f"🔗 Linking Discord account {request.discord_user_id} to summoner {current_user['sub']}")
+        
         # Save Discord user ID to Redis
         user_key = f"user:{current_user['sub']}"
         redis_manager.redis.hset(user_key, "discord_user_id", str(request.discord_user_id))
         redis_manager.redis.expire(user_key, 604800)  # 7 days
         
-        logger.info(f"Linked Discord account {request.discord_user_id} to summoner {current_user['sub']}")
+        logger.info(f"✅ Successfully linked Discord account {request.discord_user_id} to summoner {current_user['sub']}")
         
         return {
             "status": "success",
@@ -31,7 +86,7 @@ async def link_discord_account(
             "summoner_id": current_user['sub']
         }
     except Exception as e:
-        logger.error(f"Failed to link Discord account: {e}")
+        logger.error(f"❌ Failed to link Discord account: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to link Discord account: {str(e)}"
@@ -45,11 +100,14 @@ async def assign_to_team(
 ):
     """Assign Discord user to team role."""
     try:
+        logger.info(f"🎯 Manual assign: user {current_user['sub']} to {request.team_name} in match {request.match_id}")
+        
         # Get Discord user ID from Redis
         user_key = f"user:{current_user['sub']}"
         discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
         
         if not discord_user_id:
+            logger.error(f"❌ Discord account not linked for user {current_user['sub']}")
             raise HTTPException(
                 status_code=400,
                 detail="Discord account not linked. Please link your Discord account first using /api/discord/link-account"
@@ -57,11 +115,14 @@ async def assign_to_team(
 
         # Validate team name
         if request.team_name not in ["Blue Team", "Red Team"]:
+            logger.error(f"❌ Invalid team name: {request.team_name}")
             raise HTTPException(
                 status_code=400,
                 detail="Team name must be either 'Blue Team' or 'Red Team'"
             )
 
+        logger.info(f"🔗 Assigning Discord user {discord_user_id} to {request.team_name}")
+        
         # Assign to team role
         success = await discord_service.assign_player_to_team(
             int(discord_user_id),
@@ -70,15 +131,35 @@ async def assign_to_team(
         )
         
         if success:
-            logger.info(f"Assigned user {discord_user_id} to {request.team_name} in match {request.match_id}")
-            return {
+            logger.info(f"✅ Successfully assigned user {discord_user_id} to {request.team_name} in match {request.match_id}")
+            
+            # Получаем информацию о канале команды для возврата ссылки
+            discord_channels = voice_service.get_voice_room_discord_channels(request.match_id)
+            team_channel = None
+            
+            if request.team_name == "Blue Team" and discord_channels.get('blue_team'):
+                team_channel = discord_channels['blue_team']
+            elif request.team_name == "Red Team" and discord_channels.get('red_team'):
+                team_channel = discord_channels['red_team']
+            
+            response_data = {
                 "status": "success",
                 "message": f"Assigned to {request.team_name} in match {request.match_id}",
                 "discord_user_id": discord_user_id,
                 "team_name": request.team_name,
                 "match_id": request.match_id
             }
+            
+            # Добавляем информацию о канале если доступна
+            if team_channel:
+                response_data.update({
+                    "discord_invite_url": team_channel.get('invite_url'),
+                    "discord_channel_name": team_channel.get('channel_name')
+                })
+            
+            return response_data
         else:
+            logger.error(f"❌ Failed to assign user {discord_user_id} to team role")
             raise HTTPException(
                 status_code=500,
                 detail="Failed to assign to team role. Make sure the match is active and channels are created."
@@ -86,7 +167,7 @@ async def assign_to_team(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to assign to team: {e}")
+        logger.error(f"❌ Failed to assign to team: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to assign to team: {str(e)}"
@@ -100,67 +181,91 @@ async def auto_assign_team(
 ):
     """Automatically assign user to their actual team based on match data."""
     try:
+        logger.info(f"🎯 Auto-assign: user {current_user['sub']} for match {match_id}")
+        
         # Получаем информацию о матче
-        room_data = redis_manager.get_voice_room_by_match(match_id)
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
         if not room_data:
+            logger.error(f"❌ Match not found: {match_id}")
             raise HTTPException(status_code=404, detail="Match not found")
+
+        logger.info(f"📊 Room data keys: {list(room_data.keys())}")
+        logger.info(f"📊 Room data: {room_data}")
 
         # Получаем summoner_id текущего пользователя
         summoner_id = current_user['sub']
+        logger.info(f"👤 Current summoner_id: {summoner_id}")
 
-        # Определяем команду пользователя
-        blue_team = []
-        red_team = []
+        # Получаем данные о командах с безопасным парсингом
+        blue_team = safe_json_parse(room_data.get('blue_team'), [])
+        red_team = safe_json_parse(room_data.get('red_team'), [])
         
-        # Парсим данные о командах из room_data
-        players_data = room_data.get('players', [])
-        if isinstance(players_data, str):
-            try:
-                players_data = json.loads(players_data)
-            except:
-                players_data = []
-        
-        # В демо-режиме используем тестовые данные
-        if not players_data:
-            # Если нет данных о командах, используем демо-логику
-            blue_team = ["test_player", "player2", "player3"]
-            red_team = ["player4", "player5"]
-        else:
-            # В реальном приложении здесь будет логика определения команды
-            # На основе данных из LCU или других источников
-            blue_team = room_data.get('blue_team', [])
-            red_team = room_data.get('red_team', [])
-        
+        logger.info(f"🔵 Parsed blue_team: {blue_team}")
+        logger.info(f"🔴 Parsed red_team: {red_team}")
+
+        # Определяем, демо-режим или нет
+        demo_mode = not blue_team and not red_team
+        logger.info(f"🎮 Demo mode detected: {demo_mode}")
+
+        # Если демо-режим и нет данных о командах, создаем демо-команды
+        if demo_mode:
+            logger.info("🔄 Creating demo teams...")
+            all_players = safe_json_parse(room_data.get('players'), [])
+            if not all_players:
+                all_players = ['test_player', 'player2', 'player3', 'player4', 'player5']
+                logger.info(f"🎭 Using default demo players: {all_players}")
+            
+            blue_team = all_players[:3]
+            red_team = all_players[3:]
+            logger.info(f"🎭 Demo blue_team: {blue_team}")
+            logger.info(f"🎭 Demo red_team: {red_team}")
+
         # Определяем реальную команду пользователя
-        user_actual_team = None
-        if summoner_id in blue_team:
-            user_actual_team = "Blue Team"
-        elif summoner_id in red_team:
-            user_actual_team = "Red Team"
-        else:
-            # Если пользователь не найден в командах, используем демо-логику
-            # В реальном приложении здесь должна быть ошибка
-            user_actual_team = "Blue Team"  # По умолчанию для демо
-            logger.warning(f"User {summoner_id} not found in match teams, using default team for demo")
+        try:
+            user_actual_team = determine_player_team(summoner_id, blue_team, red_team, demo_mode)
+            logger.info(f"✅ Determined team: {user_actual_team}")
+        except HTTPException as e:
+            logger.error(f"❌ Failed to determine team: {e.detail}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Unexpected error in determine_player_team: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to determine player team: {str(e)}"
+            )
 
         # Получаем Discord user ID
         user_key = f"user:{summoner_id}"
         discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
         
         if not discord_user_id:
+            logger.error(f"❌ Discord account not linked for user {summoner_id}")
             raise HTTPException(
                 status_code=400,
                 detail="Discord account not linked. Please link your Discord account first."
             )
 
+        logger.info(f"🔗 Found Discord user ID: {discord_user_id}")
+
         # Выполняем назначение на команду
+        logger.info(f"🔄 Assigning user to team: {user_actual_team}")
         success = await discord_service.assign_player_to_team(
             int(discord_user_id), match_id, user_actual_team
         )
         
         if success:
-            logger.info(f"Automatically assigned user {discord_user_id} to {user_actual_team} in match {match_id}")
-            return {
+            logger.info(f"✅ Successfully auto-assigned user {discord_user_id} to {user_actual_team} in match {match_id}")
+            
+            # Получаем информацию о канале команды для возврата ссылки
+            discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+            team_channel = None
+            
+            if user_actual_team == "Blue Team" and discord_channels.get('blue_team'):
+                team_channel = discord_channels['blue_team']
+            elif user_actual_team == "Red Team" and discord_channels.get('red_team'):
+                team_channel = discord_channels['red_team']
+            
+            response_data = {
                 "status": "success",
                 "message": f"Automatically assigned to {user_actual_team}",
                 "discord_user_id": discord_user_id,
@@ -168,16 +273,29 @@ async def auto_assign_team(
                 "match_id": match_id,
                 "note": "You were automatically assigned to your actual team based on match data"
             }
+            
+            # Добавляем информацию о канале если доступна
+            if team_channel:
+                response_data.update({
+                    "discord_invite_url": team_channel.get('invite_url'),
+                    "discord_channel_name": team_channel.get('channel_name'),
+                    "secured": team_channel.get('secured', False)
+                })
+            
+            logger.info(f"✅ Auto-assign completed successfully: {response_data}")
+            return response_data
         else:
+            logger.error("❌ Failed to assign user to team in Discord service")
             raise HTTPException(
                 status_code=500,
                 detail="Failed to assign to team. Make sure the match is active and channels are created."
             )
             
     except HTTPException:
+        logger.error("❌ HTTPException in auto_assign_team")
         raise
     except Exception as e:
-        logger.error(f"Failed to auto-assign team: {e}")
+        logger.error(f"❌ Unexpected error in auto_assign_team: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to auto-assign team: {str(e)}"
@@ -256,12 +374,6 @@ async def get_discord_user_info(
         # This is a mock - in real implementation you'd fetch from Discord API
         # For now, we'll just return basic info
         user_exists = True  # Assume user exists for demo purposes
-        
-        # In a real implementation, you would check if the user exists in the Discord guild
-        # For example: 
-        # guild = discord_service.guild
-        # member = guild.get_member(discord_user_id)
-        # user_exists = member is not None
         
         return {
             "status": "success",
