@@ -30,7 +30,8 @@ async def lifespan(app: FastAPI):
 async def initialize_services():
     """Initialize all services with proper error handling."""
     logger.info("🚀 Initializing services...")
-    # Discord service - always True
+    
+    # Discord service
     discord_status = "disabled"
     if settings.DISCORD_BOT_TOKEN:
         try:
@@ -50,20 +51,40 @@ async def initialize_services():
             logger.error(f"❌ Discord service: ERROR - {e}")
     else:
         logger.info("🔶 Discord service: DISABLED (no token)")
-    # LCU service - always True
+    
+    # LCU service - enhanced initialization
     lcu_status = "disconnected"
     try:
         lcu_initialized = await lcu_service.initialize()
-        if lcu_initialized and lcu_service.lcu_connector.is_connected():
-            lcu_status = "connected"
-            await lcu_service.start_monitoring(handle_game_event)
-            logger.info("✅ LCU service: CONNECTED and monitoring")
+        if lcu_initialized:
+            lcu_status = "initialized"
+            logger.info("✅ LCU service: INITIALIZED")
+            
+            # Register event handlers
+            lcu_service.register_event_handler("match_start", handle_game_event)
+            lcu_service.register_event_handler("match_end", handle_game_event)
+            lcu_service.register_event_handler("champ_select", handle_champ_select)
+            lcu_service.register_event_handler("ready_check", handle_ready_check)
+            
+            # Start monitoring
+            await lcu_service.start_monitoring()
+            logger.info("🎮 LCU service: MONITORING STARTED")
+            
+            # Get detailed status
+            lcu_details = await lcu_service.get_detailed_status()
+            if lcu_details.get('connected'):
+                lcu_status = "connected"
+                logger.info("✅ LCU service: CONNECTED TO GAME CLIENT")
+            else:
+                logger.info("🔶 LCU service: WAITING FOR GAME CLIENT")
+                
         else:
-            lcu_status = "disconnected"
-            logger.info("🔶 LCU service: DISCONNECTED (game not running)")
+            lcu_status = "failed"
+            logger.warning("⚠️ LCU service: INITIALIZATION FAILED")
     except Exception as e:
         lcu_status = f"error: {e}"
         logger.warning(f"⚠️ LCU service: WARNING - {e}")
+    
     # Redis service
     redis_status = "connected"
     try:
@@ -83,7 +104,7 @@ async def initialize_services():
 async def cleanup_services():
     """Cleanup all services."""
     try:
-        await lcu_service.cleanup()
+        await lcu_service.stop_monitoring()
     except Exception as e:
         logger.error(f"LCU cleanup error: {e}")
     try:
@@ -92,43 +113,77 @@ async def cleanup_services():
         logger.error(f"Discord cleanup error: {e}")
 
 
-async def handle_game_event(event_type: str, data: dict):
-    """Handle game events from LCU."""
+async def handle_game_event(event_data: dict):
+    """Handle game events from LCU with enhanced logic."""
     try:
+        event_type = event_data.get('phase')
         logger.info(f"🎮 Game event received: {event_type}")
+        
         if event_type == "match_start":
-            match_id = data.get('match_id')
-            players = data.get('players', [])
-            if match_id and players:
-                logger.info(f"🚀 Creating voice room for match {match_id} with {len(players)} players")
-                try:
-                    await voice_service.create_voice_room(
-                        match_id,
-                        players,
-                        {
-                            'blue_team': data.get('blue_team', []),
-                            'red_team': data.get('red_team', [])
-                        }
-                    )
-                    logger.info(f"✅ Successfully created voice room for match {match_id}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to create voice room for match {match_id}: {e}")
-            else:
-                logger.warning(f"⚠️ Invalid match data for event {event_type}: {data}")
+            match_data = event_data.get('match_data')
+            if match_data:
+                match_id = match_data.get('match_id')
+                players = match_data.get('players', [])
+                
+                if match_id and players:
+                    logger.info(f"🚀 Creating voice room for match {match_id} with {len(players)} players")
+                    try:
+                        # Convert player data to the format expected by voice service
+                        player_ids = [p.get('summoner_id') for p in players if p.get('summoner_id')]
+                        
+                        await voice_service.create_voice_room(
+                            match_id,
+                            player_ids,
+                            {
+                                'blue_team': match_data.get('blue_team', []),
+                                'red_team': match_data.get('red_team', [])
+                            }
+                        )
+                        logger.info(f"✅ Successfully created voice room for match {match_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to create voice room for match {match_id}: {e}")
+                else:
+                    logger.warning(f"⚠️ Invalid match data for match_start: {match_data}")
+                    
         elif event_type == "match_end":
-            match_id = data.get('match_id')
-            if match_id:
-                logger.info(f"🛑 Closing voice room for match {match_id}")
-                try:
-                    success = await voice_service.close_voice_room(match_id)
-                    if success:
-                        logger.info(f"✅ Successfully closed voice room for match {match_id}")
-                    else:
-                        logger.warning(f"⚠️ No active voice room found for match {match_id}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to close voice room for match {match_id}: {e}")
+            match_data = event_data.get('match_data')
+            if match_data:
+                match_id = match_data.get('match_id')
+                if match_id:
+                    logger.info(f"🛑 Closing voice room for match {match_id}")
+                    try:
+                        success = await voice_service.close_voice_room(match_id)
+                        if success:
+                            logger.info(f"✅ Successfully closed voice room for match {match_id}")
+                        else:
+                            logger.warning(f"⚠️ No active voice room found for match {match_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to close voice room for match {match_id}: {e}")
+                        
     except Exception as e:
-        logger.error(f"❌ Error handling game event {event_type}: {e}")
+        logger.error(f"❌ Error handling game event: {e}")
+
+
+async def handle_champ_select(event_data: dict):
+    """Handle champion selection phase."""
+    try:
+        logger.info("🎯 Champion selection started")
+        match_data = event_data.get('match_data')
+        if match_data:
+            logger.info(f"👥 Players in champ select: {len(match_data.get('players', []))}")
+            # Here you can add logic for champ select phase
+    except Exception as e:
+        logger.error(f"❌ Error handling champ select: {e}")
+
+
+async def handle_ready_check(event_data: dict):
+    """Handle ready check phase."""
+    try:
+        logger.info("✅ Ready check detected")
+        # Here you can add logic for ready check phase
+    except Exception as e:
+        logger.error(f"❌ Error handling ready check: {e}")
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -214,8 +269,13 @@ async def health_check():
 
     # LCU health
     try:
-        lcu_health = await lcu_service.health_check()
-        services["lcu"] = "connected" if lcu_health.get("connected") else "disconnected"
+        lcu_details = await lcu_service.get_detailed_status()
+        if lcu_details.get('connected'):
+            services["lcu"] = "connected"
+        elif lcu_details.get('initialized'):
+            services["lcu"] = "waiting_for_game"
+        else:
+            services["lcu"] = "disconnected"
     except:
         services["lcu"] = "unavailable"
     
@@ -229,10 +289,17 @@ async def health_check():
     else:
         message = "❌ Приложение работает! Discord не подключен."
 
+    # Добавляем информацию о LCU
+    if services["lcu"] == "connected":
+        message += " 🎮 LCU подключен к клиенту игры."
+    elif services["lcu"] == "waiting_for_game":
+        message += " 🔶 LCU ожидает запуск League of Legends."
+
     return JSONResponse(content={
         "status": "healthy",
         "services": services,
         "discord_details": discord_status,
+        "lcu_details": await lcu_service.get_detailed_status(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "message": message
     })
@@ -248,7 +315,9 @@ async def quick_status():
     except:
         pass
         
-    lcu_connected = lcu_service.lcu_connector.is_connected()
+    lcu_details = await lcu_service.get_detailed_status()
+    lcu_connected = lcu_details.get('connected', False)
+    lcu_monitoring = lcu_details.get('monitoring', False)
     
     return {
         "discord": {
@@ -257,7 +326,12 @@ async def quick_status():
             "status": discord_status["status"]
         },
         "redis": "healthy" if redis_healthy else "unhealthy",
-        "lcu": "connected" if lcu_connected else "disconnected",
+        "lcu": {
+            "connected": lcu_connected,
+            "monitoring": lcu_monitoring,
+            "current_phase": lcu_details.get('current_phase'),
+            "status": "connected" if lcu_connected else "disconnected"
+        },
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

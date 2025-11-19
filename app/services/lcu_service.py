@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 from datetime import datetime, timezone
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from app.config import settings
 from app.utils.lcu_connector import LCUConnector
 from app.utils.exceptions import LCUException
@@ -11,172 +11,244 @@ logger = logging.getLogger(__name__)
 
 
 class LCUService:
-    """League Client Update service for game state monitoring."""
+    """League Client Update service for comprehensive game state monitoring."""
 
     def __init__(self):
         self.lcu_connector = LCUConnector()
-        self.session: Optional[aiohttp.ClientSession] = None
         self.is_monitoring = False
         self.is_initialized = False
         self.monitoring_task: Optional[asyncio.Task] = None
-        self._monitoring_lock = asyncio.Lock()
+        self._event_handlers: Dict[str, Callable] = {}
+        self._previous_phase: Optional[str] = None
+        self._current_match_id: Optional[str] = None
 
     async def initialize(self) -> bool:
-        """Initialize LCU connection.
-
-        Returns:
-            True if initialized successfully, False otherwise
-        """
+        """Initialize LCU connection with comprehensive setup."""
         try:
             if self.is_initialized:
                 logger.info("LCU service already initialized")
                 return True
-            # Try to connect to LCU, but don't fail if not available
+                
+            logger.info("🔄 Initializing LCU service...")
+            
+            # Try to connect to LCU
             success = await self.lcu_connector.connect()
             if success:
                 logger.info("✅ LCU service initialized successfully")
+                
+                # Get initial status
+                summoner = await self.lcu_connector.get_current_summoner()
+                if summoner:
+                    logger.info(f"👤 Current summoner: {summoner.get('displayName')}")
+                    
+                game_phase = await self.lcu_connector.get_game_flow_phase()
+                if game_phase:
+                    logger.info(f"🎮 Current game phase: {game_phase}")
+                    self._previous_phase = game_phase
+                    
             else:
                 logger.info("🔶 LCU service initialized in disconnected mode (game not running)")
+                
             self.is_initialized = True
             return True
+            
         except Exception as e:
             logger.warning(f"⚠️ LCU initialization completed with warnings: {e}")
-            self.is_initialized = True  # Mark as initialized anyway
-            return True  # Return True to continue application startup
+            self.is_initialized = True
+            return True
 
-    async def get_current_match(self) -> Optional[Dict[str, Any]]:
-        """Get current match data from LCU.
+    def register_event_handler(self, event_type: str, handler: Callable):
+        """Register event handler for specific game events."""
+        self._event_handlers[event_type] = handler
+        logger.info(f"✅ Registered handler for event: {event_type}")
 
-        Returns:
-            Parsed match data or None if no active game/error
-        """
-        if not self.is_initialized or not self.lcu_connector.is_connected():
-            return None
-        try:
-            # Use the gameflow session endpoint to get current match info
-            url = (
-                f"https://127.0.0.1:{self.lcu_connector.lockfile_data['port']}"
-                "/lol-gameflow/v1/session"
-            )
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return self._parse_gameflow_session(data)
-                elif response.status == 404:
-                    return None
-                else:
-                    logger.warning(
-                        f"LCU API returned status {response.status}"
-                    )
-                    return None
-        except aiohttp.ClientError as e:
-            logger.warning(f"Network error getting match data: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error getting match data: {e}")
-            return None
-
-    def _parse_match_data(self, data):
-        """Parse LCU match data into our format"""
-        try:
-            game_data = data.get("gameData", {})
-            players = []
-            team_one = game_data.get("teamOne", []) or []
-            team_two = game_data.get("teamTwo", []) or []
-            for player in team_one + team_two:
-                players.append({
-                    "summoner_id": player.get("summonerId", ""),
-                    "summoner_name": player.get("summonerName", ""),
-                    "champion_id": player.get("championId", 0),
-                    "team_id": player.get("teamId", 0)
+    async def _handle_game_phase_change(self, new_phase: str):
+        """Handle game phase changes with detailed logic."""
+        logger.info(f"🎮 Game phase changed: {self._previous_phase} -> {new_phase}")
+        
+        # Map phases to events
+        phase_events = {
+            "ReadyCheck": "ready_check",
+            "ChampSelect": "champ_select",
+            "InProgress": "match_start",
+            "EndOfGame": "match_end",
+            "WaitingForStats": "match_end",
+            "PreEndOfGame": "match_end"
+        }
+        
+        event_type = phase_events.get(new_phase)
+        if event_type and event_type in self._event_handlers:
+            try:
+                # Get match data for relevant events
+                match_data = None
+                if event_type in ["match_start", "champ_select"]:
+                    match_data = await self._get_current_match_data()
+                    
+                await self._event_handlers[event_type]({
+                    "phase": new_phase,
+                    "previous_phase": self._previous_phase,
+                    "match_data": match_data,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 })
-            return {
-                "match_id": game_data.get("gameId", ""),
-                "players": players,
-                "game_mode": game_data.get("gameMode", ""),
-                "start_time": datetime.now(timezone.utc)
-            }
-        except Exception as e:
-            raise LCUException(f"Failed to parse match data: {e}")
+                
+            except Exception as e:
+                logger.error(f"❌ Error handling game phase {new_phase}: {e}")
+        
+        self._previous_phase = new_phase
 
-    def _parse_gameflow_session(self, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Parse gameflow session data from LCU."""
+    async def _get_current_match_data(self) -> Optional[Dict[str, Any]]:
+        """Get comprehensive current match data from LCU."""
         try:
-            if not session_data:
+            session = await self.lcu_connector.get_current_session()
+            if not session:
                 return None
-            game_data = session_data.get('gameData')
+                
+            logger.info(f"📊 Session data: {list(session.keys())}")
+            
+            game_data = session.get('gameData')
             if not game_data:
                 return None
+                
+            # Extract match information
+            match_id = str(game_data.get('gameId', ''))
+            if not match_id:
+                return None
+                
             players = []
+            blue_team = []
+            red_team = []
+            
+            # Process team one (blue team)
             team_one = game_data.get('teamOne', [])
-            team_two = game_data.get('teamTwo', [])
-            # Парсим игроков из команды 1 (синяя)
             for player in team_one:
-                players.append({
+                player_data = {
                     "summoner_id": player.get('summonerId', ''),
                     "summoner_name": player.get('summonerName', ''),
                     "champion_id": player.get('championId', 0),
-                    "team_id": 100  # Синяя команда
-                })
-            # Парсим игроков из команды 2 (красная)
+                    "team_id": 100
+                }
+                players.append(player_data)
+                blue_team.append(player.get('summonerId', ''))
+            
+            # Process team two (red team)  
+            team_two = game_data.get('teamTwo', [])
             for player in team_two:
-                players.append({
+                player_data = {
                     "summoner_id": player.get('summonerId', ''),
                     "summoner_name": player.get('summonerName', ''),
                     "champion_id": player.get('championId', 0),
-                    "team_id": 200  # Красная команда
-                })
-            return {
-                "match_id": str(game_data.get('gameId', '')),
+                    "team_id": 200
+                }
+                players.append(player_data)
+                red_team.append(player.get('summonerId', ''))
+            
+            match_data = {
+                "match_id": match_id,
                 "players": players,
+                "blue_team": blue_team,
+                "red_team": red_team,
                 "game_mode": game_data.get('gameMode', ''),
+                "queue_id": game_data.get('queue', {}).get('id'),
                 "start_time": datetime.now(timezone.utc),
-                "blue_team": [p['summoner_id'] for p in players if p['team_id'] == 100],
-                "red_team": [p['summoner_id'] for p in players if p['team_id'] == 200]
+                "session_data": session  # Include full session for debugging
             }
+            
+            logger.info(f"✅ Extracted match data: {match_id} with {len(players)} players")
+            return match_data
+            
         except Exception as e:
-            logger.error(f"Error parsing gameflow session: {e}")
+            logger.error(f"❌ Error extracting match data: {e}")
             return None
 
-    async def start_monitoring(self, callback):
-        """Start monitoring game state changes.
-
-        Works even if LCU not available.
-        """
+    async def start_monitoring(self, callback: Callable = None):
+        """Start comprehensive game state monitoring."""
         if self.is_monitoring:
+            logger.info("🔶 LCU monitoring already running")
             return
+            
+        if callback:
+            self.register_event_handler("match_start", callback)
+            self.register_event_handler("match_end", callback)
+            self.register_event_handler("champ_select", callback)
+            self.register_event_handler("ready_check", callback)
+            
         self.is_monitoring = True
-        # If LCU not available, just log and return
-        if not self.is_initialized:
-            logger.info("🔧 LCU monitoring disabled (LCU not available)")
-            return
-        logger.info("🎮 Starting LCU game monitoring...")
-        previous_state = None
+        logger.info("🎮 Starting comprehensive LCU game monitoring...")
+        
+        # If LCU not available, start in background and wait for connection
+        if not self.lcu_connector.is_connected():
+            logger.info("🔶 LCU not connected - monitoring will start when game launches")
+            
+        self.monitoring_task = asyncio.create_task(self._monitoring_loop())
+
+    async def _monitoring_loop(self):
+        """Main monitoring loop with comprehensive state tracking."""
+        logger.info("🔄 Starting LCU monitoring loop...")
+        
         while self.is_monitoring:
             try:
-                current_match = await self.get_current_match()
-                current_state = current_match["match_id"] if current_match else None
-                if current_state != previous_state:
-                    if current_state:
-                        logger.info(f"🎮 Game started: {current_state}")
-                        await callback("match_start", current_match)
-                    elif previous_state:
-                        logger.info(f"🎮 Game ended: {previous_state}")
-                        await callback(
-                            "match_end", {"match_id": previous_state}
-                        )
-                    previous_state = current_state
+                # Try to maintain connection
+                if not self.lcu_connector.is_connected():
+                    await self.lcu_connector.connect()
+                    if not self.lcu_connector.is_connected():
+                        await asyncio.sleep(5)  # Wait before retry
+                        continue
+                
+                # Get current game phase
+                current_phase = await self.lcu_connector.get_game_flow_phase()
+                
+                if current_phase and current_phase != self._previous_phase:
+                    await self._handle_game_phase_change(current_phase)
+                
+                # Additional monitoring for in-game events
+                if current_phase == "InProgress":
+                    await self._monitor_in_game_events()
+                    
                 await asyncio.sleep(settings.LCU_UPDATE_INTERVAL)
+                
             except Exception as e:
-                logger.error(f"Monitoring error: {e}")
-                await asyncio.sleep(settings.LCU_UPDATE_INTERVAL * 2)
+                logger.error(f"❌ Monitoring loop error: {e}")
+                await asyncio.sleep(settings.LCU_UPDATE_INTERVAL * 2)  # Longer delay on error
+
+    async def _monitor_in_game_events(self):
+        """Monitor additional in-game events."""
+        try:
+            # Get live client data for additional events
+            live_data = await self.lcu_connector.get_live_client_data()
+            if live_data:
+                # Here you can add specific in-game event detection
+                # For example: objectives, kills, etc.
+                pass
+                
+        except Exception as e:
+            logger.debug(f"⚠️ Live client monitoring not available: {e}")
 
     async def stop_monitoring(self):
-        """Stop monitoring game state"""
+        """Stop monitoring game state."""
         self.is_monitoring = False
-        if self.session:
-            await self.session.close()
+        if self.monitoring_task:
+            self.monitoring_task.cancel()
+            try:
+                await self.monitoring_task
+            except asyncio.CancelledError:
+                pass
+            self.monitoring_task = None
+            
+        await self.lcu_connector.disconnect()
         logger.info("🎮 LCU monitoring stopped")
+
+    async def get_detailed_status(self) -> Dict[str, Any]:
+        """Get detailed LCU service status."""
+        lcu_health = await self.lcu_connector.health_check()
+        
+        return {
+            "monitoring": self.is_monitoring,
+            "initialized": self.is_initialized,
+            "connected": self.lcu_connector.is_connected(),
+            "current_phase": self._previous_phase,
+            "event_handlers": list(self._event_handlers.keys()),
+            "lcu_connector": lcu_health
+        }
 
 
 lcu_service = LCUService()

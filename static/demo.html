@@ -351,6 +351,28 @@
             padding: 15px;
             margin: 10px 0;
         }
+
+        .lcu-section {
+            background: rgba(0, 150, 255, 0.2);
+            border: 1px solid #0096FF;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+
+        .lcu-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .lcu-status {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -391,6 +413,25 @@
                 <div class="status-icon">🔄</div>
                 <div class="status-message">LCU Status</div>
                 <div class="status-details">Checking LCU connection...</div>
+            </div>
+        </div>
+
+        <!-- LCU Integration Section -->
+        <div class="lcu-section">
+            <h3>🎮 LCU Integration (League Client)</h3>
+            <div class="lcu-controls">
+                <button onclick="testLCUStatus()">Test LCU Status</button>
+                <button onclick="testLCUGameInfo()">Test LCU Game Info</button>
+                <button onclick="testLCUSummoner()">Test LCU Summoner</button>
+                <button onclick="testLCUTeams()">Test LCU Teams</button>
+                <button onclick="forceLCUReconnect()">Force LCU Reconnect</button>
+                <button onclick="toggleAutoVoice(true)" class="success">Enable Auto Voice</button>
+                <button onclick="toggleAutoVoice(false)" class="warning">Disable Auto Voice</button>
+            </div>
+            
+            <div class="lcu-status" id="lcuDetailedStatus" style="display: none;">
+                <strong>LCU Detailed Status:</strong>
+                <div id="lcuStatusContent"></div>
             </div>
         </div>
 
@@ -596,6 +637,183 @@
             }
         }
 
+        // LCU Functions
+        async function testLCUStatus() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/status`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                
+                // Update LCU status display
+                updateLCUStatusDisplay(data);
+                showResult('LCU Status', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('LCU Status', {error: error.message}, false);
+            }
+        }
+
+        async function testLCUGameInfo() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/current-game`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('LCU Game Info', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('LCU Game Info', {error: error.message}, false);
+            }
+        }
+
+        async function testLCUSummoner() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/current-summoner`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('LCU Summoner Info', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('LCU Summoner Info', {error: error.message}, false);
+            }
+        }
+
+        async function testLCUTeams() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/teams`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('LCU Teams Info', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('LCU Teams Info', {error: error.message}, false);
+            }
+        }
+
+        async function forceLCUReconnect() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/force-reconnect`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('LCU Force Reconnect', data, response.status === 200);
+                
+                // Refresh LCU status after reconnect attempt
+                setTimeout(testLCUStatus, 2000);
+                
+            } catch (error) {
+                showResult('LCU Force Reconnect', {error: error.message}, false);
+            }
+        }
+
+        async function toggleAutoVoice(enabled) {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/auto-voice?enabled=${enabled}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('Auto Voice Settings', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('Auto Voice Settings', {error: error.message}, false);
+            }
+        }
+
+        function updateLCUStatusDisplay(lcuData) {
+            const lcuStatusElement = document.getElementById('lcuDetailedStatus');
+            const lcuContentElement = document.getElementById('lcuStatusContent');
+            
+            if (lcuData.lcu_service) {
+                const service = lcuData.lcu_service;
+                lcuStatusElement.style.display = 'block';
+                
+                let content = `
+                    <div><strong>Connected:</strong> ${service.connected ? '✅ Yes' : '❌ No'}</div>
+                    <div><strong>Monitoring:</strong> ${service.monitoring ? '✅ Active' : '❌ Inactive'}</div>
+                    <div><strong>Game Phase:</strong> ${service.current_phase || 'None'}</div>
+                    <div><strong>Event Handlers:</strong> ${service.event_handlers?.length || 0}</div>
+                `;
+                
+                if (service.lcu_connector) {
+                    content += `
+                        <div><strong>Lockfile Found:</strong> ${service.lcu_connector.lockfile_found ? '✅ Yes' : '❌ No'}</div>
+                        <div><strong>Connection Attempts:</strong> ${service.lcu_connector.connection_attempts}</div>
+                    `;
+                    
+                    if (service.lcu_connector.summoner_name) {
+                        content += `<div><strong>Summoner:</strong> ${service.lcu_connector.summoner_name}</div>`;
+                    }
+                }
+                
+                lcuContentElement.innerHTML = content;
+            }
+        }
+
         async function autoAssignTeam() {
             const matchId = getMatchId();
             if (!matchId) return;
@@ -702,13 +920,30 @@
                 
                 // Update LCU status
                 const lcuStatus = data.services.lcu;
+                const lcuDetails = data.lcu_details || {};
+                
                 if (lcuStatus === 'connected') {
-                    updateStatusCard('lcu-status', '✅ LCU connected', 'healthy', {status: lcuStatus});
+                    updateStatusCard('lcu-status', '✅ LCU connected', 'healthy', {
+                        status: lcuStatus,
+                        current_phase: lcuDetails.current_phase,
+                        summoner: lcuDetails.lcu_connector?.summoner_name
+                    });
+                } else if (lcuStatus === 'waiting_for_game') {
+                    updateStatusCard('lcu-status', '🔶 LCU waiting for game', 'warning', {
+                        status: lcuStatus,
+                        monitoring: lcuDetails.monitoring
+                    });
                 } else if (lcuStatus === 'disconnected') {
-                    updateStatusCard('lcu-status', '🔶 LCU disconnected', 'warning', {status: lcuStatus});
+                    updateStatusCard('lcu-status', '🔶 LCU disconnected', 'warning', {
+                        status: lcuStatus,
+                        note: 'Launch League of Legends to connect'
+                    });
                 } else {
-                    updateStatusCard('lcu-status', '🔄 LCU unavailable', 'checking', {status: lcuStatus});
+                    updateStatusCard('lcu-status', '🔄 LCU checking', 'checking', {status: lcuStatus});
                 }
+                
+                // Update LCU detailed status display
+                updateLCUStatusDisplay(data);
                 
             } catch (error) {
                 updateStatusCard('health-status', '❌ Health check failed', 'error', {error: error.message});
@@ -778,8 +1013,8 @@
                 // Create voice room
                 const roomData = {
                     match_id: 'demo_match_' + Date.now(),
-                    players: ['player1', 'player2', 'player3', 'player4', 'player5'],
-                    blue_team: ['player1', 'player2', 'player3'],
+                    players: ['test_player', 'player2', 'player3', 'player4', 'player5'],
+                    blue_team: ['test_player', 'player2', 'player3'],
                     red_team: ['player4', 'player5']
                 };
                 
