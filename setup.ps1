@@ -25,14 +25,15 @@ try {
 # Создаем виртуальное окружение
 Write-Host "`n🐍 Creating virtual environment..." -ForegroundColor Yellow
 if (Test-Path "venv") {
-    Write-Host "⚠️ Virtual environment already exists. Removing..." -ForegroundColor Yellow
+    Write-Host "🔄 Virtual environment already exists. Recreating..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force "venv"
 }
 
 python -m venv venv
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Failed to create virtual environment" -ForegroundColor Red
-    exit 1}
+    exit 1
+}
 Write-Host "✅ Virtual environment created" -ForegroundColor Green
 
 # Активируем venv
@@ -45,7 +46,7 @@ python -m pip install --upgrade pip
 
 # Устанавливаем зависимости
 Write-Host "`n📦 Installing dependencies..." -ForegroundColor Yellow
-pip install -r requirements.txt
+pip install -r requirements-windows.txt
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Failed to install dependencies" -ForegroundColor Red
     exit 1
@@ -55,9 +56,9 @@ Write-Host "✅ Dependencies installed successfully" -ForegroundColor Green
 
 # Проверяем .env файл
 if (Test-Path ".env") {
-    Write-Host "✅ .env file found - using your existing configuration" -ForegroundColor Green
+    Write-Host "✅ Using existing .env file" -ForegroundColor Green
 } else {
-    Write-Host "⚠️  .env file not found - please create it with your configuration" -ForegroundColor Yellow
+    Write-Host "⚠️  .env file not found - please create it" -ForegroundColor Yellow
 }
 
 Write-Host "`n🎉 Setup completed successfully!" -ForegroundColor Green

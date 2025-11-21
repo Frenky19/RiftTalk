@@ -10,11 +10,4 @@
 git clone <repository>
 cd lol-voice-chat
 
-# Устанавливаем
-.\setup.ps1
-
-# Запускаем Redis (отдельное окно)
-redis-server.exe
-
-# Запускаем приложение (другое окно)
-.\start.ps1
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
