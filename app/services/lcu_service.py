@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class LCUService:
-    """League Client Update service for comprehensive game state monitoring."""
+    """League Client Update service optimized for local Windows setup."""
 
     def __init__(self):
         self.lcu_connector = LCUConnector()
@@ -23,13 +23,13 @@ class LCUService:
         self._current_match_id: Optional[str] = None
 
     async def initialize(self) -> bool:
-        """Initialize LCU connection with comprehensive setup."""
+        """Initialize LCU connection for Windows."""
         try:
             if self.is_initialized:
                 logger.info("LCU service already initialized")
                 return True
                 
-            logger.info("🔄 Initializing LCU service...")
+            logger.info("🔄 Initializing LCU service for Windows...")
             
             # Try to connect to LCU
             success = await self.lcu_connector.connect()
@@ -69,7 +69,7 @@ class LCUService:
         # Map phases to events
         phase_events = {
             "ReadyCheck": "ready_check",
-            "ChampSelect": "champ_select",
+            "ChampSelect": "champ_select", 
             "InProgress": "match_start",
             "EndOfGame": "match_end",
             "WaitingForStats": "match_end",
@@ -103,8 +103,6 @@ class LCUService:
             if not session:
                 return None
                 
-            logger.info(f"📊 Session data: {list(session.keys())}")
-            
             game_data = session.get('gameData')
             if not game_data:
                 return None
@@ -149,8 +147,7 @@ class LCUService:
                 "red_team": red_team,
                 "game_mode": game_data.get('gameMode', ''),
                 "queue_id": game_data.get('queue', {}).get('id'),
-                "start_time": datetime.now(timezone.utc),
-                "session_data": session  # Include full session for debugging
+                "start_time": datetime.now(timezone.utc)
             }
             
             logger.info(f"✅ Extracted match data: {match_id} with {len(players)} players")
@@ -173,16 +170,12 @@ class LCUService:
             self.register_event_handler("ready_check", callback)
             
         self.is_monitoring = True
-        logger.info("🎮 Starting comprehensive LCU game monitoring...")
+        logger.info("🎮 Starting LCU game monitoring for Windows...")
         
-        # If LCU not available, start in background and wait for connection
-        if not self.lcu_connector.is_connected():
-            logger.info("🔶 LCU not connected - monitoring will start when game launches")
-            
         self.monitoring_task = asyncio.create_task(self._monitoring_loop())
 
     async def _monitoring_loop(self):
-        """Main monitoring loop with comprehensive state tracking."""
+        """Main monitoring loop optimized for Windows."""
         logger.info("🔄 Starting LCU monitoring loop...")
         
         while self.is_monitoring:
@@ -191,7 +184,7 @@ class LCUService:
                 if not self.lcu_connector.is_connected():
                     await self.lcu_connector.connect()
                     if not self.lcu_connector.is_connected():
-                        await asyncio.sleep(5)  # Wait before retry
+                        await asyncio.sleep(5)
                         continue
                 
                 # Get current game phase
@@ -200,28 +193,11 @@ class LCUService:
                 if current_phase and current_phase != self._previous_phase:
                     await self._handle_game_phase_change(current_phase)
                 
-                # Additional monitoring for in-game events
-                if current_phase == "InProgress":
-                    await self._monitor_in_game_events()
-                    
                 await asyncio.sleep(settings.LCU_UPDATE_INTERVAL)
                 
             except Exception as e:
                 logger.error(f"❌ Monitoring loop error: {e}")
-                await asyncio.sleep(settings.LCU_UPDATE_INTERVAL * 2)  # Longer delay on error
-
-    async def _monitor_in_game_events(self):
-        """Monitor additional in-game events."""
-        try:
-            # Get live client data for additional events
-            live_data = await self.lcu_connector.get_live_client_data()
-            if live_data:
-                # Here you can add specific in-game event detection
-                # For example: objectives, kills, etc.
-                pass
-                
-        except Exception as e:
-            logger.debug(f"⚠️ Live client monitoring not available: {e}")
+                await asyncio.sleep(settings.LCU_UPDATE_INTERVAL * 2)
 
     async def stop_monitoring(self):
         """Stop monitoring game state."""
@@ -247,7 +223,8 @@ class LCUService:
             "connected": self.lcu_connector.is_connected(),
             "current_phase": self._previous_phase,
             "event_handlers": list(self._event_handlers.keys()),
-            "lcu_connector": lcu_health
+            "lcu_connector": lcu_health,
+            "platform": "windows"
         }
 
 

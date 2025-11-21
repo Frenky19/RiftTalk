@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class LCUConnector:
-    """League Client Update (LCU) API connector with enhanced Windows support."""
+    """League Client Update (LCU) API connector optimized for Windows."""
 
     def __init__(self):
         """Initialize LCU connector."""
@@ -22,23 +22,20 @@ class LCUConnector:
         self.max_attempts = 10
 
     def _get_lockfile_path(self) -> Optional[str]:
-        """Get the path to League of Legends lockfile for Windows with comprehensive search."""
+        """Get the path to League of Legends lockfile for Windows."""
         possible_paths = [
-            # Windows paths
+            # Основные пути Windows
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "Riot Client", "Config", "lockfile"),
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "League of Legends", "Config", "lockfile"),
-            # Alternative Windows paths
+            # Альтернативные пути
             os.path.join(os.getenv('USERPROFILE', ''), "AppData", "Local", "Riot Games", "Riot Client", "Config", "lockfile"),
             os.path.join(os.getenv('USERPROFILE', ''), "AppData", "Local", "Riot Games", "League of Legends", "Config", "lockfile"),
-            # Docker paths (монтированные из Windows)
-            "/host_riot_games/Riot Client/Config/lockfile",
-            "/host_riot_games/League of Legends/Config/lockfile",
-            # Fallback paths
+            # Fallback пути
             "C:/Riot Games/League of Legends/Config/lockfile",
             "D:/Riot Games/League of Legends/Config/lockfile",
         ]
         
-        logger.info("🔍 Searching for LCU lockfile...")
+        logger.info("🔍 Searching for LCU lockfile in Windows paths...")
         for path in possible_paths:
             try:
                 if os.path.exists(path):
@@ -98,39 +95,21 @@ class LCUConnector:
                 timeout=aiohttp.ClientTimeout(total=15)
             )
 
-            # Test connection with multiple endpoints
-            test_endpoints = [
-                "/lol-summoner/v1/current-summoner",
-                "/lol-gameflow/v1/gameflow-phase",
-                "/lol-chat/v1/me"
-            ]
+            # Test connection
+            test_url = f"{self.lockfile_data['protocol']}://127.0.0.1:{self.lockfile_data['port']}/lol-summoner/v1/current-summoner"
             
-            for endpoint in test_endpoints:
-                test_url = (
-                    f"{self.lockfile_data['protocol']}://"
-                    f"127.0.0.1:{self.lockfile_data['port']}{endpoint}"
-                )
-                
-                try:
-                    async with self.session.get(test_url) as response:
-                        if response.status == 200:
-                            self.is_connected_flag = True
-                            self._initialized = True
-                            self._connection_attempts = 0  # Reset counter on success
-                            logger.info(f"✅ Successfully connected to LCU API via {endpoint}")
-                            
-                            # Get current summoner info for logging
-                            if endpoint == "/lol-summoner/v1/current-summoner":
-                                summoner_data = await response.json()
-                                logger.info(f"👤 Connected as: {summoner_data.get('displayName', 'Unknown')}")
-                            
-                            return True
-                except Exception as e:
-                    logger.debug(f"⚠️ Test failed for {endpoint}: {e}")
-                    continue
+            async with self.session.get(test_url) as response:
+                if response.status == 200:
+                    self.is_connected_flag = True
+                    self._initialized = True
+                    self._connection_attempts = 0  # Reset counter on success
                     
-            # If all tests failed
-            raise LCUException("All connection tests failed")
+                    # Get summoner info for logging
+                    summoner_data = await response.json()
+                    logger.info(f"✅ Successfully connected to LCU API as: {summoner_data.get('displayName', 'Unknown')}")
+                    return True
+                else:
+                    raise LCUException(f"Connection test failed with status: {response.status}")
                     
         except LCUException as e:
             logger.warning(f"❌ LCU connection failed (attempt {self._connection_attempts}): {e}")
@@ -167,10 +146,7 @@ class LCUConnector:
             if not await self.connect():
                 raise LCUException("Not connected to LCU and reconnection failed")
             
-        url = (
-            f"{self.lockfile_data['protocol']}://"
-            f"127.0.0.1:{self.lockfile_data['port']}{endpoint}"
-        )
+        url = f"{self.lockfile_data['protocol']}://127.0.0.1:{self.lockfile_data['port']}{endpoint}"
         
         try:
             async with self.session.request(method, url, json=data) as response:
@@ -215,13 +191,6 @@ class LCUConnector:
         try:
             phase_data = await self.make_request("GET", "/lol-gameflow/v1/gameflow-phase")
             return phase_data if isinstance(phase_data, str) else None
-        except LCUException:
-            return None
-
-    async def get_chat_me(self) -> Optional[Dict[str, Any]]:
-        """Get information about current user in chat."""
-        try:
-            return await self.make_request("GET", "/lol-chat/v1/me")
         except LCUException:
             return None
 

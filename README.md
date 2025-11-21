@@ -1,11 +1,20 @@
-# Redis Configuration (без пароля для теста)
-REDIS_URL=redis://localhost:6379
-REDIS_PASSWORD=
+# Локальная установка на Windows
 
-# Остальные настройки...
-# Останавливаем текущий Redis
-docker-compose down
+## 1. Установка зависимостей
+- Python 3.12+
+- Redis для Windows
 
-# Запускаем Redis без пароля
-docker run -d -p 6379:6379 --name redis-test redis:7.2-alpine
-uvicorn app.main:sio_app --reload
+## 2. Настройка
+```bash
+# Клонируем репозиторий
+git clone <repository>
+cd lol-voice-chat
+
+# Устанавливаем
+.\setup.ps1
+
+# Запускаем Redis (отдельное окно)
+redis-server.exe
+
+# Запускаем приложение (другое окно)
+.\start.ps1

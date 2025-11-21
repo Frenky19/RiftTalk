@@ -16,17 +16,12 @@ class RedisManager:
         self._init_redis()
 
     def _init_redis(self):
-        """Initialize Redis connection with proper error handling."""
-        max_retries = 5
+        """Initialize Redis connection for local Windows setup."""
+        max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Parse Redis URL for Docker compatibility
+                # Для локального запуска используем localhost
                 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-                
-                # Для Docker используем 'redis' как хост, для локальной разработки - 'localhost'
-                if "localhost" in redis_url and os.getenv('DOCKER_CONTAINER'):
-                    redis_url = redis_url.replace('localhost', 'redis')
-                    
                 parsed = urlparse(redis_url)
                 
                 connection_params = {
@@ -53,18 +48,7 @@ class RedisManager:
             except redis.ConnectionError as e:
                 logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}")
                 if attempt == max_retries - 1:
-                    # Если в Docker, попробуем localhost как fallback
-                    if "redis" in str(connection_params.get('host')):
-                        logger.info("🔄 Trying localhost as fallback for Redis...")
-                        try:
-                            connection_params['host'] = 'localhost'
-                            self.redis = redis.Redis(**connection_params)
-                            self.redis.ping()
-                            logger.info("✅ Redis connected via localhost fallback")
-                            break
-                        except Exception:
-                            pass
-                    raise DatabaseException(f"Redis connection failed after {max_retries} attempts")
+                    raise DatabaseException(f"Redis connection failed after {max_retries} attempts - make sure Redis is running on localhost:6379")
                 import time
                 time.sleep(2)
             except Exception as e:
@@ -103,9 +87,8 @@ class RedisManager:
             for key, value in room_data.items():
                 if key == 'players' and value:
                     try:
-                        result[key] = json.loads(value)  # Десериализуем JSON
+                        result[key] = json.loads(value)
                     except json.JSONDecodeError:
-                        # Fallback для старого формата (через запятую)
                         result[key] = value.split(',') if value else []
                 elif key in ['blue_team', 'red_team'] and value:
                     try:
