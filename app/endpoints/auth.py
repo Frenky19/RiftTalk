@@ -141,3 +141,66 @@ async def real_authentication():
             status_code=500,
             detail=f"Authentication failed: {str(e)}"
         )
+
+
+@router.get("/auto-auth")
+async def auto_authenticate():
+    """
+    Automatic authentication using LCU when available.
+    Falls back to demo authentication if LCU not available.
+    """
+    try:
+        # Try LCU authentication first
+        if lcu_service.lcu_connector.is_connected():
+            current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+            if current_summoner:
+                summoner_id = str(current_summoner.get('summonerId'))
+                summoner_name = current_summoner.get('displayName') or current_summoner.get('gameName', 'Unknown')
+                
+                access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+                access_token = create_access_token(
+                    data={"sub": summoner_id, "name": summoner_name},
+                    expires_delta=access_token_expires
+                )
+                
+                # Save user info
+                user_key = f"user:{summoner_id}"
+                redis_manager.redis.hset(user_key, mapping={
+                    "summoner_id": summoner_id,
+                    "summoner_name": summoner_name,
+                    "last_login": datetime.now(timezone.utc).isoformat(),
+                    "auto_authenticated": "true"
+                })
+                redis_manager.redis.expire(user_key, 3600 * 24 * 7)
+                
+                return TokenResponse(
+                    access_token=access_token,
+                    token_type="bearer",
+                    summoner_id=summoner_id,
+                    summoner_name=summoner_name,
+                    source="lcu_auto"
+                )
+        
+        # Fallback to demo authentication
+        demo_summoner_id = "demo_player_" + str(int(datetime.now(timezone.utc).timestamp()))
+        demo_summoner_name = "DemoPlayer"
+        
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": demo_summoner_id, "name": demo_summoner_name},
+            expires_delta=access_token_expires
+        )
+        
+        return TokenResponse(
+            access_token=access_token,
+            token_type="bearer", 
+            summoner_id=demo_summoner_id,
+            summoner_name=demo_summoner_name,
+            source="demo_fallback"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Auto-authentication failed: {str(e)}"
+        )

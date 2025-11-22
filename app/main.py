@@ -18,6 +18,9 @@ from app.endpoints import voice, auth, lcu, discord
 
 logger = logging.getLogger(__name__)
 
+# Глобальная переменная для автоматического токена (для демо-целей)
+auto_auth_token = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,9 +32,41 @@ async def lifespan(app: FastAPI):
     await cleanup_services()
 
 
+async def auto_authenticate_via_lcu():
+    """Automatically authenticate using LCU when available."""
+    global auto_auth_token
+    try:
+        if await lcu_service.lcu_connector.connect():
+            current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+            if current_summoner:
+                summoner_id = str(current_summoner.get('summonerId'))
+                summoner_name = current_summoner.get('displayName', 'Unknown')
+                
+                # Создаем токен автоматически
+                from app.utils.security import create_access_token
+                from datetime import timedelta
+                
+                access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+                access_token = create_access_token(
+                    data={"sub": summoner_id, "name": summoner_name},
+                    expires_delta=access_token_expires
+                )
+                
+                auto_auth_token = access_token
+                
+                logger.info(f"✅ Auto-authenticated as: {summoner_name} (ID: {summoner_id})")
+                return access_token
+    except Exception as e:
+        logger.warning(f"⚠️ Auto-authentication failed: {e}")
+    return None
+
+
 async def initialize_services():
     """Initialize all services optimized for Windows."""
     logger.info("🚀 Initializing services for Windows...")
+    
+    # Автоматическая аутентификация через LCU
+    await auto_authenticate_via_lcu()
     
     # Discord service
     discord_status = "disabled"
@@ -116,7 +151,7 @@ async def cleanup_services():
 
 
 async def handle_champ_select(event_data: dict):
-    """Handle champion selection phase - create voice rooms."""
+    """Handle champion selection phase - create voice rooms with team validation."""
     try:
         logger.info("🎯 Champion selection started - creating voice rooms")
         
@@ -124,7 +159,6 @@ async def handle_champ_select(event_data: dict):
         champ_select_data = event_data.get('champ_select_data')
         
         if not champ_select_data:
-            # Fallback: try to get data directly
             champ_select_data = await lcu_service.get_champ_select_data()
         
         if champ_select_data:
@@ -132,10 +166,27 @@ async def handle_champ_select(event_data: dict):
             players = champ_select_data['players']
             team_data = champ_select_data['teams']
             
-            logger.info(f"🚀 Creating voice room for match {match_id}")
-            logger.info(f"👥 Players: {len(players)}")
-            logger.info(f"🔵 Blue team: {team_data.get('blue_team', [])}")
-            logger.info(f"🔴 Red team: {team_data.get('red_team', [])}")
+            # КРИТИЧЕСКАЯ ПРОВЕРКА: Логируем сырые данные
+            logger.info("🎯 RAW LCU TEAM DATA:")
+            logger.info(f"🔵 Blue team raw: {team_data.get('blue_team', [])}")
+            logger.info(f"🔴 Red team raw: {team_data.get('red_team', [])}")
+            
+            # Проверяем текущего пользователя
+            current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+            if current_summoner:
+                summoner_id = str(current_summoner.get('summonerId'))
+                logger.info(f"👤 Current user ID: {summoner_id}")
+                
+                # Проверяем в какой команде пользователь
+                blue_team_ids = [str(player_id) for player_id in team_data.get('blue_team', [])]
+                red_team_ids = [str(player_id) for player_id in team_data.get('red_team', [])]
+                
+                if summoner_id in blue_team_ids:
+                    logger.info("✅ USER IS IN BLUE TEAM")
+                elif summoner_id in red_team_ids:
+                    logger.info("✅ USER IS IN RED TEAM")
+                else:
+                    logger.warning("⚠️ USER NOT FOUND IN ANY TEAM")
             
             # Create voice room
             result = await voice_service.create_voice_room(
@@ -149,36 +200,8 @@ async def handle_champ_select(event_data: dict):
             else:
                 logger.info(f"✅ Successfully created voice room for match {match_id}")
                 
-                # Save match info for current user for auto-assignment
-                current_summoner = await lcu_service.lcu_connector.get_current_summoner()
-                if current_summoner:
-                    summoner_id = str(current_summoner.get('summonerId'))
-                    
-                    # Use a dedicated key for match info to avoid Redis type conflicts
-                    match_info_key = f"user_match:{summoner_id}"
-                    
-                    # Determine which team the current user is on
-                    user_team = None
-                    if summoner_id in team_data.get('blue_team', []):
-                        user_team = "Blue Team"
-                    elif summoner_id in team_data.get('red_team', []):
-                        user_team = "Red Team"
-                    
-                    if user_team:
-                        match_info = {
-                            'match_id': match_id,
-                            'team_name': user_team,
-                            'assigned_at': datetime.now(timezone.utc).isoformat()
-                        }
-                        # Save to dedicated match info key
-                        redis_manager.redis.setex(match_info_key, 3600, json.dumps(match_info))
-                        logger.info(f"✅ Saved match info for user {summoner_id} in {user_team}")
-                    else:
-                        logger.warning(f"⚠️ Current user {summoner_id} not found in any team")
-                else:
-                    logger.warning("⚠️ Could not get current summoner data")
         else:
-            logger.warning("⚠️ No champ select data available - cannot create voice room")
+            logger.warning("⚠️ No champ select data available")
             
     except Exception as e:
         logger.error(f"❌ Error handling champ select: {e}")
@@ -366,6 +389,7 @@ if os.path.exists(static_dir):
             return FileResponse(demo_file)
         raise HTTPException(status_code=404, detail="Demo file not found")
 
+
 # Include routers
 app.include_router(voice.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
@@ -379,8 +403,18 @@ async def root():
         "message": "LoL Voice Chat API is running on Windows! 🎮",
         "status": "healthy",
         "platform": "windows",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "auto_auth_available": auto_auth_token is not None
     }
+
+
+@app.get("/auto-token")
+async def get_auto_token():
+    """Get auto-generated token for demo purposes."""
+    if auto_auth_token:
+        return {"access_token": auto_auth_token, "auto_generated": True}
+    else:
+        raise HTTPException(status_code=404, detail="No auto-token available")
 
 
 @app.get("/health")
@@ -445,7 +479,8 @@ async def health_check():
         "discord_details": discord_status,
         "lcu_details": await lcu_service.get_detailed_status(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "message": message
+        "message": message,
+        "auto_auth_available": auto_auth_token is not None
     })
 
 

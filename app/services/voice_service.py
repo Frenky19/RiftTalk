@@ -16,24 +16,37 @@ class VoiceService:
         self.discord_enabled = bool(settings.DISCORD_BOT_TOKEN)
 
     async def create_voice_room(self, match_id: str, players: list, team_data: dict = None) -> dict:
-        """Create a new voice room for a match."""
+        """Create a new voice room for a match with improved team handling."""
         try:
             logger.info(f"🎮 Creating voice room for match {match_id}")
             logger.info(f"🎮 Received players: {players}")
             logger.info(f"🎮 Received team_data: {team_data}")
             
-            # Валидация и преобразование players
-            if not players:
-                players = ["test_player", "player2", "player3", "player4", "player5"]  # ← ИЗМЕНИЛИ ЗДЕСЬ!
-                logger.warning(f"Using default players for match {match_id}")
-            else:
-                logger.info(f"🎮 Using provided players: {players}")
+            # Нормализуем ID игроков к строкам
+            normalized_players = [str(player) for player in players] if players else []
             
-            # Убедимся, что players - это список строк
-            if isinstance(players, str):
-                players = [players]
-            elif hasattr(players, '__iter__') and not isinstance(players, (list, tuple)):
-                players = list(players)
+            # Нормализуем данные команд - ВАЖНО: используем данные из team_data как есть
+            if team_data:
+                # Берем blue_team и red_team напрямую из team_data
+                blue_team_to_save = team_data.get('blue_team', [])
+                red_team_to_save = team_data.get('red_team', [])
+                
+                # Сохраняем raw данные для отладки
+                raw_teams_data = team_data.get('raw_teams_data')
+                
+                logger.info(f"🔄 Using direct team data - Blue: {blue_team_to_save}, Red: {red_team_to_save}")
+            else:
+                # Fallback: создаем демо-команды
+                blue_team_to_save = normalized_players[:3] if len(normalized_players) >= 3 else normalized_players
+                red_team_to_save = normalized_players[3:] if len(normalized_players) > 3 else []
+                raw_teams_data = None
+                logger.info(f"🎭 Using demo teams - Blue: {blue_team_to_save}, Red: {red_team_to_save}")
+            
+            # Убедимся, что все ID нормализованы к строкам
+            blue_team_to_save = [str(player_id) for player_id in blue_team_to_save]
+            red_team_to_save = [str(player_id) for player_id in red_team_to_save]
+            
+            logger.info(f"✅ Final normalized teams - Blue: {blue_team_to_save}, Red: {red_team_to_save}")
             
             room_id = f"voice_{match_id}_{uuid.uuid4().hex[:8]}"
             discord_channels = None
@@ -41,19 +54,9 @@ class VoiceService:
             # Discord интеграция
             if self.discord_enabled and not discord_service.mock_mode:
                 try:
-                    # Используем переданные данные о командах или создаем на основе players
-                    if team_data:
-                        blue_team = team_data.get('blue_team', [])
-                        red_team = team_data.get('red_team', [])
-                        logger.info(f"🎮 Using provided teams: blue={blue_team}, red={red_team}")
-                    else:
-                        # Если team_data не предоставлен, создаем демо-команды
-                        blue_team = players[:3]
-                        red_team = players[3:]
-                        logger.info(f"🎮 Created demo teams: blue={blue_team}, red={red_team}")
-                    
+                    # Используем нормализованные данные о командах
                     discord_result = await discord_service.create_team_channels(
-                        match_id, blue_team, red_team
+                        match_id, blue_team_to_save, red_team_to_save
                     )
                     
                     if discord_result:
@@ -72,34 +75,22 @@ class VoiceService:
             now = datetime.now(timezone.utc)
             expires_at = now + timedelta(hours=1)
             
-            # Определяем команды для сохранения в Redis
-            if team_data:
-                blue_team_to_save = team_data.get('blue_team', [])
-                red_team_to_save = team_data.get('red_team', [])
-            else:
-                blue_team_to_save = players[:3]
-                red_team_to_save = players[3:]
-            
-            # Гарантируем, что test_player всегда в blue_team для демо
-            if 'test_player' in players and 'test_player' not in blue_team_to_save:
-                logger.info("🔄 Ensuring test_player is in blue_team for demo")
-                if blue_team_to_save:
-                    blue_team_to_save[0] = 'test_player'
-                else:
-                    blue_team_to_save = ['test_player'] + players[1:3] if len(players) > 1 else ['test_player']
-            
             room_data = {
                 "room_id": room_id,
                 "match_id": match_id,
-                "players": json.dumps(players),
+                "players": json.dumps(normalized_players),
                 "discord_channels": json.dumps(discord_channels) if discord_channels else "{}",
                 "created_at": now.isoformat(),
                 "expires_at": expires_at.isoformat(),
                 "is_active": "true",
                 "mock_mode": "true" if (discord_service.mock_mode if self.discord_enabled else True) else "false",
-                "blue_team": json.dumps(blue_team_to_save),  # ← Сохраняем исправленные команды
-                "red_team": json.dumps(red_team_to_save)     # ← Сохраняем исправленные команды
+                "blue_team": json.dumps(blue_team_to_save),
+                "red_team": json.dumps(red_team_to_save),
             }
+            
+            # Добавляем raw данные для отладки если есть
+            if raw_teams_data:
+                room_data["raw_teams_data"] = json.dumps(raw_teams_data)
 
             logger.info(f"💾 Saving to Redis: blue_team={blue_team_to_save}, red_team={red_team_to_save}")
 
@@ -115,10 +106,10 @@ class VoiceService:
             return {
                 "room_id": room_id,
                 "match_id": match_id,
-                "players": players,
+                "players": normalized_players,
                 "created_at": now.isoformat(),
-                "blue_team": blue_team_to_save,  # ← Возвращаем исправленные команды
-                "red_team": red_team_to_save,    # ← Возвращаем исправленные команды
+                "blue_team": blue_team_to_save,
+                "red_team": red_team_to_save,
                 "status": "success",
                 "note": "Discord channels created securely. Use auto-assign to get your team's invite link."
             }

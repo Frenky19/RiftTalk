@@ -126,6 +126,10 @@ class RedisManager:
     def create_voice_room(self, room_id: str, match_id: str, room_data: dict, ttl: int = 3600) -> bool:
         """Create voice room with proper data serialization."""
         try:
+            # Логируем данные для отладки
+            logger.info(f"💾 Creating Redis room: room:{room_id}, match_room:{match_id}")
+            logger.info(f"📊 Room data: {room_data}")
+            
             pipeline = self.redis.pipeline()
             
             # Простая проверка - если room_data не dict, преобразуем
@@ -138,9 +142,13 @@ class RedisManager:
             pipeline.set(f"match_room:{match_id}", room_id, ex=ttl)
             
             results = pipeline.execute()
+            
+            # Проверяем результаты
+            logger.info(f"✅ Redis operations completed: {results}")
             return all(results)
+            
         except Exception as e:
-            logger.error(f"Failed to create voice room: {e}")
+            logger.error(f"❌ Failed to create voice room in Redis: {e}")
             return False
 
     def get_voice_room(self, room_id: str) -> Dict[str, Any]:
@@ -148,7 +156,10 @@ class RedisManager:
         try:
             room_data = self.redis.hgetall(f"room:{room_id}")
             if not room_data:
+                logger.info(f"🔍 No room data found for room_id: {room_id}")
                 return {}
+            
+            logger.info(f"📥 Retrieved room data keys: {list(room_data.keys())}")
             
             # Десериализация полей
             result = {}
@@ -161,8 +172,10 @@ class RedisManager:
                 elif key in ['blue_team', 'red_team'] and value:
                     try:
                         result[key] = json.loads(value)
+                        logger.info(f"✅ Successfully parsed {key}: {result[key]}")
                     except json.JSONDecodeError:
                         result[key] = value.split(',') if value else []
+                        logger.warning(f"⚠️ Used fallback parsing for {key}: {result[key]}")
                 elif key == 'discord_channels' and value:
                     try:
                         result[key] = json.loads(value)
@@ -173,10 +186,11 @@ class RedisManager:
                 else:
                     result[key] = value
                     
+            logger.info(f"✅ Final room data: blue_team={result.get('blue_team')}, red_team={result.get('red_team')}")
             return result
             
         except Exception as e:
-            logger.error(f"Failed to get voice room: {e}")
+            logger.error(f"❌ Failed to get voice room: {e}")
             return {}
 
     def get_voice_room_by_match(self, match_id: str) -> Dict[str, Any]:

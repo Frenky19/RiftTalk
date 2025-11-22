@@ -137,7 +137,7 @@ class LCUService:
         }
 
     async def get_champ_select_data(self) -> Optional[Dict[str, Any]]:
-        """Get detailed champion selection data including teams."""
+        """Get detailed champion selection data including teams with improved parsing."""
         try:
             if not self.lcu_connector.is_connected():
                 logger.warning("🔶 LCU not connected")
@@ -163,18 +163,31 @@ class LCUService:
                 # Generate match ID from session
                 match_id = self._generate_match_id(session)
                 
+                # Нормализуем данные игроков - извлекаем только summonerId
+                blue_team_ids = [str(player.get('summonerId')) for player in teams_data.get('blue_team', []) if player.get('summonerId')]
+                red_team_ids = [str(player.get('summonerId')) for player in teams_data.get('red_team', []) if player.get('summonerId')]
+                
+                # Все игроки из обеих команд
+                all_players = blue_team_ids + red_team_ids
+                
                 result = {
                     'match_id': match_id,
-                    'teams': teams_data,
-                    'players': teams_data.get('blue_team', []) + teams_data.get('red_team', []),
+                    'teams': {
+                        'blue_team': blue_team_ids,
+                        'red_team': red_team_ids
+                    },
+                    'players': all_players,
                     'session_data': {
                         'phase': 'ChampSelect',
                         'game_mode': session.get('gameData', {}).get('gameMode'),
                         'queue_id': session.get('gameData', {}).get('queue', {}).get('id')
-                    }
+                    },
+                    'raw_teams_data': teams_data  # Для отладки
                 }
                 
-                logger.info(f"✅ Extracted champ select data: {len(result['players'])} players")
+                logger.info(f"✅ Extracted champ select data: Blue={len(blue_team_ids)}, Red={len(red_team_ids)}")
+                logger.info(f"🔵 Blue team IDs: {blue_team_ids}")
+                logger.info(f"🔴 Red team IDs: {red_team_ids}")
                 return result
                 
             logger.warning("🔍 No team data found in champ select session")
@@ -203,7 +216,7 @@ class LCUService:
             return None
 
     async def _parse_champ_select_session(self, champ_select_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Parse dedicated champ select session data."""
+        """Parse dedicated champ select session data with improved team extraction."""
         try:
             blue_team = []
             red_team = []
@@ -213,7 +226,7 @@ class LCUService:
                 for player in champ_select_data['myTeam']:
                     if player.get('summonerId'):
                         blue_team.append(str(player['summonerId']))
-                        logger.debug(f"🔵 Champ select blue team: {player.get('summonerName', 'Unknown')}")
+                        logger.debug(f"🔵 Champ select blue team: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
             
             # In champ select, we might not have enemy team data yet
             # But we can create rooms with just our team for now
@@ -242,84 +255,97 @@ class LCUService:
             return None
 
     async def _extract_teams_from_session(self, session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract team data from LCU session with enhanced methods."""
+        """Extract team data from LCU session with FIX for team swapping bug."""
         try:
             blue_team = []
             red_team = []
             
             logger.info("🔍 Searching for team data in session...")
+            logger.info(f"📊 Session keys: {list(session.keys())}")
             
-            # Method 1: Check myTeam/theirTeam (common in champ select)
-            if 'myTeam' in session and 'theirTeam' in session:
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем структуру данных LCU
+            # Метод 1: Проверяем прямые ключи blue_team/red_team (самый надежный)
+            if 'blue_team' in session or 'red_team' in session:
+                logger.info("✅ Found teams in blue_team/red_team keys")
+                
+                blue_team_data = session.get('blue_team', [])
+                red_team_data = session.get('red_team', [])
+                
+                logger.info(f"🔵 Raw blue_team data: {blue_team_data}")
+                logger.info(f"🔴 Raw red_team data: {red_team_data}")
+                
+                # Обрабатываем blue_team
+                if isinstance(blue_team_data, list):
+                    for player in blue_team_data:
+                        if player and isinstance(player, dict) and player.get('summonerId'):
+                            blue_team.append({
+                                'summonerId': str(player.get('summonerId')),
+                                'summonerName': player.get('summonerName', 'Unknown'),
+                                'championId': player.get('championId')
+                            })
+                            logger.info(f"🔵 Blue team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
+                
+                # Обрабатываем red_team  
+                if isinstance(red_team_data, list):
+                    for player in red_team_data:
+                        if player and isinstance(player, dict) and player.get('summonerId'):
+                            red_team.append({
+                                'summonerId': str(player.get('summonerId')),
+                                'summonerName': player.get('summonerName', 'Unknown'),
+                                'championId': player.get('championId')
+                            })
+                            logger.info(f"🔴 Red team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
+            
+            # Метод 2: myTeam/theirTeam (резервный)
+            elif 'myTeam' in session and 'theirTeam' in session:
                 logger.info("✅ Found teams in myTeam/theirTeam")
                 
                 for player in session['myTeam']:
                     if player.get('summonerId'):
-                        blue_team.append(str(player['summonerId']))
-                        logger.debug(f"🔵 Blue team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
+                        blue_team.append({
+                            'summonerId': str(player.get('summonerId')),
+                            'summonerName': player.get('summonerName', 'Unknown'),
+                            'championId': player.get('championId')
+                        })
                         
                 for player in session['theirTeam']:
                     if player.get('summonerId'):
-                        red_team.append(str(player['summonerId']))
-                        logger.debug(f"🔴 Red team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
-                        
-            # Method 2: Check teams array (common in in-game)
+                        red_team.append({
+                            'summonerId': str(player.get('summonerId')),
+                            'summonerName': player.get('summonerName', 'Unknown'),
+                            'championId': player.get('championId')
+                        })
+            
+            # Метод 3: teams array (резервный)
             elif 'teams' in session and len(session['teams']) >= 2:
                 logger.info("✅ Found teams in teams array")
                 
                 for player in session['teams'][0].get('players', []):
                     if player.get('summonerId'):
-                        blue_team.append(str(player['summonerId']))
-                        logger.debug(f"🔵 Blue team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
+                        blue_team.append({
+                            'summonerId': str(player.get('summonerId')),
+                            'summonerName': player.get('summonerName', 'Unknown'),
+                            'championId': player.get('championId')
+                        })
                         
                 for player in session['teams'][1].get('players', []):
                     if player.get('summonerId'):
-                        red_team.append(str(player['summonerId']))
-                        logger.debug(f"🔴 Red team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
-                        
-            # Method 3: Check gameData
-            elif 'gameData' in session:
-                game_data = session['gameData']
-                if 'teamOne' in game_data and 'teamTwo' in game_data:
-                    logger.info("✅ Found teams in gameData")
-                    
-                    for player in game_data['teamOne']:
-                        if player.get('summonerId'):
-                            blue_team.append(str(player['summonerId']))
-                            logger.debug(f"🔵 Blue team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
-                            
-                    for player in game_data['teamTwo']:
-                        if player.get('summonerId'):
-                            red_team.append(str(player['summonerId']))
-                            logger.debug(f"🔴 Red team player: {player.get('summonerName', 'Unknown')} (ID: {player['summonerId']})")
+                        red_team.append({
+                            'summonerId': str(player.get('summonerId')),
+                            'summonerName': player.get('summonerName', 'Unknown'),
+                            'championId': player.get('championId')
+                        })
             
-            # Method 4: Check for any player data and create demo teams
-            if not blue_team and not red_team:
-                logger.info("🔍 No standard team structure found, checking for any player data...")
-                
-                # Look for any player arrays in the session
-                all_players = []
-                for key, value in session.items():
-                    if isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict):
-                        for item in value:
-                            if item.get('summonerId'):
-                                all_players.append(str(item['summonerId']))
-                                logger.debug(f"👤 Found player: {item.get('summonerName', 'Unknown')} in {key}")
-                
-                if all_players:
-                    # Create demo teams from found players
-                    blue_team = all_players[:3]  # First 3 players to blue team
-                    red_team = all_players[3:]   # Rest to red team
-                    logger.info(f"🎭 Created demo teams from {len(all_players)} players")
+            # Логируем итоговые команды
+            logger.info(f"🎯 Final teams - Blue: {[p['summonerId'] for p in blue_team]}, Red: {[p['summonerId'] for p in red_team]}")
             
             if blue_team or red_team:
-                logger.info(f"👥 Extracted teams: Blue={len(blue_team)} players, Red={len(red_team)} players")
                 return {
                     'blue_team': blue_team,
                     'red_team': red_team
                 }
                 
-            logger.warning("🔍 No team data found in session after all methods")
+            logger.warning("🔍 No team data found in session")
             return None
             
         except Exception as e:
@@ -366,13 +392,21 @@ class LCUService:
                 'has_myTeam': 'myTeam' in session,
                 'has_theirTeam': 'theirTeam' in session,
                 'has_teams': 'teams' in session,
+                'has_blue_team': 'blue_team' in session,
+                'has_red_team': 'red_team' in session,
                 'myTeam_count': len(session.get('myTeam', [])),
                 'theirTeam_count': len(session.get('theirTeam', [])),
                 'teams_count': len(session.get('teams', [])),
+                'blue_team_count': len(session.get('blue_team', [])),
+                'red_team_count': len(session.get('red_team', [])),
                 'myTeam_sample': [{'summonerId': p.get('summonerId'), 'summonerName': p.get('summonerName')}
                                   for p in session.get('myTeam', [])[:2]] if session.get('myTeam') else [],
                 'theirTeam_sample': [{'summonerId': p.get('summonerId'), 'summonerName': p.get('summonerName')}
-                                     for p in session.get('theirTeam', [])[:2]] if session.get('theirTeam') else []
+                                     for p in session.get('theirTeam', [])[:2]] if session.get('theirTeam') else [],
+                'blue_team_sample': [{'summonerId': p.get('summonerId'), 'summonerName': p.get('summonerName')}
+                                     for p in session.get('blue_team', [])[:2]] if session.get('blue_team') else [],
+                'red_team_sample': [{'summonerId': p.get('summonerId'), 'summonerName': p.get('summonerName')}
+                                    for p in session.get('red_team', [])[:2]] if session.get('red_team') else []
             }
         except Exception as e:
             logger.error(f"❌ Error getting detailed champ select info: {e}")

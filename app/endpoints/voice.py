@@ -1,5 +1,7 @@
 import asyncio
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.services.lcu_service import lcu_service
 from app.services.voice_service import voice_service
 from app.services.discord_service import discord_service
 from app.schemas import MatchStartRequest, MatchEndRequest, VoiceRoomResponse
@@ -165,4 +167,76 @@ async def get_active_voice_rooms(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get active rooms: {str(e)}"
+        )
+
+
+@router.post("/{match_id}/refresh-teams")
+async def refresh_team_data(
+    match_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Refresh team data for a voice room from LCU."""
+    try:
+        # Get current team data from LCU
+        champ_select_data = await lcu_service.get_champ_select_data()
+        if not champ_select_data:
+            raise HTTPException(
+                status_code=404,
+                detail="No champ select data available from LCU"
+            )
+        
+        # Get existing room
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Voice room not found"
+            )
+        
+        # Update team data
+        updated_team_data = {
+            'blue_team': champ_select_data['teams'].get('blue_team', []),
+            'red_team': champ_select_data['teams'].get('red_team', []),
+            'raw_teams_data': champ_select_data.get('raw_teams_data')
+        }
+        
+        # Update room in Redis
+        room_id = room_data.get('room_id')
+        if room_id:
+            room_data['blue_team'] = json.dumps(updated_team_data['blue_team'])
+            room_data['red_team'] = json.dumps(updated_team_data['red_team'])
+            
+            if updated_team_data.get('raw_teams_data'):
+                room_data['raw_teams_data'] = json.dumps(updated_team_data['raw_teams_data'])
+            
+            success = voice_service.redis.redis.hset(
+                f"room:{room_id}", 
+                mapping={
+                    'blue_team': room_data['blue_team'],
+                    'red_team': room_data['red_team'],
+                    'raw_teams_data': room_data.get('raw_teams_data', '')
+                }
+            )
+            
+            if success:
+                return {
+                    "status": "success",
+                    "message": "Team data refreshed from LCU",
+                    "match_id": match_id,
+                    "blue_team": updated_team_data['blue_team'],
+                    "red_team": updated_team_data['red_team']
+                }
+        
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update team data"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to refresh team data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refresh team data: {str(e)}"
         )

@@ -200,3 +200,47 @@ async def force_lcu_reconnect(
         raise HTTPException(
             status_code=500, detail=f"Failed to reconnect: {str(e)}"
         )
+
+
+@router.get("/debug-session-data")
+async def debug_session_data(current_user: dict = Depends(get_current_user)):
+    """Debug endpoint to see raw session data and team extraction process."""
+    try:
+        if not lcu_service.lcu_connector.is_connected():
+            return {"error": "LCU not connected"}
+            
+        session = await lcu_service.lcu_connector.get_current_session()
+        if not session:
+            return {"error": "No active session"}
+        
+        # Get raw session data
+        raw_session = {
+            "keys": list(session.keys()),
+            "has_blue_team": "blue_team" in session,
+            "has_red_team": "red_team" in session,
+            "has_myTeam": "myTeam" in session,
+            "has_theirTeam": "theirTeam" in session,
+            "has_teams": "teams" in session,
+        }
+        
+        # Get teams using different methods
+        teams_from_connector = await lcu_service.lcu_connector.get_teams()
+        teams_from_service = await lcu_service._extract_teams_from_session(session)
+        
+        # Get champ select data
+        champ_select_data = await lcu_service.get_champ_select_data()
+        
+        return {
+            "raw_session": raw_session,
+            "teams_from_connector": teams_from_connector,
+            "teams_from_service": teams_from_service,
+            "champ_select_data": champ_select_data,
+            "session_sample": {
+                "blue_team": session.get('blue_team', [])[:2] if isinstance(session.get('blue_team'), list) else session.get('blue_team'),
+                "red_team": session.get('red_team', [])[:2] if isinstance(session.get('red_team'), list) else session.get('red_team'),
+                "myTeam": session.get('myTeam', [])[:2] if isinstance(session.get('myTeam'), list) else session.get('myTeam'),
+                "theirTeam": session.get('theirTeam', [])[:2] if isinstance(session.get('theirTeam'), list) else session.get('theirTeam'),
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
