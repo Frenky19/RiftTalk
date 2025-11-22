@@ -588,6 +588,7 @@
                     <button onclick="clearDiscordUser()" class="warning">Очистить</button>
                     <button onclick="verifyDiscordUser()">Проверить пользователя</button>
                     <button onclick="checkLinkedAccount()">Проверить привязку</button>
+                    <button onclick="fixRedisKeys()" class="warning">🔧 Fix Redis Keys</button>
                 </div>
             </div>
             
@@ -620,7 +621,8 @@
         <div class="controls">
             <button onclick="testEndpoint('/')">Test Root Endpoint</button>
             <button onclick="testEndpoint('/health')">Test Health Check</button>
-            <button onclick="testAuth()">Test Authentication</button>
+            <button onclick="testAuth()">Test Basic Auth</button>
+            <button onclick="testRealAuth()" class="success">Real Authentication (LCU)</button>
             <button onclick="testVoiceRoom()">Test Manual Voice Room</button>
             <button onclick="testDiscordIntegration()">Test Discord Integration</button>
             <button onclick="getActiveRooms()">Get Active Rooms</button>
@@ -985,15 +987,48 @@
                 
                 if (response.ok && data.access_token) {
                     currentToken = data.access_token;
-                    showResult('Authentication', {...data, note: 'Token saved for future requests'}, true);
+                    showResult('Basic Authentication', {
+                        ...data,
+                        note: 'Token saved for future requests. Use "Real Authentication" for LCU integration.',
+                        warning: 'This uses test_player. For real matches, use Real Authentication.'
+                    }, true);
                     
                     // Проверяем привязанный аккаунт после аутентификации
                     checkLinkedAccount();
                 } else {
-                    showResult('Authentication', data, false);
+                    showResult('Basic Authentication', data, false);
                 }
             } catch (error) {
-                showResult('Authentication', {error: error.message}, false);
+                showResult('Basic Authentication', {error: error.message}, false);
+            }
+        }
+
+        async function testRealAuth() {
+            showLoading('results');
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/real-auth`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                
+                if (response.ok && data.access_token) {
+                    currentToken = data.access_token;
+                    showResult('Real Authentication (LCU)', {
+                        ...data,
+                        note: 'Token with real summoner_id saved for future requests',
+                        message: `Authenticated as ${data.summoner_name} (ID: ${data.summoner_id})`
+                    }, true);
+                    
+                    // Проверяем привязанный аккаунт после аутентификации
+                    checkLinkedAccount();
+                } else {
+                    showResult('Real Authentication (LCU)', data, false);
+                }
+            } catch (error) {
+                showResult('Real Authentication (LCU)', {error: error.message}, false);
             }
         }
 
@@ -1073,8 +1108,15 @@
         }
 
         async function checkLinkedAccount() {
-            if (!currentToken) return;
+            console.log("🔍 Checking linked account...");
             
+            if (!currentToken) {
+                console.log("❌ No token available");
+                alert('❌ Сначала выполните аутентификацию (Test Authentication)');
+                return;
+            }
+
+            showLoading('results');
             try {
                 const response = await fetch(`${API_BASE}/api/discord/linked-account`, {
                     headers: {
@@ -1082,17 +1124,66 @@
                     }
                 });
                 
+                console.log("📡 Linked account response status:", response.status);
+                
                 if (response.ok) {
                     const data = await response.json();
+                    console.log("📊 Linked account data:", data);
+                    
                     if (data.linked && data.discord_user_id) {
                         document.getElementById('serverUserId').textContent = data.discord_user_id;
                         document.getElementById('serverUserInfo').style.display = 'block';
+                        
+                        showResult('Linked Account Check', {
+                            status: 'success',
+                            linked: true,
+                            discord_user_id: data.discord_user_id,
+                            summoner_id: data.summoner_id
+                        }, true);
                     } else {
                         document.getElementById('serverUserInfo').style.display = 'none';
+                        showResult('Linked Account Check', {
+                            status: 'success', 
+                            linked: false,
+                            message: 'Discord account not linked'
+                        }, true);
                     }
+                } else {
+                    const errorData = await response.json();
+                    console.error("❌ Linked account error:", errorData);
+                    showResult('Linked Account Check', {
+                        error: errorData.detail || 'Unknown error',
+                        status: response.status
+                    }, false);
                 }
             } catch (error) {
-                console.log('❌ Failed to check linked account:', error);
+                console.error('❌ Failed to check linked account:', error);
+                showResult('Linked Account Check', {error: error.message}, false);
+            }
+        }
+
+        async function fixRedisKeys() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/discord/admin/fix-redis-keys`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                const data = await response.json();
+                showResult('Fix Redis Keys', data, response.status === 200);
+                
+            } catch (error) {
+                showResult('Fix Redis Keys', {error: error.message}, false);
             }
         }
 

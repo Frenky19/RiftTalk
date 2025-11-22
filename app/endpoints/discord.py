@@ -463,3 +463,20 @@ async def get_discord_user_info(
             status_code=500,
             detail=f"Failed to get Discord user info: {str(e)}"
         )
+
+
+@router.post("/admin/fix-redis-keys")
+async def fix_redis_keys(current_user: dict = Depends(get_current_user)):
+    """Admin endpoint to fix Redis key type issues."""
+    try:
+        redis_manager.fix_redis_key_types()
+        return {
+            "status": "success",
+            "message": "Redis key type fix completed"
+        }
+    except Exception as e:
+        logger.error(f"Failed to fix Redis keys: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fix Redis keys: {str(e)}"
+        )

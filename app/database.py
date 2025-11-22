@@ -14,6 +14,7 @@ class RedisManager:
 
     def __init__(self):
         self._init_redis()
+        self.fix_redis_key_types()  # Автоматически исправляем ключи при инициализации
 
     def _init_redis(self):
         """Initialize Redis connection for local Windows setup."""
@@ -54,6 +55,73 @@ class RedisManager:
             except Exception as e:
                 logger.error(f"Unexpected Redis error: {e}")
                 raise DatabaseException(f"Redis initialization failed: {e}")
+
+    def fix_redis_key_types(self):
+        """Fix Redis keys that were saved with wrong types."""
+        try:
+            logger.info("🔧 Checking for Redis key type issues...")
+            fixed_count = 0
+            
+            # Паттерны для поиска проблемных ключей
+            patterns = ["user:*", "user_discord:*", "user_match:*"]
+            
+            for pattern in patterns:
+                for key in self.redis.scan_iter(match=pattern):
+                    try:
+                        # Пробуем прочитать как hash
+                        data = self.redis.hgetall(key)
+                        if data:
+                            continue  # Ключ в правильном формате
+                        
+                        # Если не hash, пробуем прочитать как string
+                        str_data = self.redis.get(key)
+                        if str_data:
+                            logger.warning(f"⚠️ Fixing key type for {key}")
+                            try:
+                                # Парсим JSON и конвертируем в hash
+                                parsed_data = json.loads(str_data)
+                                if isinstance(parsed_data, dict):
+                                    self.redis.delete(key)  # Удаляем старый ключ
+                                    self.redis.hset(key, mapping=parsed_data)
+                                    fixed_count += 1
+                                    logger.info(f"✅ Fixed key {key} from string to hash")
+                            except json.JSONDecodeError:
+                                # Если не JSON, создаем простой hash
+                                self.redis.delete(key)
+                                self.redis.hset(key, "data", str_data)
+                                fixed_count += 1
+                                logger.info(f"✅ Fixed key {key} from string to hash with single field")
+                                
+                    except redis.exceptions.ResponseError as e:
+                        if "WRONGTYPE" in str(e):
+                            logger.warning(f"🔄 Converting key {key} from wrong type...")
+                            # Получаем данные любым способом
+                            try:
+                                raw_data = self.redis.get(key)
+                                if raw_data:
+                                    self.redis.delete(key)
+                                    self.redis.hset(key, "value", raw_data)
+                                    fixed_count += 1
+                                    logger.info(f"✅ Converted key {key} to hash")
+                            except:
+                                try:
+                                    # Другой тип? Пробуем получить как список
+                                    raw_data = self.redis.lrange(key, 0, -1)
+                                    if raw_data:
+                                        self.redis.delete(key)
+                                        self.redis.hset(key, "items", json.dumps(raw_data))
+                                        fixed_count += 1
+                                        logger.info(f"✅ Converted key {key} from list to hash")
+                                except:
+                                    logger.error(f"❌ Cannot convert key {key} - unknown type")
+                    
+            if fixed_count > 0:
+                logger.info(f"✅ Fixed {fixed_count} Redis keys with type issues")
+            else:
+                logger.info("✅ No Redis key type issues found")
+                
+        except Exception as e:
+            logger.error(f"❌ Error fixing Redis key types: {e}")
 
     def create_voice_room(self, room_id: str, match_id: str, room_data: dict, ttl: int = 3600) -> bool:
         """Create voice room with proper data serialization."""
@@ -159,7 +227,13 @@ class RedisManager:
         """Save user match information for automatic voice channel management."""
         try:
             key = f"user_discord:{discord_user_id}"
-            self.redis.setex(key, ttl, json.dumps(match_info))
+            # Используем hset для правильного формата
+            self.redis.hset(key, mapping={
+                "match_id": match_info.get('match_id', ''),
+                "team_name": match_info.get('team_name', ''),
+                "assigned_at": match_info.get('assigned_at', '')
+            })
+            self.redis.expire(key, ttl)
             return True
         except Exception as e:
             logger.error(f"Failed to save user match info: {e}")
@@ -169,8 +243,8 @@ class RedisManager:
         """Get user match information."""
         try:
             key = f"user_discord:{discord_user_id}"
-            data = self.redis.get(key)
-            return json.loads(data) if data else None
+            data = self.redis.hgetall(key)
+            return data if data else None
         except Exception as e:
             logger.error(f"Failed to get user match info: {e}")
             return None

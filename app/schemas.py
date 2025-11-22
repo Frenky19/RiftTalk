@@ -50,6 +50,8 @@ class TokenRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    summoner_id: Optional[str] = None
+    summoner_name: Optional[str] = None
 
 
 class DiscordChannelResponse(BaseModel):
