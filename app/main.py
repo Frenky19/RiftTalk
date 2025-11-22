@@ -5,7 +5,9 @@ from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
 import logging
 import os
+import json
 from datetime import datetime, timezone
+import redis  # Добавляем импорт redis для обработки ошибок
 
 from app.config import settings
 from app.database import redis_manager
@@ -113,69 +115,223 @@ async def cleanup_services():
         logger.error(f"Discord cleanup error: {e}")
 
 
+async def handle_champ_select(event_data: dict):
+    """Handle champion selection phase - create voice rooms."""
+    try:
+        logger.info("🎯 Champion selection started - creating voice rooms")
+        
+        # Get detailed champ select data from event
+        champ_select_data = event_data.get('champ_select_data')
+        
+        if not champ_select_data:
+            # Fallback: try to get data directly
+            champ_select_data = await lcu_service.get_champ_select_data()
+        
+        if champ_select_data:
+            match_id = champ_select_data['match_id']
+            players = champ_select_data['players']
+            team_data = champ_select_data['teams']
+            
+            logger.info(f"🚀 Creating voice room for match {match_id}")
+            logger.info(f"👥 Players: {len(players)}")
+            logger.info(f"🔵 Blue team: {team_data.get('blue_team', [])}")
+            logger.info(f"🔴 Red team: {team_data.get('red_team', [])}")
+            
+            # Create voice room
+            result = await voice_service.create_voice_room(
+                match_id,
+                players,
+                team_data
+            )
+            
+            if 'error' in result:
+                logger.error(f"❌ Failed to create voice room: {result['error']}")
+            else:
+                logger.info(f"✅ Successfully created voice room for match {match_id}")
+                
+                # Save match info for current user for auto-assignment
+                current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+                if current_summoner:
+                    summoner_id = str(current_summoner.get('summonerId'))
+                    
+                    # Use a dedicated key for match info to avoid Redis type conflicts
+                    match_info_key = f"user_match:{summoner_id}"
+                    
+                    # Determine which team the current user is on
+                    user_team = None
+                    if summoner_id in team_data.get('blue_team', []):
+                        user_team = "Blue Team"
+                    elif summoner_id in team_data.get('red_team', []):
+                        user_team = "Red Team"
+                    
+                    if user_team:
+                        match_info = {
+                            'match_id': match_id,
+                            'team_name': user_team,
+                            'assigned_at': datetime.now(timezone.utc).isoformat()
+                        }
+                        # Save to dedicated match info key
+                        redis_manager.redis.setex(match_info_key, 3600, json.dumps(match_info))
+                        logger.info(f"✅ Saved match info for user {summoner_id} in {user_team}")
+                    else:
+                        logger.warning(f"⚠️ Current user {summoner_id} not found in any team")
+                else:
+                    logger.warning("⚠️ Could not get current summoner data")
+        else:
+            logger.warning("⚠️ No champ select data available - cannot create voice room")
+            
+    except Exception as e:
+        logger.error(f"❌ Error handling champ select: {e}")
+
+
 async def handle_game_event(event_data: dict):
     """Handle game events from LCU."""
     try:
         event_type = event_data.get('phase')
         logger.info(f"🎮 Game event received: {event_type}")
         
-        if event_type == "match_start":
-            match_data = event_data.get('match_data')
-            if match_data:
-                match_id = match_data.get('match_id')
-                players = match_data.get('players', [])
-                
-                if match_id and players:
-                    logger.info(f"🚀 Creating voice room for match {match_id} with {len(players)} players")
-                    try:
-                        player_ids = [p.get('summoner_id') for p in players if p.get('summoner_id')]
-                        
-                        await voice_service.create_voice_room(
-                            match_id,
-                            player_ids,
-                            {
-                                'blue_team': match_data.get('blue_team', []),
-                                'red_team': match_data.get('red_team', [])
-                            }
-                        )
-                        logger.info(f"✅ Successfully created voice room for match {match_id}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to create voice room for match {match_id}: {e}")
-                        
-        elif event_type == "match_end":
-            match_data = event_data.get('match_data')
-            if match_data:
-                match_id = match_data.get('match_id')
-                if match_id:
-                    logger.info(f"🛑 Closing voice room for match {match_id}")
-                    try:
-                        success = await voice_service.close_voice_room(match_id)
-                        if success:
-                            logger.info(f"✅ Successfully closed voice room for match {match_id}")
-                        else:
-                            logger.warning(f"⚠️ No active voice room found for match {match_id}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to close voice room for match {match_id}: {e}")
+        if event_type == "InProgress":
+            await handle_match_start()
+        elif event_type == "EndOfGame":
+            await handle_match_end(event_data)
                         
     except Exception as e:
         logger.error(f"❌ Error handling game event: {e}")
 
 
-async def handle_champ_select(event_data: dict):
-    """Handle champion selection phase."""
+async def handle_match_start():
+    """Handle match start - perform auto-assignments."""
     try:
-        logger.info("🎯 Champion selection started")
-        match_data = event_data.get('match_data')
-        if match_data:
-            logger.info(f"👥 Players in champ select: {len(match_data.get('players', []))}")
+        logger.info("🎯 Match started - performing auto-assignments")
+        
+        # Get current summoner
+        current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+        if not current_summoner:
+            logger.warning("⚠️ No current summoner data available")
+            return
+            
+        summoner_id = str(current_summoner.get('summonerId'))
+        summoner_name = current_summoner.get('displayName', 'Unknown')
+        logger.info(f"👤 Current summoner: {summoner_name} (ID: {summoner_id})")
+        
+        # Get saved match info from dedicated key
+        match_info_key = f"user_match:{summoner_id}"
+        match_info_data = redis_manager.redis.get(match_info_key)
+        
+        if match_info_data:
+            match_info = json.loads(match_info_data)
+            match_id = match_info.get('match_id')
+            team_name = match_info.get('team_name')
+            
+            if match_id and team_name:
+                logger.info(f"🎯 Auto-assigning user {summoner_name} to {team_name} in match {match_id}")
+                
+                # Get Discord user ID with proper error handling for Redis type issues
+                user_key = f"user:{summoner_id}"
+                discord_user_id = None
+                
+                try:
+                    # Try to get as hash first (correct way)
+                    discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+                except redis.exceptions.ResponseError as e:
+                    if "WRONGTYPE" in str(e):
+                        logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting to fix...")
+                        try:
+                            # If it's a string, try to parse it
+                            user_data = redis_manager.redis.get(user_key)
+                            if user_data:
+                                try:
+                                    user_info = json.loads(user_data)
+                                    discord_user_id = user_info.get('discord_user_id')
+                                    logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
+                                except json.JSONDecodeError:
+                                    logger.error(f"❌ Failed to parse user data as JSON: {user_data}")
+                        except Exception as parse_error:
+                            logger.error(f"❌ Failed to recover Discord ID: {parse_error}")
+                    else:
+                        raise e
+                
+                if discord_user_id:
+                    success = await discord_service.assign_player_to_team(
+                        int(discord_user_id),
+                        match_id,
+                        team_name
+                    )
+                    
+                    if success:
+                        logger.info(f"✅ Successfully auto-assigned {summoner_name} to {team_name}")
+                        
+                        # Get voice room to provide invite link
+                        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+                        discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+                        
+                        team_channel = None
+                        if team_name == "Blue Team" and discord_channels.get('blue_team'):
+                            team_channel = discord_channels['blue_team']
+                        elif team_name == "Red Team" and discord_channels.get('red_team'):
+                            team_channel = discord_channels['red_team']
+                        
+                        if team_channel and team_channel.get('invite_url'):
+                            logger.info(f"🔗 Discord invite available: {team_channel['invite_url']}")
+                            # Store invite URL for user access
+                            invite_key = f"user_invite:{summoner_id}"
+                            redis_manager.redis.setex(invite_key, 3600, team_channel['invite_url'])
+                        else:
+                            logger.warning("⚠️ No Discord channel invite URL available")
+                    else:
+                        logger.error("❌ Failed to assign user to team role in Discord")
+                else:
+                    logger.warning(f"⚠️ No Discord account linked for user {summoner_name}")
+            else:
+                logger.warning("⚠️ Incomplete match info saved")
+        else:
+            logger.warning("⚠️ No match info found for current user")
+            
     except Exception as e:
-        logger.error(f"❌ Error handling champ select: {e}")
+        logger.error(f"❌ Error handling match start: {e}")
+
+
+async def handle_match_end(event_data: dict):
+    """Handle match end - cleanup voice rooms."""
+    try:
+        logger.info("🛑 Match ended - cleaning up voice rooms")
+        
+        # Get current summoner to find match info
+        current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+        if current_summoner:
+            summoner_id = str(current_summoner.get('summonerId'))
+            
+            # Get match info from dedicated key
+            match_info_key = f"user_match:{summoner_id}"
+            match_info_data = redis_manager.redis.get(match_info_key)
+            
+            if match_info_data:
+                match_info = json.loads(match_info_data)
+                match_id = match_info.get('match_id')
+                
+                if match_id:
+                    logger.info(f"🧹 Cleaning up voice room for match {match_id}")
+                    success = await voice_service.close_voice_room(match_id)
+                    
+                    if success:
+                        logger.info(f"✅ Successfully cleaned up voice room for match {match_id}")
+                    else:
+                        logger.warning(f"⚠️ No active voice room found for match {match_id}")
+                    
+                    # Clean up user match info and invite
+                    redis_manager.redis.delete(match_info_key)
+                    invite_key = f"user_invite:{summoner_id}"
+                    redis_manager.redis.delete(invite_key)
+                    
+    except Exception as e:
+        logger.error(f"❌ Error handling match end: {e}")
 
 
 async def handle_ready_check(event_data: dict):
     """Handle ready check phase."""
     try:
         logger.info("✅ Ready check detected")
+        # Можно добавить логику для уведомлений о готовности
     except Exception as e:
         logger.error(f"❌ Error handling ready check: {e}")
 

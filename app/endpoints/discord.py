@@ -1,6 +1,7 @@
 import logging
 import json
 import random
+import redis  # Добавляем импорт
 from fastapi import APIRouter, HTTPException, Depends
 from app.services.discord_service import discord_service
 from app.utils.security import get_current_user
@@ -72,8 +73,10 @@ async def link_discord_account(
     try:
         logger.info(f"🔗 Linking Discord account {request.discord_user_id} to summoner {current_user['sub']}")
         
-        # Save Discord user ID to Redis
+        # Save Discord user ID to Redis with proper type handling
         user_key = f"user:{current_user['sub']}"
+        
+        # Use HSET to ensure we're creating a hash
         redis_manager.redis.hset(user_key, "discord_user_id", str(request.discord_user_id))
         redis_manager.redis.expire(user_key, 604800)  # 7 days
         
@@ -102,9 +105,35 @@ async def assign_to_team(
     try:
         logger.info(f"🎯 Manual assign: user {current_user['sub']} to {request.team_name} in match {request.match_id}")
         
-        # Get Discord user ID from Redis
+        # Get Discord user ID from Redis with proper error handling
         user_key = f"user:{current_user['sub']}"
-        discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        discord_user_id = None
+        
+        try:
+            # Try to get as hash first (correct way)
+            discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        except redis.exceptions.ResponseError as e:
+            if "WRONGTYPE" in str(e):
+                logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting to fix...")
+                try:
+                    # If it's a string, try to parse it
+                    user_data = redis_manager.redis.get(user_key)
+                    if user_data:
+                        try:
+                            user_info = json.loads(user_data)
+                            discord_user_id = user_info.get('discord_user_id')
+                            logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
+                            
+                            # Fix the key by converting to hash
+                            redis_manager.redis.delete(user_key)
+                            redis_manager.redis.hset(user_key, "discord_user_id", str(discord_user_id))
+                            logger.info("✅ Fixed Redis key type from string to hash")
+                        except json.JSONDecodeError:
+                            logger.error(f"❌ Failed to parse user data as JSON: {user_data}")
+                except Exception as parse_error:
+                    logger.error(f"❌ Failed to recover Discord ID: {parse_error}")
+            else:
+                raise e
         
         if not discord_user_id:
             logger.error(f"❌ Discord account not linked for user {current_user['sub']}")
@@ -234,9 +263,35 @@ async def auto_assign_team(
                 detail=f"Failed to determine player team: {str(e)}"
             )
 
-        # Получаем Discord user ID
+        # Получаем Discord user ID с обработкой ошибок типа Redis
         user_key = f"user:{summoner_id}"
-        discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        discord_user_id = None
+        
+        try:
+            # Try to get as hash first (correct way)
+            discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        except redis.exceptions.ResponseError as e:
+            if "WRONGTYPE" in str(e):
+                logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting to fix...")
+                try:
+                    # If it's a string, try to parse it
+                    user_data = redis_manager.redis.get(user_key)
+                    if user_data:
+                        try:
+                            user_info = json.loads(user_data)
+                            discord_user_id = user_info.get('discord_user_id')
+                            logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
+                            
+                            # Fix the key by converting to hash
+                            redis_manager.redis.delete(user_key)
+                            redis_manager.redis.hset(user_key, "discord_user_id", str(discord_user_id))
+                            logger.info("✅ Fixed Redis key type from string to hash")
+                        except json.JSONDecodeError:
+                            logger.error(f"❌ Failed to parse user data as JSON: {user_data}")
+                except Exception as parse_error:
+                    logger.error(f"❌ Failed to recover Discord ID: {parse_error}")
+            else:
+                raise e
         
         if not discord_user_id:
             logger.error(f"❌ Discord account not linked for user {summoner_id}")
@@ -309,7 +364,28 @@ async def get_linked_discord_account(
     """Get linked Discord account information."""
     try:
         user_key = f"user:{current_user['sub']}"
-        discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        discord_user_id = None
+        
+        try:
+            # Try to get as hash first (correct way)
+            discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+        except redis.exceptions.ResponseError as e:
+            if "WRONGTYPE" in str(e):
+                logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting recovery...")
+                try:
+                    # If it's a string, try to parse it
+                    user_data = redis_manager.redis.get(user_key)
+                    if user_data:
+                        try:
+                            user_info = json.loads(user_data)
+                            discord_user_id = user_info.get('discord_user_id')
+                            logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
+                        except json.JSONDecodeError:
+                            logger.error(f"❌ Failed to parse user data as JSON: {user_data}")
+                except Exception as parse_error:
+                    logger.error(f"❌ Failed to recover Discord ID: {parse_error}")
+            else:
+                raise e
         
         return {
             "summoner_id": current_user['sub'],
@@ -331,7 +407,7 @@ async def unlink_discord_account(
     """Unlink Discord account from LoL summoner."""
     try:
         user_key = f"user:{current_user['sub']}"
-        redis_manager.redis.hdel(user_key, "discord_user_id")
+        redis_manager.redis.delete(user_key)
         
         logger.info(f"Unlinked Discord account for summoner {current_user['sub']}")
         

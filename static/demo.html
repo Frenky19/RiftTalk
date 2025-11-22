@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LoL Voice Chat - Demo</title>
+    <title>LoL Auto Voice Chat - Demo</title>
     <style>
         * {
             margin: 0;
@@ -373,13 +373,107 @@
             border-radius: 5px;
             margin: 5px 0;
         }
+
+        .auto-voice-flow {
+            background: rgba(123, 31, 162, 0.2);
+            border: 1px solid #7B1FA2;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .flow-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .flow-step {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .flow-step.active {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+        }
+
+        .flow-step.completed {
+            border-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .flow-step.pending {
+            border-color: #FF9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            border-radius: 50%;
+            line-height: 30px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .step-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .step-description {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .event-log {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #667eea;
+        }
+
+        .log-entry.success {
+            border-left-color: #00ff88;
+        }
+
+        .log-entry.error {
+            border-left-color: #ff4444;
+        }
+
+        .log-entry.warning {
+            border-left-color: #ffaa00;
+        }
+
+        .log-entry.info {
+            border-left-color: #667eea;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎮 LoL Voice Chat - Demo</h1>
-            <p>Тестовая страница для проверки работы API голосового чата для League of Legends</p>
+            <h1>🎮 LoL Auto Voice Chat - Demo</h1>
+            <p>Автоматическое создание голосовых комнат при выборе чемпионов</p>
         </header>
         
         <div class="demo-info" id="demoInfo">
@@ -388,6 +482,47 @@
         
         <div class="auto-refresh" id="autoRefresh">
             🔄 Автообновление статуса каждые 10 секунд
+        </div>
+
+        <!-- Автоматический workflow -->
+        <div class="auto-voice-flow">
+            <h3>🔄 Автоматический Workflow</h3>
+            <div class="security-note">
+                <strong>🎯 НОВАЯ ФУНКЦИЯ:</strong> Голосовые комнаты создаются автоматически при входе в выбор чемпионов!
+            </div>
+            
+            <div class="flow-steps">
+                <div class="flow-step" id="step1">
+                    <div class="step-number">1</div>
+                    <div class="step-title">Запуск League of Legends</div>
+                    <div class="step-description">LCU подключен к клиенту</div>
+                </div>
+                
+                <div class="flow-step" id="step2">
+                    <div class="step-number">2</div>
+                    <div class="step-title">Выбор чемпионов (ChampSelect)</div>
+                    <div class="step-description">Автоматическое создание комнат</div>
+                </div>
+                
+                <div class="flow-step" id="step3">
+                    <div class="step-number">3</div>
+                    <div class="step-title">Начало игры (InProgress)</div>
+                    <div class="step-description">Автоназначение на команды</div>
+                </div>
+                
+                <div class="flow-step" id="step4">
+                    <div class="step-number">4</div>
+                    <div class="step-title">Конец игры (EndOfGame)</div>
+                    <div class="step-description">Автоочистка комнат</div>
+                </div>
+            </div>
+
+            <div class="event-log" id="eventLog">
+                <div class="log-entry info">Журнал событий LCU...</div>
+            </div>
+
+            <button onclick="clearEventLog()" class="warning">Очистить журнал</button>
+            <button onclick="testChampSelectDebug()" class="success">Debug: Champ Select Data</button>
         </div>
         
         <div class="status-panel">
@@ -424,6 +559,7 @@
                 <button onclick="testLCUGameInfo()">Test LCU Game Info</button>
                 <button onclick="testLCUSummoner()">Test LCU Summoner</button>
                 <button onclick="testLCUTeams()">Test LCU Teams</button>
+                <button onclick="testChampSelectDebug()">Debug Champ Select</button>
                 <button onclick="forceLCUReconnect()">Force LCU Reconnect</button>
                 <button onclick="toggleAutoVoice(true)" class="success">Enable Auto Voice</button>
                 <button onclick="toggleAutoVoice(false)" class="warning">Disable Auto Voice</button>
@@ -432,6 +568,11 @@
             <div class="lcu-status" id="lcuDetailedStatus" style="display: none;">
                 <strong>LCU Detailed Status:</strong>
                 <div id="lcuStatusContent"></div>
+            </div>
+
+            <div class="lcu-status" id="champSelectDebugResult" style="display: none;">
+                <strong>Champ Select Debug:</strong>
+                <pre id="champSelectDebugContent"></pre>
             </div>
         </div>
 
@@ -480,19 +621,19 @@
             <button onclick="testEndpoint('/')">Test Root Endpoint</button>
             <button onclick="testEndpoint('/health')">Test Health Check</button>
             <button onclick="testAuth()">Test Authentication</button>
-            <button onclick="testVoiceRoom()">Test Voice Room</button>
+            <button onclick="testVoiceRoom()">Test Manual Voice Room</button>
             <button onclick="testDiscordIntegration()">Test Discord Integration</button>
             <button onclick="getActiveRooms()">Get Active Rooms</button>
             <button class="danger" onclick="forceCleanup()">Force Cleanup All</button>
             <button onclick="clearResults()">Clear Results</button>
         </div>
 
-        <!-- Безопасное назначение команд -->
+        <!-- Ручное управление (для тестирования) -->
         <div class="team-assignment">
-            <h3>🎯 Безопасное назначение на команду</h3>
+            <h3>🎯 Ручное управление (для тестирования)</h3>
             <div class="security-note">
-                <strong>🔒 Безопасность:</strong> Ссылки на голосовые каналы теперь защищены. 
-                Игроки получают доступ только к каналам своей команды после автоматического назначения.
+                <strong>💡 Примечание:</strong> В автоматическом режиме эти шаги выполняются автоматически. 
+                Используйте ручное управление только для тестирования.
             </div>
             
             <div class="input-group">
@@ -532,6 +673,8 @@
         let lastMatchId = '';
         let refreshInterval;
         let currentDiscordUserId = null;
+        let eventLog = [];
+        let currentGamePhase = 'None';
         
         // Initialize status checks
         document.addEventListener('DOMContentLoaded', function() {
@@ -541,8 +684,319 @@
             checkLinkedAccount();
             // Автоматическое обновление статуса каждые 10 секунд
             refreshInterval = setInterval(checkAllStatuses, 10000);
+            // Мониторинг событий LCU каждые 5 секунд
+            setInterval(checkLCUEvents, 5000);
         });
+
+        // Новые функции для автоматического workflow
+        function addEventLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = {
+                timestamp,
+                message,
+                type
+            };
+            
+            eventLog.unshift(logEntry);
+            if (eventLog.length > 20) {
+                eventLog = eventLog.slice(0, 20);
+            }
+            
+            updateEventLogDisplay();
+        }
+
+        function updateEventLogDisplay() {
+            const logContainer = document.getElementById('eventLog');
+            logContainer.innerHTML = '';
+            
+            eventLog.forEach(entry => {
+                const logElement = document.createElement('div');
+                logElement.className = `log-entry ${entry.type}`;
+                logElement.innerHTML = `<strong>[${entry.timestamp}]</strong> ${entry.message}`;
+                logContainer.appendChild(logElement);
+            });
+        }
+
+        function clearEventLog() {
+            eventLog = [];
+            updateEventLogDisplay();
+            addEventLog('Журнал очищен', 'info');
+        }
+
+        async function checkLCUEvents() {
+            try {
+                if (!currentToken) return;
+                
+                const response = await fetch(`${API_BASE}/api/lcu/current-game`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const newPhase = data.game_phase;
+                    
+                    if (newPhase && newPhase !== currentGamePhase) {
+                        addEventLog(`🎮 Фаза игры изменилась: ${currentGamePhase} → ${newPhase}`, 'success');
+                        currentGamePhase = newPhase;
+                        updateWorkflowSteps(newPhase);
+                    }
+                }
+            } catch (error) {
+                console.log('LCU events check failed:', error);
+            }
+        }
+
+        function updateWorkflowSteps(currentPhase) {
+            // Сброс всех шагов
+            document.querySelectorAll('.flow-step').forEach(step => {
+                step.className = 'flow-step';
+            });
+            
+            // Активация шагов в зависимости от фазы
+            const step1 = document.getElementById('step1');
+            const step2 = document.getElementById('step2');
+            const step3 = document.getElementById('step3');
+            const step4 = document.getElementById('step4');
+            
+            step1.className = 'flow-step completed';
+            
+            switch(currentPhase) {
+                case 'ChampSelect':
+                    step2.className = 'flow-step active';
+                    break;
+                case 'InProgress':
+                    step2.className = 'flow-step completed';
+                    step3.className = 'flow-step active';
+                    break;
+                case 'EndOfGame':
+                    step2.className = 'flow-step completed';
+                    step3.className = 'flow-step completed';
+                    step4.className = 'flow-step active';
+                    break;
+                default:
+                    step1.className = 'flow-step active';
+            }
+        }
+
+        async function testChampSelectDebug() {
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/api/lcu/champ-select-debug`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                
+                // Показать результат в специальном блоке
+                const resultElement = document.getElementById('champSelectDebugResult');
+                const contentElement = document.getElementById('champSelectDebugContent');
+                if (response.ok) {
+                    contentElement.textContent = JSON.stringify(data, null, 2);
+                    resultElement.style.display = 'block';
+                    showResult('Champ Select Debug', data, true);
+                    
+                    if (data.champ_select_debug && data.champ_select_debug.champ_select_data) {
+                        const csData = data.champ_select_debug.champ_select_data;
+                        addEventLog(`🎯 Данные выбора чемпионов: ${csData.players ? csData.players.length : 0} игроков`, 'success');
+                    }
+                } else {
+                    showResult('Champ Select Debug', data, false);
+                }
+                
+            } catch (error) {
+                showResult('Champ Select Debug', {error: error.message}, false);
+            }
+        }
+
+        // Основные функции
+        async function checkAllStatuses() {
+            await checkApiStatus();
+            await checkHealthStatus();
+            // Обновляем время последнего обновления
+            document.getElementById('autoRefresh').innerHTML = 
+                `🔄 Автообновление статуса (последнее: ${new Date().toLocaleTimeString()})`;
+        }
         
+        async function checkApiStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/`);
+                const data = await response.json();
+                updateStatusCard('api-status', '✅ API is running', 'healthy', {
+                    message: data.message,
+                    status: data.status,
+                    timestamp: data.timestamp
+                });
+            } catch (error) {
+                updateStatusCard('api-status', '❌ API connection failed', 'error', {error: error.message});
+            }
+        }
+        
+        async function checkHealthStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                // Update demo info message
+                document.getElementById('demoInfo').innerHTML = `<strong>💡 Статус:</strong> ${data.message}`;
+                
+                // Update Redis status
+                const redisStatus = data.services.redis;
+                if (redisStatus === 'healthy') {
+                    updateStatusCard('redis-status', '✅ Redis connected', 'healthy', {status: redisStatus});
+                } else if (redisStatus.includes('error')) {
+                    updateStatusCard('redis-status', '❌ Redis connection issue', 'error', {status: redisStatus});
+                } else {
+                    updateStatusCard('redis-status', '🔄 Redis checking', 'checking', {status: redisStatus});
+                }
+                
+                // Update Discord status
+                const discordStatus = data.services.discord;
+                if (discordStatus === 'connected') {
+                    updateStatusCard('discord-status', '✅ Discord connected', 'healthy', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
+                } else if (discordStatus === 'mock_mode') {
+                    updateStatusCard('discord-status', '🔶 Discord MOCK mode', 'warning', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
+                } else if (discordStatus === 'disabled') {
+                    updateStatusCard('discord-status', '🔶 Discord disabled', 'warning', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
+                } else {
+                    updateStatusCard('discord-status', '❌ Discord connection failed', 'error', {
+                        status: discordStatus,
+                        details: data.discord_details
+                    });
+                }
+                
+                // Update LCU status
+                const lcuStatus = data.services.lcu;
+                const lcuDetails = data.lcu_details || {};
+                
+                if (lcuStatus === 'connected') {
+                    updateStatusCard('lcu-status', '✅ LCU connected', 'healthy', {
+                        status: lcuStatus,
+                        current_phase: lcuDetails.current_phase,
+                        summoner: lcuDetails.lcu_connector?.summoner_name
+                    });
+                } else if (lcuStatus === 'waiting_for_game') {
+                    updateStatusCard('lcu-status', '🔶 LCU waiting for game', 'warning', {
+                        status: lcuStatus,
+                        monitoring: lcuDetails.monitoring
+                    });
+                } else if (lcuStatus === 'disconnected') {
+                    updateStatusCard('lcu-status', '🔶 LCU disconnected', 'warning', {
+                        status: lcuStatus,
+                        note: 'Launch League of Legends to connect'
+                    });
+                } else {
+                    updateStatusCard('lcu-status', '🔄 LCU checking', 'checking', {status: lcuStatus});
+                }
+                
+                // Update LCU detailed status display
+                updateLCUStatusDisplay(data);
+                
+            } catch (error) {
+                updateStatusCard('health-status', '❌ Health check failed', 'error', {error: error.message});
+            }
+        }
+        
+        function updateStatusCard(elementId, message, type, data) {
+            const element = document.getElementById(elementId);
+            const icon = type === 'healthy' ? '✅' : 
+                        type === 'warning' ? '🔶' : 
+                        type === 'error' ? '❌' : '🔄';
+            
+            element.innerHTML = `
+                <div class="status-icon">${icon}</div>
+                <div class="status-message">${message}</div>
+                <div class="status-details">${JSON.stringify(data, null, 2)}</div>
+            `;
+            element.className = `status-card ${type}`;
+        }
+
+        function updateLCUStatusDisplay(lcuData) {
+            const lcuStatusElement = document.getElementById('lcuDetailedStatus');
+            const lcuContentElement = document.getElementById('lcuStatusContent');
+            
+            if (lcuData.lcu_service) {
+                const service = lcuData.lcu_service;
+                lcuStatusElement.style.display = 'block';
+                
+                let content = `
+                    <div><strong>Connected:</strong> ${service.connected ? '✅ Yes' : '❌ No'}</div>
+                    <div><strong>Monitoring:</strong> ${service.monitoring ? '✅ Active' : '❌ Inactive'}</div>
+                    <div><strong>Game Phase:</strong> ${service.current_phase || 'None'}</div>
+                    <div><strong>Event Handlers:</strong> ${service.event_handlers?.length || 0}</div>
+                `;
+                
+                if (service.lcu_connector) {
+                    content += `
+                        <div><strong>Lockfile Found:</strong> ${service.lcu_connector.lockfile_found ? '✅ Yes' : '❌ No'}</div>
+                        <div><strong>Connection Attempts:</strong> ${service.lcu_connector.connection_attempts}</div>
+                    `;
+                    
+                    if (service.lcu_connector.summoner_name) {
+                        content += `<div><strong>Summoner:</strong> ${service.lcu_connector.summoner_name}</div>`;
+                    }
+                }
+                
+                lcuContentElement.innerHTML = content;
+            }
+        }
+        
+        async function testEndpoint(endpoint) {
+            showLoading('results');
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                const data = await response.json();
+                showResult(`GET ${endpoint}`, data, response.status === 200);
+            } catch (error) {
+                showResult(`GET ${endpoint}`, {error: error.message}, false);
+            }
+        }
+        
+        async function testAuth() {
+            showLoading('results');
+            try {
+                const formData = new FormData();
+                formData.append('username', 'test_player');
+                formData.append('password', 'test_password');
+                
+                const response = await fetch(`${API_BASE}/api/auth/token`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (response.ok && data.access_token) {
+                    currentToken = data.access_token;
+                    showResult('Authentication', {...data, note: 'Token saved for future requests'}, true);
+                    
+                    // Проверяем привязанный аккаунт после аутентификации
+                    checkLinkedAccount();
+                } else {
+                    showResult('Authentication', data, false);
+                }
+            } catch (error) {
+                showResult('Authentication', {error: error.message}, false);
+            }
+        }
+
         // Discord User Management
         function loadDiscordUser() {
             const savedUserId = localStorage.getItem('discordUserId');
@@ -705,9 +1159,6 @@
             }
         }
 
-        // Остальные функции (LCU, Voice Rooms, etc.) остаются без изменений
-        // ... [остальной код JavaScript из предыдущей версии] ...
-
         // LCU Functions
         async function testLCUStatus() {
             showLoading('results');
@@ -729,9 +1180,11 @@
                 // Update LCU status display
                 updateLCUStatusDisplay(data);
                 showResult('LCU Status', data, response.status === 200);
+                addEventLog('✅ Проверка статуса LCU выполнена', 'success');
                 
             } catch (error) {
                 showResult('LCU Status', {error: error.message}, false);
+                addEventLog('❌ Ошибка проверки статуса LCU', 'error');
             }
         }
 
@@ -855,224 +1308,7 @@
             }
         }
 
-        function updateLCUStatusDisplay(lcuData) {
-            const lcuStatusElement = document.getElementById('lcuDetailedStatus');
-            const lcuContentElement = document.getElementById('lcuStatusContent');
-            
-            if (lcuData.lcu_service) {
-                const service = lcuData.lcu_service;
-                lcuStatusElement.style.display = 'block';
-                
-                let content = `
-                    <div><strong>Connected:</strong> ${service.connected ? '✅ Yes' : '❌ No'}</div>
-                    <div><strong>Monitoring:</strong> ${service.monitoring ? '✅ Active' : '❌ Inactive'}</div>
-                    <div><strong>Game Phase:</strong> ${service.current_phase || 'None'}</div>
-                    <div><strong>Event Handlers:</strong> ${service.event_handlers?.length || 0}</div>
-                `;
-                
-                if (service.lcu_connector) {
-                    content += `
-                        <div><strong>Lockfile Found:</strong> ${service.lcu_connector.lockfile_found ? '✅ Yes' : '❌ No'}</div>
-                        <div><strong>Connection Attempts:</strong> ${service.lcu_connector.connection_attempts}</div>
-                    `;
-                    
-                    if (service.lcu_connector.summoner_name) {
-                        content += `<div><strong>Summoner:</strong> ${service.lcu_connector.summoner_name}</div>`;
-                    }
-                }
-                
-                lcuContentElement.innerHTML = content;
-            }
-        }
-
-        async function autoAssignTeam() {
-            const matchId = getMatchId();
-            if (!matchId) return;
-
-            // Get Discord user with validation
-            const discordUserId = requireDiscordUser();
-            if (!discordUserId) return;
-
-            showLoading('results');
-            try {
-                if (!currentToken) {
-                    await testAuth();
-                    if (!currentToken) {
-                        throw new Error('Authentication failed - no token available');
-                    }
-                }
-
-                // Автоматическое назначение на команду
-                const assignResponse = await fetch(`${API_BASE}/api/discord/auto-assign-team?match_id=${matchId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${currentToken}`
-                    }
-                });
-                
-                if (!assignResponse.ok) {
-                    const errorData = await assignResponse.json();
-                    throw new Error(`Failed to auto-assign team: ${errorData.detail || assignResponse.statusText}`);
-                }
-                
-                const data = await assignResponse.json();
-                
-                // Теперь данные содержат только одну ссылку - на команду пользователя
-                showResult(`Auto Assign Team for ${matchId}`, data, true);
-                
-            } catch (error) {
-                showResult(`Auto Assign Team for ${matchId}`, {error: error.message}, false);
-            }
-        }
-        
-        async function checkAllStatuses() {
-            await checkApiStatus();
-            await checkHealthStatus();
-            // Обновляем время последнего обновления
-            document.getElementById('autoRefresh').innerHTML = 
-                `🔄 Автообновление статуса (последнее: ${new Date().toLocaleTimeString()})`;
-        }
-        
-        async function checkApiStatus() {
-            try {
-                const response = await fetch(`${API_BASE}/`);
-                const data = await response.json();
-                updateStatusCard('api-status', '✅ API is running', 'healthy', {
-                    message: data.message,
-                    status: data.status,
-                    timestamp: data.timestamp
-                });
-            } catch (error) {
-                updateStatusCard('api-status', '❌ API connection failed', 'error', {error: error.message});
-            }
-        }
-        
-        async function checkHealthStatus() {
-            try {
-                const response = await fetch(`${API_BASE}/health`);
-                const data = await response.json();
-                
-                // Update demo info message
-                document.getElementById('demoInfo').innerHTML = `<strong>💡 Статус:</strong> ${data.message}`;
-                
-                // Update Redis status
-                const redisStatus = data.services.redis;
-                if (redisStatus === 'healthy') {
-                    updateStatusCard('redis-status', '✅ Redis connected', 'healthy', {status: redisStatus});
-                } else if (redisStatus.includes('error')) {
-                    updateStatusCard('redis-status', '❌ Redis connection issue', 'error', {status: redisStatus});
-                } else {
-                    updateStatusCard('redis-status', '🔄 Redis checking', 'checking', {status: redisStatus});
-                }
-                
-                // Update Discord status
-                const discordStatus = data.services.discord;
-                if (discordStatus === 'connected') {
-                    updateStatusCard('discord-status', '✅ Discord connected', 'healthy', {
-                        status: discordStatus,
-                        details: data.discord_details
-                    });
-                } else if (discordStatus === 'mock_mode') {
-                    updateStatusCard('discord-status', '🔶 Discord MOCK mode', 'warning', {
-                        status: discordStatus,
-                        details: data.discord_details
-                    });
-                } else if (discordStatus === 'disabled') {
-                    updateStatusCard('discord-status', '🔶 Discord disabled', 'warning', {
-                        status: discordStatus,
-                        details: data.discord_details
-                    });
-                } else {
-                    updateStatusCard('discord-status', '❌ Discord connection failed', 'error', {
-                        status: discordStatus,
-                        details: data.discord_details
-                    });
-                }
-                
-                // Update LCU status
-                const lcuStatus = data.services.lcu;
-                const lcuDetails = data.lcu_details || {};
-                
-                if (lcuStatus === 'connected') {
-                    updateStatusCard('lcu-status', '✅ LCU connected', 'healthy', {
-                        status: lcuStatus,
-                        current_phase: lcuDetails.current_phase,
-                        summoner: lcuDetails.lcu_connector?.summoner_name
-                    });
-                } else if (lcuStatus === 'waiting_for_game') {
-                    updateStatusCard('lcu-status', '🔶 LCU waiting for game', 'warning', {
-                        status: lcuStatus,
-                        monitoring: lcuDetails.monitoring
-                    });
-                } else if (lcuStatus === 'disconnected') {
-                    updateStatusCard('lcu-status', '🔶 LCU disconnected', 'warning', {
-                        status: lcuStatus,
-                        note: 'Launch League of Legends to connect'
-                    });
-                } else {
-                    updateStatusCard('lcu-status', '🔄 LCU checking', 'checking', {status: lcuStatus});
-                }
-                
-                // Update LCU detailed status display
-                updateLCUStatusDisplay(data);
-                
-            } catch (error) {
-                updateStatusCard('health-status', '❌ Health check failed', 'error', {error: error.message});
-            }
-        }
-        
-        function updateStatusCard(elementId, message, type, data) {
-            const element = document.getElementById(elementId);
-            const icon = type === 'healthy' ? '✅' : 
-                        type === 'warning' ? '🔶' : 
-                        type === 'error' ? '❌' : '🔄';
-            
-            element.innerHTML = `
-                <div class="status-icon">${icon}</div>
-                <div class="status-message">${message}</div>
-                <div class="status-details">${JSON.stringify(data, null, 2)}</div>
-            `;
-            element.className = `status-card ${type}`;
-        }
-        
-        async function testEndpoint(endpoint) {
-            showLoading('results');
-            try {
-                const response = await fetch(`${API_BASE}${endpoint}`);
-                const data = await response.json();
-                showResult(`GET ${endpoint}`, data, response.status === 200);
-            } catch (error) {
-                showResult(`GET ${endpoint}`, {error: error.message}, false);
-            }
-        }
-        
-        async function testAuth() {
-            showLoading('results');
-            try {
-                const formData = new FormData();
-                formData.append('username', 'test_player');
-                formData.append('password', 'test_password');
-                
-                const response = await fetch(`${API_BASE}/api/auth/token`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                
-                if (response.ok && data.access_token) {
-                    currentToken = data.access_token;
-                    showResult('Authentication', {...data, note: 'Token saved for future requests'}, true);
-                    
-                    // Проверяем привязанный аккаунт после аутентификации
-                    checkLinkedAccount();
-                } else {
-                    showResult('Authentication', data, false);
-                }
-            } catch (error) {
-                showResult('Authentication', {error: error.message}, false);
-            }
-        }
-        
+        // Voice Room Functions
         async function testVoiceRoom() {
             showLoading('results');
             try {
@@ -1169,6 +1405,46 @@
                 
             } catch (error) {
                 showResult('Discord Integration Test', {error: error.message}, false);
+            }
+        }
+
+        async function autoAssignTeam() {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            // Get Discord user with validation
+            const discordUserId = requireDiscordUser();
+            if (!discordUserId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await testAuth();
+                    if (!currentToken) {
+                        throw new Error('Authentication failed - no token available');
+                    }
+                }
+
+                // Автоматическое назначение на команду
+                const assignResponse = await fetch(`${API_BASE}/api/discord/auto-assign-team?match_id=${matchId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (!assignResponse.ok) {
+                    const errorData = await assignResponse.json();
+                    throw new Error(`Failed to auto-assign team: ${errorData.detail || assignResponse.statusText}`);
+                }
+                
+                const data = await assignResponse.json();
+                
+                // Теперь данные содержат только одну ссылку - на команду пользователя
+                showResult(`Auto Assign Team for ${matchId}`, data, true);
+                
+            } catch (error) {
+                showResult(`Auto Assign Team for ${matchId}`, {error: error.message}, false);
             }
         }
 

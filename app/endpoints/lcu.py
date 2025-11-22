@@ -101,6 +101,23 @@ async def get_current_teams(
         )
 
 
+@router.get("/champ-select-debug")
+async def get_champ_select_debug(
+    current_user: dict = Depends(get_current_user)
+):
+    """Debug endpoint for champ select data."""
+    try:
+        detailed_info = await lcu_service.get_detailed_champ_select_info()
+        return {
+            "status": "success",
+            "champ_select_debug": detailed_info
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Champ select debug failed: {str(e)}"
+        )
+
+
 @router.get("/session-debug")
 async def get_session_debug(
     current_user: dict = Depends(get_current_user)
