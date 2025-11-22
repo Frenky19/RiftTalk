@@ -443,9 +443,10 @@
                 <label for="discordUserIdInput">Discord User ID:</label>
                 <input type="text" id="discordUserIdInput" placeholder="Введите ваш Discord ID">
                 <div style="margin-top: 10px;">
-                    <button onclick="saveDiscordUser()" class="success">Сохранить Discord ID</button>
+                    <button onclick="saveDiscordUser()" class="success">Сохранить Discord ID (в Redis)</button>
                     <button onclick="clearDiscordUser()" class="warning">Очистить</button>
                     <button onclick="verifyDiscordUser()">Проверить пользователя</button>
+                    <button onclick="checkLinkedAccount()">Проверить привязку</button>
                 </div>
             </div>
             
@@ -454,6 +455,13 @@
                 <span id="currentUserId"></span>
                 <br>
                 <small>ID сохранен в localStorage</small>
+            </div>
+
+            <div class="user-info" id="serverUserInfo" style="display: none;">
+                <strong>Привязанный Discord (сервер):</strong> 
+                <span id="serverUserId"></span>
+                <br>
+                <small>ID сохранен в Redis</small>
             </div>
             
             <div class="discord-help">
@@ -530,6 +538,7 @@
             checkAllStatuses();
             getActiveRooms();
             loadDiscordUser();
+            checkLinkedAccount();
             // Автоматическое обновление статуса каждые 10 секунд
             refreshInterval = setInterval(checkAllStatuses, 10000);
         });
@@ -542,11 +551,11 @@
                 document.getElementById('discordUserIdInput').value = savedUserId;
                 document.getElementById('currentUserId').textContent = savedUserId;
                 document.getElementById('currentUserInfo').style.display = 'block';
-                console.log('✅ Discord user loaded:', savedUserId);
+                console.log('✅ Discord user loaded from localStorage:', savedUserId);
             }
         }
 
-        function saveDiscordUser() {
+        async function saveDiscordUser() {
             const userId = document.getElementById('discordUserIdInput').value.trim();
             
             if (!userId) {
@@ -554,25 +563,83 @@
                 return;
             }
             
-            // Basic Discord ID validation (Discord IDs are snowflakes, usually 17-19 digits)
+            // Basic Discord ID validation
             if (!/^\d{17,20}$/.test(userId)) {
                 alert('❌ Неверный формат Discord ID. Должен содержать 17-20 цифр.\n\nКак найти ID: Настройки → Дополнительно → Режим разработчика → ПКМ по аватару → Копировать ID');
                 return;
             }
             
-            currentDiscordUserId = userId;
-            localStorage.setItem('discordUserId', userId);
+            if (!currentToken) {
+                alert('❌ Сначала выполните аутентификацию (Test Authentication)');
+                return;
+            }
+
+            showLoading('results');
+            try {
+                const response = await fetch(`${API_BASE}/api/discord/link-account`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({
+                        discord_user_id: parseInt(userId)
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Ошибка при сохранении на сервере');
+                }
+                
+                const data = await response.json();
+                
+                // Сохраняем в localStorage для удобства
+                currentDiscordUserId = userId;
+                localStorage.setItem('discordUserId', userId);
+                
+                document.getElementById('currentUserId').textContent = userId;
+                document.getElementById('currentUserInfo').style.display = 'block';
+                
+                showResult('Discord User Saved to Redis', {
+                    user_id: userId,
+                    status: 'saved',
+                    server_response: data,
+                    note: 'Discord ID сохранен в Redis на сервере'
+                }, true);
+                
+                console.log('✅ Discord user saved to Redis:', userId);
+                
+                // Проверяем привязку
+                checkLinkedAccount();
+                
+            } catch (error) {
+                showResult('Discord User Save Failed', {error: error.message}, false);
+            }
+        }
+
+        async function checkLinkedAccount() {
+            if (!currentToken) return;
             
-            document.getElementById('currentUserId').textContent = userId;
-            document.getElementById('currentUserInfo').style.display = 'block';
-            
-            showResult('Discord User Saved', {
-                user_id: userId,
-                status: 'saved',
-                note: 'Discord ID сохранен в localStorage'
-            }, true);
-            
-            console.log('✅ Discord user saved:', userId);
+            try {
+                const response = await fetch(`${API_BASE}/api/discord/linked-account`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.linked && data.discord_user_id) {
+                        document.getElementById('serverUserId').textContent = data.discord_user_id;
+                        document.getElementById('serverUserInfo').style.display = 'block';
+                    } else {
+                        document.getElementById('serverUserInfo').style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.log('❌ Failed to check linked account:', error);
+            }
         }
 
         function clearDiscordUser() {
@@ -580,10 +647,11 @@
             localStorage.removeItem('discordUserId');
             document.getElementById('discordUserIdInput').value = '';
             document.getElementById('currentUserInfo').style.display = 'none';
+            document.getElementById('serverUserInfo').style.display = 'none';
             
             showResult('Discord User Cleared', {
                 status: 'cleared',
-                note: 'Discord ID удален'
+                note: 'Discord ID удален из localStorage'
             }, true);
         }
 
@@ -636,6 +704,9 @@
                 showResult('Discord User Verification', {error: error.message}, false);
             }
         }
+
+        // Остальные функции (LCU, Voice Rooms, etc.) остаются без изменений
+        // ... [остальной код JavaScript из предыдущей версии] ...
 
         // LCU Functions
         async function testLCUStatus() {
@@ -991,6 +1062,9 @@
                 if (response.ok && data.access_token) {
                     currentToken = data.access_token;
                     showResult('Authentication', {...data, note: 'Token saved for future requests'}, true);
+                    
+                    // Проверяем привязанный аккаунт после аутентификации
+                    checkLinkedAccount();
                 } else {
                     showResult('Authentication', data, false);
                 }

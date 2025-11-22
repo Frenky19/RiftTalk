@@ -2,6 +2,7 @@ import os
 import aiohttp
 import logging
 import asyncio
+import ssl
 from typing import Optional, Dict, Any
 from app.utils.exceptions import LCUException
 
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class LCUConnector:
-    """League Client Update (LCU) API connector optimized for Windows."""
+    """League Client Update (LCU) API connector with enhanced Windows support."""
 
     def __init__(self):
         """Initialize LCU connector."""
@@ -19,104 +20,137 @@ class LCUConnector:
         self.is_connected_flag = False
         self._initialized = False
         self._connection_attempts = 0
-        self.max_attempts = 10
+        self.max_attempts = 5
 
     def _get_lockfile_path(self) -> Optional[str]:
         """Get the path to League of Legends lockfile for Windows."""
         possible_paths = [
-            # Основные пути Windows
+            # Основные пути
+            "C:/Riot Games/League of Legends/lockfile",  # Твой путь!
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "Riot Client", "Config", "lockfile"),
             os.path.join(os.getenv('LOCALAPPDATA', ''), "Riot Games", "League of Legends", "Config", "lockfile"),
-            # Альтернативные пути
             os.path.join(os.getenv('USERPROFILE', ''), "AppData", "Local", "Riot Games", "Riot Client", "Config", "lockfile"),
             os.path.join(os.getenv('USERPROFILE', ''), "AppData", "Local", "Riot Games", "League of Legends", "Config", "lockfile"),
-            # Fallback пути
+            # Альтернативные пути
             "C:/Riot Games/League of Legends/Config/lockfile",
+            "D:/Riot Games/League of Legends/lockfile",
             "D:/Riot Games/League of Legends/Config/lockfile",
         ]
         
-        logger.info("🔍 Searching for LCU lockfile in Windows paths...")
+        logger.info("🔍 Searching for LCU lockfile...")
         for path in possible_paths:
             try:
                 if os.path.exists(path):
                     logger.info(f"✅ Found lockfile at: {path}")
                     return path
-                else:
-                    logger.debug(f"❌ Lockfile not found at: {path}")
             except Exception as e:
-                logger.debug(f"⚠️ Error checking path {path}: {e}")
+                logger.debug(f"⚠️ Error checking {path}: {e}")
                 continue
                 
-        logger.info("🔍 League client lockfile not found (game not running)")
+        logger.info("🔍 League client lockfile not found")
         return None
+
+    def _read_lockfile(self) -> bool:
+        """Read and parse lockfile with validation."""
+        try:
+            if not self.lockfile_path or not os.path.exists(self.lockfile_path):
+                return False
+                
+            with open(self.lockfile_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                
+            parts = content.split(':')
+            if len(parts) < 5:
+                logger.error(f"❌ Invalid lockfile format: {content}")
+                return False
+                
+            self.lockfile_data = {
+                "process_name": parts[0],
+                "pid": parts[1],
+                "port": parts[2],
+                "password": parts[3],
+                "protocol": parts[4]
+            }
+            
+            logger.info(f"🔑 Lockfile parsed - Port: {self.lockfile_data['port']}, PID: {self.lockfile_data['pid']}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to read lockfile: {e}")
+            return False
 
     def is_connected(self) -> bool:
         """Check if connected to LCU API."""
         return self.is_connected_flag and self.session is not None
 
     async def connect(self) -> bool:
-        """Connect to League Client UX API with retry logic."""
+        """Connect to League Client UX API with comprehensive error handling."""
         if self._connection_attempts >= self.max_attempts:
             logger.warning("🔶 Max connection attempts reached")
             return False
 
         self._connection_attempts += 1
+        logger.info(f"🔄 LCU connection attempt {self._connection_attempts}/{self.max_attempts}")
         
         try:
+            # Get lockfile path
             self.lockfile_path = self._get_lockfile_path()
             if not self.lockfile_path:
-                logger.info("🎮 League client not running - LCU connector will remain disconnected")
+                logger.info("🎮 League client not running")
                 return False
                 
             # Read lockfile
-            with open(self.lockfile_path, 'r', encoding='utf-8') as f:
-                lockfile_content = f.read().strip()
-                parts = lockfile_content.split(':')
-                if len(parts) < 5:
-                    raise LCUException("Invalid lockfile format")
-                self.lockfile_data = {
-                    "process_name": parts[0],
-                    "pid": parts[1],
-                    "port": parts[2],
-                    "password": parts[3],
-                    "protocol": parts[4]
-                }
-                
-            logger.info(f"🔑 Found LCU lockfile on port {self.lockfile_data['port']}")
-            
-            # Create session with proper SSL handling for Windows
+            if not self._read_lockfile():
+                return False
+
+            logger.info(f"🔧 Attempting connection to port {self.lockfile_data['port']} with protocol {self.lockfile_data['protocol']}")
+
+            # Create SSL context
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            # Create session
             self.session = aiohttp.ClientSession(
                 auth=aiohttp.BasicAuth('riot', self.lockfile_data['password']),
-                connector=aiohttp.TCPConnector(verify_ssl=False),
+                connector=aiohttp.TCPConnector(ssl=ssl_context),
                 headers={
                     'Content-Type': 'application/json',
                     'User-Agent': 'LoLVoiceChat/1.0.0'
                 },
-                timeout=aiohttp.ClientTimeout(total=15)
+                timeout=aiohttp.ClientTimeout(total=10)
             )
 
             # Test connection
             test_url = f"{self.lockfile_data['protocol']}://127.0.0.1:{self.lockfile_data['port']}/lol-summoner/v1/current-summoner"
+            logger.info(f"🔗 Testing URL: {test_url}")
             
             async with self.session.get(test_url) as response:
+                logger.info(f"📡 Response status: {response.status}")
+                
                 if response.status == 200:
                     self.is_connected_flag = True
                     self._initialized = True
-                    self._connection_attempts = 0  # Reset counter on success
+                    self._connection_attempts = 0
                     
-                    # Get summoner info for logging
                     summoner_data = await response.json()
-                    logger.info(f"✅ Successfully connected to LCU API as: {summoner_data.get('displayName', 'Unknown')}")
+                    logger.info(f"✅ Successfully connected to LCU as: {summoner_data.get('displayName', 'Unknown')}")
                     return True
                 else:
-                    raise LCUException(f"Connection test failed with status: {response.status}")
+                    error_text = await response.text()
+                    logger.error(f"❌ LCU returned status {response.status}: {error_text}")
+                    return False
                     
-        except LCUException as e:
-            logger.warning(f"❌ LCU connection failed (attempt {self._connection_attempts}): {e}")
+        except aiohttp.ClientConnectorError as e:
+            logger.error(f"🌐 Connection error: {e}")
+            await self._cleanup()
+            return False
+        except aiohttp.ClientResponseError as e:
+            logger.error(f"📡 HTTP error: {e}")
             await self._cleanup()
             return False
         except Exception as e:
-            logger.warning(f"❌ Unexpected error during LCU connection: {e}")
+            logger.error(f"❌ Unexpected error: {e}")
             await self._cleanup()
             return False
 
@@ -126,7 +160,6 @@ class LCUConnector:
             await self.session.close()
             self.session = None
         self.is_connected_flag = False
-        self.lockfile_data = None
 
     async def disconnect(self):
         """Disconnect from LCU API."""
@@ -141,10 +174,8 @@ class LCUConnector:
     ) -> Any:
         """Make request to LCU API with enhanced error handling."""
         if not self.is_connected():
-            # Try to reconnect
-            logger.info("🔄 Attempting to reconnect to LCU...")
             if not await self.connect():
-                raise LCUException("Not connected to LCU and reconnection failed")
+                raise LCUException("Not connected to LCU")
             
         url = f"{self.lockfile_data['protocol']}://127.0.0.1:{self.lockfile_data['port']}{endpoint}"
         
@@ -159,98 +190,103 @@ class LCUConnector:
                     return None
                 else:
                     error_text = await response.text()
-                    logger.warning(f"⚠️ LCU API error {response.status} for {endpoint}: {error_text}")
-                    
-                    # Handle common errors
-                    if response.status == 403:
-                        raise LCUException("Access forbidden - check client permissions")
-                    elif response.status == 401:
-                        raise LCUException("Authentication failed")
-                    else:
-                        raise LCUException(f"LCU API error: {response.status} - {error_text}")
+                    logger.warning(f"⚠️ LCU API error {response.status}: {error_text}")
+                    return None
                     
         except aiohttp.ClientError as e:
-            logger.error(f"🌐 Network error during LCU request to {endpoint}: {e}")
-            # Mark as disconnected to trigger reconnection
+            logger.error(f"🌐 Network error: {e}")
             self.is_connected_flag = False
-            raise LCUException(f"Request to LCU API failed: {str(e)}")
-        except Exception as e:
-            logger.error(f"❌ Unexpected error during LCU request to {endpoint}: {e}")
-            raise LCUException(f"Request to LCU API failed: {str(e)}")
-
-    # Enhanced API methods
-    async def get_current_summoner(self) -> Optional[Dict[str, Any]]:
-        """Get information about current summoner."""
-        try:
-            return await self.make_request("GET", "/lol-summoner/v1/current-summoner")
-        except LCUException:
             return None
+        except Exception as e:
+            logger.error(f"❌ LCU request error: {e}")
+            return None
+
+    # API methods
+    async def get_current_summoner(self) -> Optional[Dict[str, Any]]:
+        """Get current summoner information."""
+        return await self.make_request("GET", "/lol-summoner/v1/current-summoner")
 
     async def get_game_flow_phase(self) -> Optional[str]:
         """Get current game flow phase."""
-        try:
-            phase_data = await self.make_request("GET", "/lol-gameflow/v1/gameflow-phase")
-            return phase_data if isinstance(phase_data, str) else None
-        except LCUException:
-            return None
+        return await self.make_request("GET", "/lol-gameflow/v1/gameflow-phase")
 
     async def get_current_session(self) -> Optional[Dict[str, Any]]:
-        """Get current game session with detailed match information."""
+        """Get current game session."""
+        return await self.make_request("GET", "/lol-gameflow/v1/session")
+
+    async def get_teams(self) -> Optional[Dict[str, Any]]:
+        """Get team information from current game session."""
         try:
-            return await self.make_request("GET", "/lol-gameflow/v1/session")
-        except LCUException:
+            session = await self.get_current_session()
+            if not session:
+                logger.debug("No active session found")
+                return None
+                
+            logger.info(f"Session keys: {list(session.keys())}")
+            
+            # Different ways to extract team data based on session structure
+            teams_data = None
+            
+            # Method 1: Check gameData
+            game_data = session.get('gameData')
+            if game_data:
+                teams_data = {
+                    'blue_team': game_data.get('teamOne', []),
+                    'red_team': game_data.get('teamTwo', [])
+                }
+                logger.info("✅ Found teams in gameData")
+            
+            # Method 2: Check teams directly
+            elif 'teams' in session:
+                teams = session.get('teams', [])
+                if len(teams) >= 2:
+                    teams_data = {
+                        'blue_team': teams[0].get('players', []),
+                        'red_team': teams[1].get('players', [])
+                    }
+                    logger.info("✅ Found teams in teams array")
+            
+            # Method 3: Check myTeam for current team (during champ select)
+            elif 'myTeam' in session:
+                my_team = session.get('myTeam', [])
+                their_team = session.get('theirTeam', [])
+                
+                if my_team or their_team:
+                    teams_data = {
+                        'blue_team': my_team,
+                        'red_team': their_team
+                    }
+                    logger.info("✅ Found teams in myTeam/theirTeam")
+        
+            if teams_data:
+                blue_count = len(teams_data['blue_team'])
+                red_count = len(teams_data['red_team'])
+                logger.info(f"👥 Teams found: Blue={blue_count}, Red={red_count}")
+            else:
+                logger.info("🔍 No team data found in current session")
+                
+            return teams_data
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting teams: {e}")
             return None
 
     async def get_live_client_data(self) -> Optional[Dict[str, Any]]:
         """Get live client data for in-game information."""
-        try:
-            return await self.make_request("GET", "/liveclientdata/allgamedata")
-        except LCUException:
-            return None
-
-    async def get_teams(self) -> Optional[Dict[str, Any]]:
-        """Get team information from current game."""
-        try:
-            session = await self.get_current_session()
-            if not session:
-                return None
-                
-            game_data = session.get('gameData')
-            if not game_data:
-                return None
-                
-            return {
-                'blue_team': game_data.get('teamOne', []),
-                'red_team': game_data.get('teamTwo', [])
-            }
-        except Exception as e:
-            logger.error(f"Error getting teams: {e}")
-            return None
+        return await self.make_request("GET", "/liveclientdata/allgamedata")
 
     async def health_check(self) -> Dict[str, Any]:
-        """Get LCU connector health status with detailed information."""
-        status = {
+        """Get LCU connector health status."""
+        return {
             "connected": self.is_connected(),
             "lockfile_found": self.lockfile_path is not None,
-            "initialized": self._initialized,
-            "connection_attempts": self._connection_attempts
+            "lockfile_data": {
+                "port": self.lockfile_data.get('port') if self.lockfile_data else None,
+                "pid": self.lockfile_data.get('pid') if self.lockfile_data else None
+            } if self.lockfile_data else None,
+            "connection_attempts": self._connection_attempts,
+            "initialized": self._initialized
         }
-        
-        if self.is_connected():
-            try:
-                # Get additional info if connected
-                summoner = await self.get_current_summoner()
-                game_phase = await self.get_game_flow_phase()
-                
-                status.update({
-                    "summoner_name": summoner.get('displayName') if summoner else None,
-                    "game_phase": game_phase,
-                    "port": self.lockfile_data.get('port') if self.lockfile_data else None
-                })
-            except Exception as e:
-                logger.debug(f"Health check additional info failed: {e}")
-                
-        return status
 
 
 lcu_connector = LCUConnector()

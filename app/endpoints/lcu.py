@@ -43,7 +43,7 @@ async def get_current_game_info(
             "status": "success",
             "game_phase": game_phase,
             "summoner": summoner,
-            "session": session
+            "session_keys": list(session.keys()) if session else []
         }
     except Exception as e:
         raise HTTPException(
@@ -85,7 +85,11 @@ async def get_current_teams(
             
         teams = await lcu_service.lcu_connector.get_teams()
         if not teams:
-            return {"status": "no_team_data"}
+            return {
+                "status": "no_team_data", 
+                "message": "No team data available in current session",
+                "note": "Team data is usually available during champion select or in-game"
+            }
             
         return {
             "status": "success",
@@ -94,6 +98,40 @@ async def get_current_teams(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to get teams: {str(e)}"
+        )
+
+
+@router.get("/session-debug")
+async def get_session_debug(
+    current_user: dict = Depends(get_current_user)
+):
+    """Debug endpoint to see raw session data."""
+    try:
+        if not lcu_service.lcu_connector.is_connected():
+            raise HTTPException(status_code=503, detail="LCU not connected")
+            
+        session = await lcu_service.lcu_connector.get_current_session()
+        if not session:
+            return {"status": "no_session"}
+            
+        # Return limited session data for debugging
+        debug_data = {
+            "session_keys": list(session.keys()),
+            "game_phase": await lcu_service.lcu_connector.get_game_flow_phase(),
+            "has_gameData": "gameData" in session,
+            "has_teams": "teams" in session,
+            "has_myTeam": "myTeam" in session,
+            "gameData_keys": list(session.get('gameData', {}).keys()) if session.get('gameData') else None
+        }
+        
+        return {
+            "status": "success",
+            "debug": debug_data,
+            "session_sample": {k: type(v).__name__ for k, v in session.items()}  # Show types without large data
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Debug failed: {str(e)}"
         )
 
 
