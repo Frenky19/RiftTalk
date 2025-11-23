@@ -240,3 +240,54 @@ async def refresh_team_data(
             status_code=500,
             detail=f"Failed to refresh team data: {str(e)}"
         )
+        
+
+@router.post("/admin/cleanup-expired")
+async def cleanup_expired_rooms(current_user: dict = Depends(get_current_user)):
+    """Cleanup all expired voice rooms (admin only)."""
+    try:
+        logger.info("🧹 Starting cleanup of expired rooms...")
+        
+        active_rooms = voice_service.redis.get_all_active_rooms()
+        cleaned_count = 0
+        error_count = 0
+        
+        logger.info(f"🔍 Found {len(active_rooms)} active rooms to check")
+        
+        for room in active_rooms:
+            try:
+                room_id = room.get('room_id')
+                match_id = room.get('match_id')
+                created_at = room.get('created_at')
+                
+                logger.info(f"🔄 Checking room {room_id} for match {match_id}")
+                
+                # Закрываем комнату (это вызовет cleanup Discord каналов)
+                success = await voice_service.close_voice_room(match_id)
+                
+                if success:
+                    cleaned_count += 1
+                    logger.info(f"✅ Successfully cleaned up room for match {match_id}")
+                else:
+                    error_count += 1
+                    logger.warning(f"⚠️ Failed to clean up room for match {match_id}")
+                    
+            except Exception as e:
+                error_count += 1
+                logger.error(f"❌ Error cleaning up room {room.get('room_id')}: {e}")
+                continue
+                
+        return {
+            "status": "success",
+            "message": f"Cleanup completed: {cleaned_count} rooms cleaned, {error_count} errors",
+            "cleaned_count": cleaned_count,
+            "error_count": error_count,
+            "total_rooms": len(active_rooms)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Cleanup expired rooms failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cleanup failed: {str(e)}"
+        )

@@ -134,18 +134,54 @@ class VoiceService:
             return {"error": str(e)}
 
     async def close_voice_room(self, match_id: str) -> bool:
-        """Close voice room and cleanup."""
+        """Close voice room and cleanup with improved error handling."""
         try:
-            room_data = self.redis.get_voice_room_by_match(match_id)
-            if room_data and room_data.get('discord_channels'):
-                try:
-                    await discord_service.cleanup_match_channels(room_data['discord_channels'])
-                except Exception as e:
-                    logger.error(f"Discord cleanup error: {e}")
+            logger.info(f"🧹 Closing voice room for match {match_id}")
             
-            return self.redis.delete_voice_room(match_id)
+            # Get room data
+            room_data = self.redis.get_voice_room_by_match(match_id)
+            if not room_data:
+                logger.warning(f"⚠️ No room data found for match {match_id}")
+                return False
+                
+            logger.info(f"📋 Room data found: {room_data.keys()}")
+            
+            # Cleanup Discord channels if they exist
+            if room_data.get('discord_channels'):
+                try:
+                    discord_channels = room_data['discord_channels']
+                    
+                    # Если discord_channels это строка (JSON), парсим её
+                    if isinstance(discord_channels, str):
+                        try:
+                            discord_channels = json.loads(discord_channels)
+                            logger.info("✅ Parsed discord_channels from JSON")
+                        except json.JSONDecodeError as e:
+                            logger.error(f"❌ Failed to parse discord_channels JSON: {e}")
+                            discord_channels = {}
+                    
+                    logger.info(f"🎯 Discord channels to cleanup: {discord_channels.keys()}")
+                    
+                    if discord_channels and isinstance(discord_channels, dict):
+                        await discord_service.cleanup_match_channels(discord_channels)
+                        logger.info(f"✅ Successfully cleaned up Discord channels for match {match_id}")
+                    else:
+                        logger.warning("⚠️ No valid discord_channels data for cleanup")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Discord cleanup error: {e}")
+            
+            # Delete from Redis
+            delete_success = self.redis.delete_voice_room(match_id)
+            if delete_success:
+                logger.info(f"✅ Successfully deleted voice room from Redis for match {match_id}")
+            else:
+                logger.warning(f"⚠️ Failed to delete voice room from Redis for match {match_id}")
+                
+            return delete_success
+            
         except Exception as e:
-            logger.error(f"Close voice room error: {e}")
+            logger.error(f"❌ Close voice room error: {e}")
             return False
 
     def get_voice_room_discord_channels(self, match_id: str) -> dict:

@@ -14,6 +14,7 @@ from app.database import redis_manager
 from app.services.lcu_service import lcu_service
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
+from app.services.cleanup_service import cleanup_service
 from app.endpoints import voice, auth, lcu, discord
 
 logger = logging.getLogger(__name__)
@@ -136,14 +137,22 @@ async def initialize_services():
 
     logger.info("🎮 All services initialized for Windows!")
     logger.info(f"📊 Status: Redis={redis_status}, Discord={discord_status}, LCU={lcu_status}")
+    await cleanup_service.start_cleanup_service()
+    logger.info("✅ Cleanup service: STARTED")
 
 
 async def cleanup_services():
     """Cleanup all services."""
     try:
+        await cleanup_service.stop_cleanup_service()
+    except Exception as e:
+        logger.error(f"Cleanup service stop error: {e}")
+    
+    try:
         await lcu_service.stop_monitoring()
     except Exception as e:
         logger.error(f"LCU cleanup error: {e}")
+    
     try:
         await discord_service.disconnect()
     except Exception as e:
@@ -407,36 +416,94 @@ async def handle_match_start():
 
 
 async def handle_match_end(event_data: dict):
-    """Handle match end - cleanup voice rooms."""
+    """Handle match end - cleanup voice rooms with improved match discovery."""
     try:
         logger.info("🛑 Match ended - cleaning up voice rooms")
         
         # Get current summoner to find match info
         current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+        match_id = None
+        
         if current_summoner:
             summoner_id = str(current_summoner.get('summonerId'))
+            logger.info(f"👤 Current summoner ID: {summoner_id}")
             
-            # Get match info from dedicated key
+            # Get match info from dedicated key - исправленная логика
             match_info_key = f"user_match:{summoner_id}"
-            match_info_data = redis_manager.redis.get(match_info_key)
+            match_info = {}
             
-            if match_info_data:
-                match_info = json.loads(match_info_data)
-                match_id = match_info.get('match_id')
+            try:
+                # Пробуем получить как hash (новый способ)
+                match_info = redis_manager.redis.hgetall(match_info_key)
+                logger.info(f"📋 Match info from Redis: {match_info}")
                 
-                if match_id:
-                    logger.info(f"🧹 Cleaning up voice room for match {match_id}")
-                    success = await voice_service.close_voice_room(match_id)
-                    
+                if not match_info:
+                    # Fallback: пробуем получить как string (старый способ)
+                    match_info_data = redis_manager.redis.get(match_info_key)
+                    if match_info_data:
+                        try:
+                            match_info = json.loads(match_info_data)
+                            logger.info(f"📋 Match info from string fallback: {match_info}")
+                        except json.JSONDecodeError:
+                            logger.warning(f"⚠️ Failed to parse match info as JSON: {match_info_data}")
+            except redis.exceptions.ResponseError as e:
+                if "WRONGTYPE" in str(e):
+                    logger.warning(f"⚠️ Redis key {match_info_key} has wrong type. Attempting recovery...")
+                    try:
+                        # Если это строка, пробуем распарсить
+                        match_info_data = redis_manager.redis.get(match_info_key)
+                        if match_info_data:
+                            try:
+                                match_info = json.loads(match_info_data)
+                                logger.info(f"📋 Recovered match info from string: {match_info}")
+                            except json.JSONDecodeError:
+                                logger.error(f"❌ Failed to parse match info: {match_info_data}")
+                    except Exception as parse_error:
+                        logger.error(f"❌ Failed to recover match info: {parse_error}")
+                else:
+                    raise e
+            
+            match_id = match_info.get('match_id') if match_info else None
+            
+            if match_id:
+                logger.info(f"🎯 Found match ID for cleanup: {match_id}")
+            else:
+                logger.warning(f"⚠️ No match ID found for user {summoner_id}")
+        
+        # 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Если не нашли по пользователю, ищем все активные комнаты
+        if not match_id:
+            logger.info("🔍 Searching for active rooms to cleanup...")
+            active_rooms = voice_service.redis.get_all_active_rooms()
+            logger.info(f"🔍 Found {len(active_rooms)} active rooms")
+            
+            for room in active_rooms:
+                room_match_id = room.get('match_id')
+                if room_match_id:
+                    logger.info(f"🔄 Cleaning up room for match: {room_match_id}")
+                    success = await voice_service.close_voice_room(room_match_id)
                     if success:
-                        logger.info(f"✅ Successfully cleaned up voice room for match {match_id}")
+                        logger.info(f"✅ Successfully cleaned up room for match {room_match_id}")
                     else:
-                        logger.warning(f"⚠️ No active voice room found for match {match_id}")
-                    
-                    # Clean up user match info and invite
-                    redis_manager.redis.delete(match_info_key)
-                    invite_key = f"user_invite:{summoner_id}"
-                    redis_manager.redis.delete(invite_key)
+                        logger.warning(f"⚠️ Failed to clean up room for match {room_match_id}")
+        else:
+            # Очищаем конкретный матч
+            logger.info(f"🧹 Cleaning up voice room for match {match_id}")
+            success = await voice_service.close_voice_room(match_id)
+            
+            if success:
+                logger.info(f"✅ Successfully cleaned up voice room for match {match_id}")
+            else:
+                logger.warning(f"⚠️ No active voice room found for match {match_id}")
+            
+            # Clean up user match info and invite
+            if current_summoner:
+                summoner_id = str(current_summoner.get('summonerId'))
+                match_info_key = f"user_match:{summoner_id}"
+                redis_manager.redis.delete(match_info_key)
+                
+                invite_key = f"user_invite:{summoner_id}"
+                redis_manager.redis.delete(invite_key)
+                logger.info(f"✅ Cleaned up user data for {summoner_id}")
                     
     except Exception as e:
         logger.error(f"❌ Error handling match end: {e}")

@@ -647,6 +647,7 @@
             <button onclick="getActiveRooms()">Get Active Rooms</button>
             <button class="danger" onclick="forceCleanup()">Force Cleanup All</button>
             <button onclick="clearResults()">Clear Results</button>
+            <button onclick="cleanupExpiredRooms()" class="warning">🧹 Cleanup Expired Rooms</button>
         </div>
 
         <!-- Ручное управление (для тестирования) -->
@@ -1764,6 +1765,35 @@
                 container.innerHTML = '<p>🚫 Нет активных голосовых комнат</p>';
             }
         }
+
+
+        async function cleanupExpiredRooms() {
+            if (!confirm('⚠️ Clean up ALL expired voice rooms? This will remove old channels and roles.')) {
+                return;
+            }
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await autoAuthenticate();
+                }
+
+                const response = await fetch(`${API_BASE}/api/voice/admin/cleanup-expired`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('Cleanup Expired Rooms', data, response.status === 200);
+                
+                // Обновляем список активных комнат
+                setTimeout(() => getActiveRooms(), 1000);
+            } catch (error) {
+                showResult('Cleanup Expired Rooms', {error: error.message}, false);
+            }
+        }
+
 
         // Вспомогательные функции
         function getMatchId() {

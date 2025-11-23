@@ -419,25 +419,65 @@ class DiscordService:
             logger.error(f"❌ Error during role cleanup: {e}")
 
     async def cleanup_match_channels(self, match_data: Dict[str, Any]):
-        """Cleanup channels and roles after match ends."""
+        """Cleanup channels and roles after match ends with improved error handling."""
+        logger.info(f"🧹 Starting cleanup for match: {match_data}")
+        
         if self.mock_mode:
             logger.info(f"🎮 MOCK: Cleaning up channels for match {match_data.get('match_id')}")
             return
+            
         try:
             tasks = []
-            if 'blue_team' in match_data and not match_data['blue_team'].get('mock', True):
-                channel_id = int(match_data['blue_team']['channel_id'])
-                tasks.append(self.delete_voice_channel(channel_id))
-            if 'red_team' in match_data and not match_data['red_team'].get('mock', True):
-                channel_id = int(match_data['red_team']['channel_id'])
-                tasks.append(self.delete_voice_channel(channel_id))
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            # Cleanup roles
             match_id = match_data.get('match_id')
+            
+            logger.info(f"🔍 Looking for channels to cleanup in match data: {list(match_data.keys())}")
+            
+            # Cleanup blue team channel
+            if 'blue_team' in match_data and match_data['blue_team']:
+                blue_team_data = match_data['blue_team']
+                # Проверяем, не mock ли это и есть ли channel_id
+                if not blue_team_data.get('mock', True) and blue_team_data.get('channel_id'):
+                    try:
+                        channel_id = int(blue_team_data['channel_id'])
+                        tasks.append(self.delete_voice_channel(channel_id))
+                        logger.info(f"🔵 Queueing blue team channel cleanup: {channel_id}")
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"❌ Invalid blue team channel ID: {blue_team_data.get('channel_id')}, error: {e}")
+            
+            # Cleanup red team channel  
+            if 'red_team' in match_data and match_data['red_team']:
+                red_team_data = match_data['red_team']
+                if not red_team_data.get('mock', True) and red_team_data.get('channel_id'):
+                    try:
+                        channel_id = int(red_team_data['channel_id'])
+                        tasks.append(self.delete_voice_channel(channel_id))
+                        logger.info(f"🔴 Queueing red team channel cleanup: {channel_id}")
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"❌ Invalid red team channel ID: {red_team_data.get('channel_id')}, error: {e}")
+            
+            # Execute all cleanup tasks
+            if tasks:
+                logger.info(f"🔄 Executing {len(tasks)} cleanup tasks...")
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Log results
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.error(f"❌ Cleanup task {i} failed: {result}")
+                    else:
+                        logger.info(f"✅ Cleanup task {i} completed successfully")
+            else:
+                logger.info("ℹ️ No channels to cleanup")
+                
+            # Cleanup roles
             if match_id:
+                logger.info(f"👤 Cleaning up roles for match {match_id}")
                 await self.cleanup_team_roles(match_id)
-            logger.info(f"✅ Cleaned up secured channels and roles for match {match_data['match_id']}")
+            else:
+                logger.warning("⚠️ No match ID provided for role cleanup")
+                
+            logger.info(f"✅ Cleanup completed for match {match_id}")
+            
         except Exception as e:
             logger.error(f"❌ Failed to cleanup match channels and roles: {e}")
 
