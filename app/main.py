@@ -222,10 +222,26 @@ async def handle_game_event(event_data: dict):
         logger.error(f"❌ Error handling game event: {e}")
 
 
+def safe_json_parse(data, default=None):
+    """Safely parse JSON data with error handling."""
+    if data is None:
+        return default
+    if isinstance(data, (list, dict)):
+        return data
+    if isinstance(data, str):
+        try:
+            return json.loads(data)
+        except json.JSONDecodeError:
+            if ',' in data:
+                return [item.strip() for item in data.split(',') if item.strip()]
+            return default
+    return default
+
+
 async def handle_match_start():
-    """Handle match start - perform auto-assignments."""
+    """Handle match start - perform auto-assignments with team data fix."""
     try:
-        logger.info("🎯 Match started - performing auto-assignments")
+        logger.info("🎯 Match started - performing auto-assignments with team fix")
         
         # Get current summoner
         current_summoner = await lcu_service.lcu_connector.get_current_summoner()
@@ -237,78 +253,154 @@ async def handle_match_start():
         summoner_name = current_summoner.get('displayName', 'Unknown')
         logger.info(f"👤 Current summoner: {summoner_name} (ID: {summoner_id})")
         
-        # Get saved match info from dedicated key
+        # Get saved match info - ИСПРАВЛЕННЫЙ КОД
         match_info_key = f"user_match:{summoner_id}"
-        match_info_data = redis_manager.redis.get(match_info_key)
+        match_info = {}
         
-        if match_info_data:
-            match_info = json.loads(match_info_data)
-            match_id = match_info.get('match_id')
-            team_name = match_info.get('team_name')
+        try:
+            # Пробуем получить как hash (новый способ)
+            match_info = redis_manager.redis.hgetall(match_info_key)
+            logger.info(f"📋 Match info from Redis: {match_info}")
             
-            if match_id and team_name:
-                logger.info(f"🎯 Auto-assigning user {summoner_name} to {team_name} in match {match_id}")
-                
-                # Get Discord user ID with proper error handling for Redis type issues
-                user_key = f"user:{summoner_id}"
-                discord_user_id = None
-                
+            if not match_info:
+                # Fallback: пробуем получить как string (старый способ)
+                match_info_data = redis_manager.redis.get(match_info_key)
+                if match_info_data:
+                    try:
+                        match_info = json.loads(match_info_data)
+                        logger.info(f"📋 Match info from string fallback: {match_info}")
+                    except json.JSONDecodeError:
+                        logger.warning(f"⚠️ Failed to parse match info as JSON: {match_info_data}")
+        except redis.exceptions.ResponseError as e:
+            if "WRONGTYPE" in str(e):
+                logger.warning(f"⚠️ Redis key {match_info_key} has wrong type. Attempting recovery...")
                 try:
-                    # Try to get as hash first (correct way)
-                    discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
-                except redis.exceptions.ResponseError as e:
-                    if "WRONGTYPE" in str(e):
-                        logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting to fix...")
+                    # Если это строка, пробуем распарсить
+                    match_info_data = redis_manager.redis.get(match_info_key)
+                    if match_info_data:
                         try:
-                            # If it's a string, try to parse it
-                            user_data = redis_manager.redis.get(user_key)
-                            if user_data:
-                                try:
-                                    user_info = json.loads(user_data)
-                                    discord_user_id = user_info.get('discord_user_id')
-                                    logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
-                                except json.JSONDecodeError:
-                                    logger.error(f"❌ Failed to parse user data as JSON: {user_data}")
-                        except Exception as parse_error:
-                            logger.error(f"❌ Failed to recover Discord ID: {parse_error}")
-                    else:
-                        raise e
-                
-                if discord_user_id:
-                    success = await discord_service.assign_player_to_team(
-                        int(discord_user_id),
-                        match_id,
-                        team_name
-                    )
-                    
-                    if success:
-                        logger.info(f"✅ Successfully auto-assigned {summoner_name} to {team_name}")
-                        
-                        # Get voice room to provide invite link
-                        room_data = voice_service.redis.get_voice_room_by_match(match_id)
-                        discord_channels = voice_service.get_voice_room_discord_channels(match_id)
-                        
-                        team_channel = None
-                        if team_name == "Blue Team" and discord_channels.get('blue_team'):
-                            team_channel = discord_channels['blue_team']
-                        elif team_name == "Red Team" and discord_channels.get('red_team'):
-                            team_channel = discord_channels['red_team']
-                        
-                        if team_channel and team_channel.get('invite_url'):
-                            logger.info(f"🔗 Discord invite available: {team_channel['invite_url']}")
-                            # Store invite URL for user access
-                            invite_key = f"user_invite:{summoner_id}"
-                            redis_manager.redis.setex(invite_key, 3600, team_channel['invite_url'])
-                        else:
-                            logger.warning("⚠️ No Discord channel invite URL available")
-                    else:
-                        logger.error("❌ Failed to assign user to team role in Discord")
-                else:
-                    logger.warning(f"⚠️ No Discord account linked for user {summoner_name}")
+                            match_info = json.loads(match_info_data)
+                            logger.info(f"📋 Recovered match info from string: {match_info}")
+                        except json.JSONDecodeError:
+                            logger.error(f"❌ Failed to parse match info: {match_info_data}")
+                except Exception as parse_error:
+                    logger.error(f"❌ Failed to recover match info: {parse_error}")
             else:
-                logger.warning("⚠️ Incomplete match info saved")
+                raise e
+        
+        match_id = match_info.get('match_id') if match_info else None
+        
+        if match_id:
+            logger.info(f"🎯 Auto-assigning user {summoner_name} in match {match_id}")
+            
+            # === АВТОМАТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДАННЫХ КОМАНД ПЕРЕД НАЗНАЧЕНИЕМ ===
+            try:
+                # Get current LCU team data
+                teams_data = await lcu_service.lcu_connector.get_teams()
+                if teams_data:
+                    logger.info(f"🎯 LCU Teams data for auto-fix: {teams_data}")
+                    
+                    # Extract player IDs
+                    blue_team_ids = [str(player.get('summonerId')) for player in teams_data.get('blue_team', []) if player.get('summonerId')]
+                    red_team_ids = [str(player.get('summonerId')) for player in teams_data.get('red_team', []) if player.get('summonerId')]
+                    
+                    logger.info(f"🔵 Blue team IDs: {blue_team_ids}")
+                    logger.info(f"🔴 Red team IDs: {red_team_ids}")
+                    
+                    # Get room data
+                    room_data = voice_service.redis.get_voice_room_by_match(match_id)
+                    if room_data:
+                        room_id = room_data.get('room_id')
+                        if room_id:
+                            voice_service.redis.redis.hset(
+                                f"room:{room_id}",
+                                mapping={
+                                    'blue_team': json.dumps(blue_team_ids),
+                                    'red_team': json.dumps(red_team_ids)
+                                }
+                            )
+                            logger.info(f"✅ Auto-updated room {room_id} with correct teams at match start")
+                else:
+                    logger.warning("⚠️ No LCU team data available for auto-fix at match start")
+            except Exception as e:
+                logger.warning(f"⚠️ Auto-fix teams at match start failed: {e}. Continuing with existing data.")
+            # === КОНЕЦ АВТОИСПРАВЛЕНИЯ ===
+            
+            # Получаем обновленные данные комнаты
+            room_data = voice_service.redis.get_voice_room_by_match(match_id)
+            if room_data:
+                blue_team = safe_json_parse(room_data.get('blue_team'), [])
+                red_team = safe_json_parse(room_data.get('red_team'), [])
+                
+                # Определяем команду на основе исправленных данных
+                team_name = None
+                if summoner_id in blue_team:
+                    team_name = "Blue Team"
+                elif summoner_id in red_team:
+                    team_name = "Red Team"
+                
+                if team_name:
+                    logger.info(f"✅ Determined team for {summoner_name}: {team_name}")
+                    
+                    # Получаем Discord user ID с обработкой ошибок
+                    user_key = f"user:{summoner_id}"
+                    discord_user_id = None
+                    
+                    try:
+                        # Try to get as hash first (correct way)
+                        discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
+                    except redis.exceptions.ResponseError as e:
+                        if "WRONGTYPE" in str(e):
+                            logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting recovery...")
+                            try:
+                                # If it's a string, try to parse it
+                                user_data = redis_manager.redis.get(user_key)
+                                if user_data:
+                                    try:
+                                        user_info = json.loads(user_data)
+                                        discord_user_id = user_info.get('discord_user_id')
+                                        logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
+                                    except json.JSONDecodeError:
+                                        pass
+                            except Exception:
+                                pass
+                    
+                    if discord_user_id:
+                        success = await discord_service.assign_player_to_team(
+                            int(discord_user_id),
+                            match_id,
+                            team_name
+                        )
+                        
+                        if success:
+                            logger.info(f"✅ Successfully auto-assigned {summoner_name} to {team_name}")
+                            
+                            # Получаем информацию о канале для логирования
+                            discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+                            team_channel = None
+                            
+                            if team_name == "Blue Team" and discord_channels.get('blue_team'):
+                                team_channel = discord_channels['blue_team']
+                            elif team_name == "Red Team" and discord_channels.get('red_team'):
+                                team_channel = discord_channels['red_team']
+                            
+                            if team_channel and team_channel.get('invite_url'):
+                                logger.info(f"🔗 Discord invite available: {team_channel['invite_url']}")
+                                # Store invite URL for user access
+                                invite_key = f"user_invite:{summoner_id}"
+                                redis_manager.redis.setex(invite_key, 3600, team_channel['invite_url'])
+                            else:
+                                logger.warning("⚠️ No Discord channel invite URL available")
+                        else:
+                            logger.error("❌ Failed to assign user to team role in Discord")
+                    else:
+                        logger.warning(f"⚠️ No Discord account linked for user {summoner_name}")
+                else:
+                    logger.warning(f"⚠️ Could not determine team for user {summoner_name}")
+            else:
+                logger.warning(f"⚠️ No room data found for match {match_id}")
         else:
-            logger.warning("⚠️ No match info found for current user")
+            logger.warning(f"⚠️ No match info found for current user {summoner_id}")
             
     except Exception as e:
         logger.error(f"❌ Error handling match start: {e}")

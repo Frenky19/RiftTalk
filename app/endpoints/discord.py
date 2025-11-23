@@ -78,16 +78,103 @@ def safe_json_parse(data, default=None):
     return default
 
 
+@router.post("/auto-fix-teams")
+async def auto_fix_teams_for_match(
+    match_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Automatically fix team data for a match using LCU data."""
+    try:
+        logger.info(f"🔄 Auto-fixing teams for match {match_id}")
+        
+        # Get current LCU team data
+        teams_data = await lcu_service.lcu_connector.get_teams()
+        if not teams_data:
+            raise HTTPException(status_code=404, detail="No team data from LCU")
+        
+        logger.info(f"🎯 LCU Teams data for auto-fix: {teams_data}")
+        
+        # Extract player IDs
+        blue_team_ids = [str(player.get('summonerId')) for player in teams_data.get('blue_team', []) if player.get('summonerId')]
+        red_team_ids = [str(player.get('summonerId')) for player in teams_data.get('red_team', []) if player.get('summonerId')]
+        
+        logger.info(f"🔵 Blue team IDs: {blue_team_ids}")
+        logger.info(f"🔴 Red team IDs: {red_team_ids}")
+        
+        # Get room data
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
+        # Update room data with correct teams
+        room_id = room_data.get('room_id')
+        if room_id:
+            voice_service.redis.redis.hset(
+                f"room:{room_id}",
+                mapping={
+                    'blue_team': json.dumps(blue_team_ids),
+                    'red_team': json.dumps(red_team_ids)
+                }
+            )
+            logger.info(f"✅ Auto-updated room {room_id} with correct teams")
+        
+        return {
+            "status": "success",
+            "message": "Teams auto-updated from LCU data",
+            "blue_team": blue_team_ids,
+            "red_team": red_team_ids,
+            "match_id": match_id,
+            "auto_fixed": True
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Auto-fix teams failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Auto-fix teams failed: {str(e)}")
+
+
 @router.post("/auto-assign-team")
 async def auto_assign_team(
     match_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Automatically assign user to their actual team based on match data with improved debugging."""
+    """Automatically assign user to their actual team based on match data with automatic team data fix."""
     try:
         logger.info(f"🎯 Auto-assign: user {current_user['sub']} for match {match_id}")
-        
-        # Получаем информацию о матче
+
+        # === АВТОМАТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДАННЫХ КОМАНД ИЗ LCU ===
+        try:
+            # Get current LCU team data
+            teams_data = await lcu_service.lcu_connector.get_teams()
+            if teams_data:
+                logger.info(f"🎯 LCU Teams data for auto-fix: {teams_data}")
+                
+                # Extract player IDs
+                blue_team_ids = [str(player.get('summonerId')) for player in teams_data.get('blue_team', []) if player.get('summonerId')]
+                red_team_ids = [str(player.get('summonerId')) for player in teams_data.get('red_team', []) if player.get('summonerId')]
+                
+                logger.info(f"🔵 Blue team IDs: {blue_team_ids}")
+                logger.info(f"🔴 Red team IDs: {red_team_ids}")
+                
+                # Get room data
+                room_data = voice_service.redis.get_voice_room_by_match(match_id)
+                if room_data:
+                    room_id = room_data.get('room_id')
+                    if room_id:
+                        voice_service.redis.redis.hset(
+                            f"room:{room_id}",
+                            mapping={
+                                'blue_team': json.dumps(blue_team_ids),
+                                'red_team': json.dumps(red_team_ids)
+                            }
+                        )
+                        logger.info(f"✅ Auto-updated room {room_id} with correct teams")
+            else:
+                logger.warning("⚠️ No LCU team data available for auto-fix")
+        except Exception as e:
+            logger.warning(f"⚠️ Auto-fix teams failed: {e}. Continuing with existing data.")
+        # === КОНЕЦ АВТОИСПРАВЛЕНИЯ ===
+
+        # Получаем информацию о матче (теперь с исправленными данными)
         room_data = voice_service.redis.get_voice_room_by_match(match_id)
         if not room_data:
             logger.error(f"❌ Match not found: {match_id}")
@@ -244,6 +331,61 @@ async def auto_assign_team(
             status_code=500,
             detail=f"Failed to auto-assign team: {str(e)}"
         )
+
+
+@router.get("/debug-team-assignment")
+async def debug_team_assignment(
+    match_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Debug endpoint to see exactly what's happening with team assignment."""
+    try:
+        summoner_id = current_user['sub']
+        logger.info(f"🔍 DEBUG TEAM ASSIGNMENT for user {summoner_id}")
+        
+        # Get room data
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            return {"error": "Room not found"}
+        
+        logger.info(f"📊 RAW ROOM DATA: {room_data}")
+        
+        # Parse teams with detailed logging
+        blue_team = safe_json_parse(room_data.get('blue_team'), [])
+        red_team = safe_json_parse(room_data.get('red_team'), [])
+        
+        logger.info(f"🔵 PARSED BLUE TEAM: {blue_team} (type: {type(blue_team)})")
+        logger.info(f"🔴 PARSED RED TEAM: {red_team} (type: {type(red_team)})")
+        
+        # Check raw teams data if available
+        raw_teams_data = safe_json_parse(room_data.get('raw_teams_data'), {})
+        logger.info(f"📋 RAW TEAMS DATA: {raw_teams_data}")
+        
+        # Try to determine team
+        try:
+            team = determine_player_team(summoner_id, blue_team, red_team, False)
+            logger.info(f"🎯 DETERMINED TEAM: {team}")
+        except Exception as e:
+            logger.error(f"❌ Team determination failed: {e}")
+            team = "Error"
+        
+        # Check LCU data directly
+        lcu_teams = await lcu_service.lcu_connector.get_teams()
+        logger.info(f"🎮 LCU TEAMS DATA: {lcu_teams}")
+        
+        return {
+            "summoner_id": summoner_id,
+            "room_blue_team": blue_team,
+            "room_red_team": red_team,
+            "determined_team": team,
+            "raw_teams_data": raw_teams_data,
+            "lcu_teams": lcu_teams,
+            "room_data_keys": list(room_data.keys())
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Debug failed: {e}")
+        return {"error": str(e)}
 
 
 @router.get("/linked-account")

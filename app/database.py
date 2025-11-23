@@ -55,7 +55,7 @@ class RedisManager:
             except Exception as e:
                 logger.error(f"Unexpected Redis error: {e}")
                 raise DatabaseException(f"Redis initialization failed: {e}")
-
+            
     def fix_redis_key_types(self):
         """Fix Redis keys that were saved with wrong types."""
         try:
@@ -63,7 +63,7 @@ class RedisManager:
             fixed_count = 0
             
             # Паттерны для поиска проблемных ключей
-            patterns = ["user:*", "user_discord:*", "user_match:*"]
+            patterns = ["user:*", "user_discord:*", "user_match:*", "user_invite:*"]
             
             for pattern in patterns:
                 for key in self.redis.scan_iter(match=pattern):

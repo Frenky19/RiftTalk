@@ -580,6 +580,7 @@
                 
                 <button onclick="debugSessionData()" class="warning">🐛 Debug Session Data</button>
                 <button onclick="emergencyFixTeams()" class="danger">🚨 Emergency Fix Teams</button>
+                <button onclick="debugTeamAssignment()" class="warning">🐛 Debug Team Assignment</button>
             </div>
             
             <div class="lcu-status" id="lcuDetailedStatus" style="display: none;">
@@ -662,6 +663,7 @@
             </div>
             
             <div>
+                <button onclick="autoFixTeams()" class="success">🔄 Auto Fix Teams</button>
                 <button onclick="autoAssignTeam()" class="success">🎯 Auto Assign to My Team</button>
                 <button class="warning" onclick="endVoiceChat()">End Voice Chat</button>
                 <button class="warning" onclick="disconnectMembers()">Disconnect Members</button>
@@ -1840,6 +1842,57 @@
             }
         }
         
+        async function debugTeamAssignment() {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await autoAuthenticate();
+                }
+
+                const response = await fetch(`${API_BASE}/api/discord/debug-team-assignment?match_id=${matchId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('Debug Team Assignment', data, response.status === 200);
+            } catch (error) {
+                showResult('Debug Team Assignment', {error: error.message}, false);
+            }
+        }
+        // Тут тест заканчивается
+
+        async function autoFixTeams() {
+            const matchId = getMatchId();
+            if (!matchId) return;
+
+            showLoading('results');
+            try {
+                if (!currentToken) {
+                    await autoAuthenticate();
+                }
+
+                const response = await fetch(`${API_BASE}/api/discord/auto-fix-teams?match_id=${matchId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                showResult('Auto Fix Teams', data, response.status === 200);
+                
+                // После исправления пробуем автоназначение
+                if (data.auto_fixed) {
+                    setTimeout(() => autoAssignTeam(), 1000);
+                }
+            } catch (error) {
+                showResult('Auto Fix Teams', {error: error.message}, false);
+            }
+        }
+
         function showResult(title, data, success = true) {
             const results = document.getElementById('results');
             const resultDiv = document.createElement('div');

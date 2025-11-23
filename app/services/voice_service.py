@@ -7,6 +7,7 @@ from app.config import settings
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +100,20 @@ class VoiceService:
             if not success:
                 logger.error("❌ Failed to save to Redis")
                 return {"error": "Failed to create voice room"}
+            
+            # 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем match_id для всех игроков
+            logger.info(f"💾 Saving match info for {len(normalized_players)} players")
+            for player_id in normalized_players:
+                user_match_key = f"user_match:{player_id}"
+                match_info = {
+                    'match_id': match_id,
+                    'room_id': room_id,
+                    'created_at': now.isoformat()
+                }
+                # Сохраняем как hash для consistency
+                self.redis.redis.hset(user_match_key, mapping=match_info)
+                self.redis.redis.expire(user_match_key, 3600)  # 1 hour
+                logger.debug(f"💾 Saved match info for player {player_id}: {match_info}")
             
             logger.info(f"✅ Voice room created: {room_id}")
             
