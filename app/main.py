@@ -16,6 +16,8 @@ from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
 from app.services.cleanup_service import cleanup_service
 from app.endpoints import voice, auth, lcu, discord
+from app.middleware.demo_auth import DemoAuthMiddleware
+from app.endpoints import demo
 
 logger = logging.getLogger(__name__)
 
@@ -526,6 +528,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Добавляем middleware аутентификации для demo
+if settings.DEMO_AUTH_ENABLED:
+    app.add_middleware(DemoAuthMiddleware)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -554,6 +560,7 @@ app.include_router(voice.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(lcu.router, prefix="/api")
 app.include_router(discord.router, prefix="/api")
+app.include_router(demo.router, prefix="/api")
 
 
 @app.get("/")

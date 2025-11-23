@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     DISCORD_GUILD_ID: Optional[str] = Field(default=None)
     DISCORD_AUTO_CREATE_CHANNELS: bool = Field(default=True)
 
+    # Demo Page Authentication
+    DEMO_USERNAME: str = Field(default="admin")
+    DEMO_PASSWORD: str = Field(default="password")
+    DEMO_AUTH_ENABLED: bool = Field(default=True)
+
     def __init__(self, **kwargs):
         """Initialize settings with validation."""
         super().__init__(**kwargs)
