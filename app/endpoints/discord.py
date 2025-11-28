@@ -1,4 +1,5 @@
 import logging
+import discord
 import json
 import random
 import redis
@@ -598,3 +599,249 @@ async def emergency_fix_teams(
     except Exception as e:
         logger.error(f"❌ Emergency fix failed: {e}")
         raise HTTPException(status_code=500, detail=f"Emergency fix failed: {str(e)}")
+
+
+@router.get("/user-server-status/{discord_user_id}")
+async def check_user_server_status(
+    discord_user_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Check if user is on the Discord server and bot has permissions."""
+    try:
+        status = {
+            "discord_user_id": discord_user_id,
+            "on_server": False,
+            "bot_has_permissions": False,
+            "can_assign_roles": False,
+            "server_invite_available": False
+        }
+        
+        if not discord_service.connected or not discord_service.guild:
+            return status
+            
+        # Check if user is on server
+        try:
+            member = discord_service.guild.get_member(discord_user_id)
+            if not member:
+                try:
+                    member = await discord_service.guild.fetch_member(discord_user_id)
+                except discord.NotFound:
+                    status["on_server"] = False
+                except discord.Forbidden:
+                    status["on_server"] = "unknown"  # Can't check due to permissions
+            else:
+                status["on_server"] = True
+        except Exception as e:
+            logger.error(f"Error checking member status: {e}")
+            
+        # Check bot permissions
+        if discord_service.guild.me:
+            status["bot_has_permissions"] = True
+            status["can_assign_roles"] = discord_service.guild.me.guild_permissions.manage_roles
+            
+        # Check if there's a server invite
+        invite_key = f"server_invite:{discord_user_id}"
+        server_invite = redis_manager.redis.get(invite_key)
+        if server_invite:
+            status["server_invite_available"] = True
+            status["server_invite"] = server_invite
+            
+        return status
+        
+    except Exception as e:
+        logger.error(f"Failed to check user server status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to check user status: {str(e)}"
+        )
+        
+
+@router.get("/user-match-info/{summoner_id}")
+async def get_user_match_info(
+    summoner_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get user's current match and voice channel information."""
+    try:
+        # Получаем информацию о матче пользователя
+        match_info_key = f"user_match:{summoner_id}"
+        match_info = redis_manager.redis.hgetall(match_info_key)
+        match_status = await get_match_status(summoner_id, current_user)
+
+        if not match_info:
+            return {"match_id": None}
+        
+        match_id = match_info.get('match_id')
+        if not match_id:
+            return {"match_id": None}
+        
+        # Получаем информацию о голосовой комнате
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            return {"match_id": match_id, "voice_channel": None}
+        
+        # Определяем команду пользователя
+        blue_team = safe_json_parse(room_data.get('blue_team'), [])
+        red_team = safe_json_parse(room_data.get('red_team'), [])
+        
+        team_name = None
+        if summoner_id in blue_team:
+            team_name = "Blue Team"
+        elif summoner_id in red_team:
+            team_name = "Red Team"
+        
+        # Получаем информацию о Discord каналах
+        discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+        voice_channel = None
+        
+        if team_name == "Blue Team" and discord_channels.get('blue_team'):
+            voice_channel = discord_channels['blue_team']
+        elif team_name == "Red Team" and discord_channels.get('red_team'):
+            voice_channel = discord_channels['red_team']
+        
+        return {
+            "match_id": match_id,
+            "team_name": team_name,
+            "voice_channel": voice_channel,
+            "match_status": match_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get user match info: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get user match info: {str(e)}"
+        )
+   
+
+@router.get("/match-status/{summoner_id}")
+async def get_match_status(
+    summoner_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get user's current match status - show voice channel ONLY when match is InProgress."""
+    try:
+        # Получаем информацию о матче пользователя
+        match_info_key = f"user_match:{summoner_id}"
+        
+        # Пробуем получить как hash (новый способ)
+        match_info = redis_manager.redis.hgetall(match_info_key)
+        
+        if not match_info:
+            # Fallback: пробуем получить как string (старый способ)
+            match_info_data = redis_manager.redis.get(match_info_key)
+            if match_info_data:
+                try:
+                    match_info = json.loads(match_info_data)
+                except json.JSONDecodeError:
+                    match_info = {}
+        
+        if not match_info:
+            return {
+                "match_id": None,
+                "match_started": False,
+                "in_champ_select": False,
+                "in_loading_screen": False,
+                "in_progress": False,
+                "voice_channel": None
+            }
+        
+        match_id = match_info.get('match_id')
+        if not match_id:
+            return {
+                "match_id": None,
+                "match_started": False,
+                "in_champ_select": False,
+                "in_loading_screen": False,
+                "in_progress": False,
+                "voice_channel": None
+            }
+        
+        # Получаем информацию о голосовой комнате
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            return {
+                "match_id": match_id,
+                "match_started": False,
+                "in_champ_select": True,  # Предполагаем, что идет выбор чемпионов
+                "in_loading_screen": False,
+                "in_progress": False,
+                "voice_channel": None
+            }
+        
+        # ТОЧНОЕ ОПРЕДЕЛЕНИЕ ФАЗЫ МАТЧА ЧЕРЕЗ LCU
+        try:
+            from app.services.lcu_service import lcu_service
+            game_phase = await lcu_service.lcu_connector.get_game_flow_phase()
+            
+            # Определяем точные фазы
+            in_champ_select = game_phase == "ChampSelect"
+            in_loading_screen = game_phase == "LoadingScreen"
+            in_progress = game_phase == "InProgress"
+            
+            logger.info(f"🎮 Current game phase: {game_phase} - ChampSelect: {in_champ_select}, Loading: {in_loading_screen}, InProgress: {in_progress}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get game phase from LCU: {e}")
+            # Fallback логика
+            in_champ_select = not room_data.get('match_started')
+            in_loading_screen = False
+            in_progress = room_data.get('match_started') == 'true'
+        
+        # ВОЗВРАЩАЕМ ГОЛОСОВОЙ КАНАЛ ТОЛЬКО КОГДА МАТЧ УЖЕ НАЧАЛСЯ (InProgress)
+        if not in_progress:
+            return {
+                "match_id": match_id,
+                "match_started": False,
+                "in_champ_select": in_champ_select,
+                "in_loading_screen": in_loading_screen,
+                "in_progress": False,
+                "voice_channel": None
+            }
+        
+        # Только когда матч InProgress - определяем команду и возвращаем канал
+        blue_team = safe_json_parse(room_data.get('blue_team'), [])
+        red_team = safe_json_parse(room_data.get('red_team'), [])
+        
+        team_name = None
+        if summoner_id in blue_team:
+            team_name = "Blue Team"
+        elif summoner_id in red_team:
+            team_name = "Red Team"
+        else:
+            # Если пользователь не в одной из команд, не возвращаем канал
+            return {
+                "match_id": match_id,
+                "match_started": True,
+                "in_champ_select": False,
+                "in_loading_screen": False,
+                "in_progress": True,
+                "voice_channel": None,
+                "team_name": None
+            }
+        
+        # Получаем информацию о Discord каналах
+        discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+        voice_channel = None
+        
+        if team_name == "Blue Team" and discord_channels.get('blue_team'):
+            voice_channel = discord_channels['blue_team']
+        elif team_name == "Red Team" and discord_channels.get('red_team'):
+            voice_channel = discord_channels['red_team']
+        
+        return {
+            "match_id": match_id,
+            "match_started": True,
+            "in_champ_select": False,
+            "in_loading_screen": False,
+            "in_progress": True,
+            "team_name": team_name,
+            "voice_channel": voice_channel
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get match status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get match status: {str(e)}"
+        )

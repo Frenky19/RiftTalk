@@ -352,16 +352,41 @@ class DiscordService:
         return result
 
     async def assign_player_to_team(self, discord_user_id: int, match_id: str, team_name: str) -> bool:
-        """Assign a Discord user to a team role and save match info."""
+        """Assign a Discord user to a team with improved error handling and user validation."""
         if self.mock_mode:
             logger.info(f"🎮 MOCK: Assigning user {discord_user_id} to {team_name} in match {match_id}")
             return True
             
         if not self.connected or not self.guild:
-            logger.warning("Discord not connected - cannot assign role")
+            logger.warning("Discord not connected - cannot assign user to team")
             return False
             
         try:
+            # Find member with better error handling
+            member = None
+            try:
+                member = self.guild.get_member(discord_user_id)
+                if not member:
+                    # Try to fetch member from API
+                    try:
+                        member = await self.guild.fetch_member(discord_user_id)
+                        logger.info(f"✅ Fetched member {member.display_name} from Discord API")
+                    except discord.NotFound:
+                        logger.error(f"❌ Discord user {discord_user_id} not found in guild {self.guild.name}")
+                        # Create an invite for the user to join the server
+                        await self._create_server_invite_for_user(match_id, team_name, discord_user_id)
+                        return False
+                    except discord.Forbidden:
+                        logger.error(f"❌ Bot doesn't have permission to fetch member {discord_user_id}")
+                        return False
+            except Exception as e:
+                logger.error(f"❌ Error finding member {discord_user_id}: {e}")
+                return False
+
+            if not member:
+                logger.error(f"❌ Could not find Discord user {discord_user_id} in guild")
+                return False
+
             # Find team role
             role_name = f"LoL {match_id} - {team_name}"
             team_role = None
@@ -372,33 +397,106 @@ class DiscordService:
                     break
                     
             if not team_role:
-                logger.error(f"Team role not found: {role_name}")
+                logger.error(f"❌ Team role not found: {role_name}")
                 return False
 
-            # Find member
-            member = self.guild.get_member(discord_user_id)
-            if not member:
-                logger.error(f"Discord user {discord_user_id} not found in guild")
+            # Check if bot has permission to manage roles
+            if not self.guild.me.guild_permissions.manage_roles:
+                logger.error("❌ Bot doesn't have 'Manage Roles' permission")
+                return False
+
+            # Check if bot's role is high enough to assign this role
+            if self.guild.me.top_role <= team_role:
+                logger.error(f"❌ Bot's role is not high enough to assign role {role_name}")
                 return False
 
             # Assign role
-            await member.add_roles(team_role, reason=f"Assigned to {team_name} in match {match_id}")
-            logger.info(f"✅ Assigned {member.display_name} to role {team_role.name}")
+            try:
+                await member.add_roles(team_role, reason=f"Assigned to {team_name} in match {match_id}")
+                logger.info(f"✅ Assigned {member.display_name} to role {team_role.name}")
 
-            # Сохраняем информацию о матче для автоматического перемещения
-            user_key = f"user_discord:{discord_user_id}"
-            match_info = {
-                'match_id': match_id,
-                'team_name': team_name,
-                'assigned_at': datetime.now(timezone.utc).isoformat()
-            }
-            redis_manager.redis.setex(user_key, 3600, json.dumps(match_info))  # Храним 1 час
-            
-            return True
-            
+                # Save match info for automatic voice channel management
+                user_key = f"user_discord:{discord_user_id}"
+                match_info = {
+                    'match_id': match_id,
+                    'team_name': team_name,
+                    'assigned_at': datetime.now(timezone.utc).isoformat()
+                }
+                redis_manager.redis.setex(user_key, 3600, json.dumps(match_info))
+                
+                return True
+                
+            except discord.Forbidden:
+                logger.error(f"❌ No permission to assign role to {member.display_name}")
+                return False
+            except discord.HTTPException as e:
+                logger.error(f"❌ Failed to assign role: {e}")
+                return False
+                
         except Exception as e:
             logger.error(f"❌ Failed to assign player to team: {e}")
             return False
+
+    async def _create_server_invite_for_user(self, match_id: str, team_name: str, discord_user_id: int):
+        """Create a server invite and notify about the need to join the server."""
+        try:
+            if not self.guild:
+                return
+                
+            # Create an invite for the user
+            invite_channel = self.guild.system_channel or next(
+                (ch for ch in self.guild.text_channels if ch.permissions_for(self.guild.me).create_instant_invite), None)
+            
+            if invite_channel:
+                invite = await invite_channel.create_invite(
+                    max_uses=1,
+                    unique=True,
+                    reason=f"Invite for LoL match {match_id} - {team_name}"
+                )
+                
+                logger.info(f"🔗 Created server invite for user {discord_user_id}: {invite.url}")
+                
+                # Store the invite for the user
+                invite_key = f"server_invite:{discord_user_id}"
+                redis_manager.redis.setex(invite_key, 3600, invite.url)
+                
+                # You could also send a DM to the user if possible
+                await self._send_dm_to_user(discord_user_id, invite.url, match_id, team_name)
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to create server invite: {e}")
+
+    async def _send_dm_to_user(self, discord_user_id: int, invite_url: str, match_id: str, team_name: str):
+        """Send a direct message to the user with server invite."""
+        try:
+            if not self.guild:
+                return
+                
+            member = self.guild.get_member(discord_user_id)
+            if not member:
+                # Try to fetch member
+                try:
+                    member = await self.guild.fetch_member(discord_user_id)
+                except:
+                    return
+            
+            if member:
+                embed = discord.Embed(
+                    title="🎮 Присоединяйтесь к серверу для голосового чата",
+                    description=f"Для участия в голосовом чате матча **{match_id}** в команде **{team_name}**, пожалуйста, присоединитесь к нашему Discord серверу:",
+                    color=0x7289da
+                )
+                embed.add_field(name="Ссылка для присоединения", value=invite_url, inline=False)
+                embed.add_field(name="Инструкция", value="1. Нажмите на ссылку выше\n2. Присоединитесь к серверу\n3. Вернитесь в игру", inline=False)
+                embed.set_footer(text="LoL Voice Chat")
+                
+                await member.send(embed=embed)
+                logger.info(f"📨 Sent DM with server invite to {member.display_name}")
+                
+        except discord.Forbidden:
+            logger.warning(f"⚠️ Cannot send DM to user {discord_user_id} (DMs closed)")
+        except Exception as e:
+            logger.error(f"❌ Failed to send DM: {e}")
 
     async def cleanup_team_roles(self, match_id: str):
         """Cleanup roles after match ends."""

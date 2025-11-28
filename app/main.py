@@ -254,6 +254,21 @@ async def handle_match_start():
     try:
         logger.info("🎯 Match started - performing auto-assignments with team fix")
         
+        # Сначала проверяем текущую фазу игры для точного определения
+        try:
+            current_phase = await lcu_service.lcu_connector.get_game_flow_phase()
+            logger.info(f"🎮 Current game phase in handle_match_start: {current_phase}")
+            
+            # Если фаза не InProgress, не выполняем авто-назначение
+            if current_phase != "InProgress":
+                logger.info(f"🔶 Not performing auto-assignments - current phase is {current_phase}, not InProgress")
+                return
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get game phase: {e}")
+            # Если не можем получить фазу, продолжаем с существующей логикой
+            current_phase = "Unknown"
+        
         # Get current summoner
         current_summoner = await lcu_service.lcu_connector.get_current_summoner()
         if not current_summoner:
@@ -385,6 +400,28 @@ async def handle_match_start():
                         
                         if success:
                             logger.info(f"✅ Successfully auto-assigned {summoner_name} to {team_name}")
+                            
+                            # === УСТАНАВЛИВАЕМ ФЛАГ НАЧАЛА МАТЧА ТОЛЬКО ПРИ УСПЕШНОМ НАЗНАЧЕНИИ ===
+                            try:
+                                # Еще раз проверяем, что фаза все еще InProgress
+                                final_phase = await lcu_service.lcu_connector.get_game_flow_phase()
+                                if final_phase == "InProgress":
+                                    room_id = room_data.get('room_id')
+                                    if room_id:
+                                        voice_service.redis.redis.hset(f"room:{room_id}", "match_started", "true")
+                                        logger.info(f"✅ Match started flag set for room {room_id} (phase: InProgress)")
+                                        
+                                        # Также сохраняем время начала матча
+                                        voice_service.redis.redis.hset(
+                                            f"room:{room_id}", 
+                                            "match_started_at", 
+                                            datetime.now(timezone.utc).isoformat()
+                                        )
+                                else:
+                                    logger.info(f"🔶 Not setting match started flag - phase changed to {final_phase}")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Could not set match started flag: {e}")
+                            # === КОНЕЦ УСТАНОВКИ ФЛАГА ===
                             
                             # Получаем информацию о канале для логирования
                             discord_channels = voice_service.get_voice_room_discord_channels(match_id)

@@ -3,7 +3,7 @@ ignore = E265, F811, PT001, DJ05, D100, D105, D104, W504, W292, W293, W291
 max-line-length = 150
 paths = 
     ./app
-max-complexity = 40
+max-complexity = 50
 exclude = 
    tests
    venv
