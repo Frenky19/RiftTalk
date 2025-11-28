@@ -583,6 +583,15 @@ async def get_auto_token():
         raise HTTPException(status_code=404, detail="No auto-token available")
 
 
+@app.get("/link-discord")
+async def link_discord_page():
+    """Serve Discord linking page (public access)."""
+    link_discord_file = os.path.join(static_dir, "link-discord.html")
+    if os.path.exists(link_discord_file):
+        return FileResponse(link_discord_file)
+    raise HTTPException(status_code=404, detail="Link Discord page not found")
+
+
 @app.get("/health")
 async def health_check():
     """Comprehensive health check for Windows."""

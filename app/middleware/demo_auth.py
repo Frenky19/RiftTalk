@@ -42,6 +42,19 @@ class DemoAuthMiddleware(BaseHTTPMiddleware):
         if not settings.DEMO_AUTH_ENABLED:
             return False
             
+        # Публичные пути (без аутентификации)
+        public_paths = [
+            "/link-discord",
+            "/static/link-discord.html",
+            "/api/auth/auto-auth",  # Разрешаем авто-аутентификацию
+            "/health"  # Health check тоже публичный
+        ]
+        
+        # Проверяем, является ли путь публичным
+        if any(path == public_path or path.startswith(public_path + '/') for public_path in public_paths):
+            return False
+            
+        # Защищаем только demo-страницы
         protected_paths = ["/demo", "/static/demo.html"]
         return any(path.startswith(protected_path) for protected_path in protected_paths)
     

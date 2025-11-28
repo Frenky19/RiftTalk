@@ -9,6 +9,7 @@ from app.utils.security import get_current_user
 from app.database import redis_manager
 from app.schemas import DiscordLinkRequest, DiscordAssignRequest
 from app.services.voice_service import voice_service
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/discord", tags=["discord-integration"])
@@ -386,6 +387,39 @@ async def debug_team_assignment(
     except Exception as e:
         logger.error(f"❌ Debug failed: {e}")
         return {"error": str(e)}
+
+
+@router.post("/link-account")
+async def link_discord_account(
+    request: DiscordLinkRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Link Discord account to current LoL user."""
+    try:
+        summoner_id = current_user['sub']
+        user_key = f"user:{summoner_id}"
+        
+        # Сохраняем Discord ID
+        redis_manager.redis.hset(user_key, "discord_user_id", str(request.discord_user_id))
+        
+        # Обновляем время последнего обновления
+        redis_manager.redis.hset(user_key, "discord_linked_at", datetime.now(timezone.utc).isoformat())
+        
+        logger.info(f"✅ Linked Discord account {request.discord_user_id} to summoner {summoner_id}")
+        
+        return {
+            "status": "success",
+            "message": "Discord account linked successfully",
+            "discord_user_id": request.discord_user_id,
+            "summoner_id": summoner_id
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to link Discord account: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to link Discord account: {str(e)}"
+        )
 
 
 @router.get("/linked-account")
