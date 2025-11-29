@@ -516,10 +516,25 @@
             border: 2px solid rgba(0, 176, 244, 0.2);
             border-radius: var(--border-radius);
             padding: 25px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .help-section:hover {
+            background: rgba(0, 176, 244, 0.08);
         }
         
         .instruction-steps {
             margin: 15px 0;
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: opacity 0.3s ease, max-height 0.5s ease;
+        }
+
+        .help-section:hover .instruction-steps {
+            opacity: 1;
+            max-height: 1000px;
         }
         
         .instruction-step {
@@ -562,7 +577,15 @@
             border-radius: var(--border-radius-sm);
             padding: 18px;
             margin-top: 20px;
-            animation: fadeIn 0.5s ease 0.4s both;
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: opacity 0.3s ease, max-height 0.5s ease;
+        }
+
+        .help-section:hover .important-note {
+            opacity: 1;
+            max-height: 500px;
         }
         
         .important-note h4 {
@@ -837,27 +860,6 @@
                         </ul>
                     </div>
                 </div>
-
-                <!-- Карточка статуса подключения -->
-                <div class="card">
-                    <h3><i class="fas fa-plug"></i> Статус подключения</h3>
-                    <div class="status-indicator" id="botConnectedCheck">
-                        <span class="pulsing-dot warning"></span>
-                        Проверка подключения бота...
-                    </div>
-                    <div class="status-indicator" id="serverMembersCheck">
-                        <span class="pulsing-dot warning"></span>
-                        Проверка прав доступа...
-                    </div>
-                    <div class="status-indicator" id="manageRolesCheck">
-                        <span class="pulsing-dot warning"></span>
-                        Проверка управления ролями...
-                    </div>
-                    <div class="status-indicator" id="manageChannelsCheck">
-                        <span class="pulsing-dot warning"></span>
-                        Проверка управления каналами...
-                    </div>
-                </div>
             </div>
         </div>
         
@@ -903,10 +905,6 @@
         const matchStatus = document.getElementById('matchStatus');
         const matchStatusText = document.getElementById('matchStatusText');
         const refreshMatchBtn = document.getElementById('refreshMatchBtn');
-        const botConnectedCheck = document.getElementById('botConnectedCheck');
-        const serverMembersCheck = document.getElementById('serverMembersCheck');
-        const manageRolesCheck = document.getElementById('manageRolesCheck');
-        const manageChannelsCheck = document.getElementById('manageChannelsCheck');
 
         // Пытаемся получить информацию о текущем пользователе
         async function loadCurrentUser() {
@@ -923,68 +921,11 @@
                         
                         // Проверяем статус матча и голосовые каналы
                         checkMatchStatus(data.summoner_id);
-                        
-                        // Запускаем диагностику Discord
-                        verifyDiscordSetup();
                     }
                 }
             } catch (error) {
                 console.log('Не удалось получить информацию о пользователе автоматически');
             }
-        }
-
-        // Проверяем настройки Discord
-        async function verifyDiscordSetup() {
-            try {
-                const token = localStorage.getItem('authToken');
-                if (!token) return;
-                
-                // Проверка информации о гильдии
-                const guildResponse = await fetch('/api/discord/debug-guild-info', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (guildResponse.ok) {
-                    const guildInfo = await guildResponse.json();
-                    
-                    // Обновляем проверки прав
-                    updatePermissionChecks(guildInfo);
-                    
-                } else {
-                    updateStatusIndicator(botConnectedCheck, false, "Бот не подключен к Discord");
-                }
-            } catch (error) {
-                console.log('Error verifying Discord setup:', error);
-                updateStatusIndicator(botConnectedCheck, false, "Ошибка подключения к боту");
-            }
-        }
-
-        // Обновляем проверки прав
-        function updatePermissionChecks(guildInfo) {
-            // Проверка подключения бота
-            updateStatusIndicator(botConnectedCheck, true, "Бот подключен к Discord");
-            
-            // Проверка SERVER MEMBERS INTENT (косвенно через возможность получения участников)
-            const hasServerMembersIntent = guildInfo.member_count > 0;
-            updateStatusIndicator(serverMembersCheck, hasServerMembersIntent, 
-                hasServerMembersIntent ? "SERVER MEMBERS INTENT включен" : "SERVER MEMBERS INTENT не включен");
-            
-            // Проверка прав Manage Roles
-            const hasManageRoles = guildInfo.bot_permissions?.manage_roles;
-            updateStatusIndicator(manageRolesCheck, hasManageRoles,
-                hasManageRoles ? "Право Manage Roles есть" : "Нет права Manage Roles");
-            
-            // Проверка прав Manage Channels
-            const hasManageChannels = guildInfo.bot_permissions?.manage_channels;
-            updateStatusIndicator(manageChannelsCheck, hasManageChannels,
-                hasManageChannels ? "Право Manage Channels есть" : "Нет права Manage Channels");
-        }
-
-        // Показываем статус проверки прав
-        function updateStatusIndicator(element, isGood, message) {
-            const dot = element.querySelector('.pulsing-dot');
-            element.className = `status-indicator ${isGood ? 'success pulse' : 'error'}`;
-            element.innerHTML = `${isGood ? '<span class="pulsing-dot success"></span>' : '<span class="pulsing-dot error"></span>'} ${message}`;
         }
 
         // Проверяем статус матча и голосовые каналы
