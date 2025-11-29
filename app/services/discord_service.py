@@ -133,29 +133,68 @@ class DiscordService:
             logger.error(f"❌ Discord connection error: {e}")
 
     async def _initialize_guild_and_category(self):
-        """Initialize guild and category for Discord."""
+        """Initialize guild and category for Discord with improved error handling."""
         if not self.connected or not self.client:
             return
 
         try:
-            # Find guild
+            # Find guild with better error handling
+            guild_id = None
             if settings.DISCORD_GUILD_ID:
-                guild_id = int(settings.DISCORD_GUILD_ID)
-                self.guild = self.client.get_guild(guild_id)
-                if self.guild:
-                    logger.info(f"✅ Connected to guild: {self.guild.name}")
-                else:
-                    logger.warning(f"⚠️ Guild with ID {settings.DISCORD_GUILD_ID} not found")
+                try:
+                    guild_id = int(settings.DISCORD_GUILD_ID)
+                    self.guild = self.client.get_guild(guild_id)
+                    if self.guild:
+                        logger.info(f"✅ Connected to guild: {self.guild.name} (ID: {self.guild.id})")
+                        logger.info(f"👥 Guild member count: {self.guild.member_count}")
+                    else:
+                        logger.warning(f"⚠️ Guild with ID {settings.DISCORD_GUILD_ID} not found in bot's guilds")
+                        # List available guilds for debugging
+                        available_guilds = [f"{g.name} (ID: {g.id})" for g in self.client.guilds]
+                        logger.info(f"📋 Bot is in these guilds: {available_guilds}")
+                        self.mock_mode = True
+                        return
+                except ValueError:
+                    logger.error(f"❌ Invalid DISCORD_GUILD_ID format: {settings.DISCORD_GUILD_ID}")
                     self.mock_mode = True
                     return
             else:
                 if self.client.guilds:
                     self.guild = self.client.guilds[0]
-                    logger.info(f"✅ Using first available guild: {self.guild.name}")
+                    logger.info(f"✅ Using first available guild: {self.guild.name} (ID: {self.guild.id})")
                 else:
                     logger.warning("⚠️ Bot is not in any guilds")
                     self.mock_mode = True
                     return
+
+            # Test member fetching capability
+            try:
+                # Try to fetch the bot itself as a test
+                bot_member = self.guild.get_member(self.client.user.id)
+                if bot_member:
+                    logger.info(f"✅ Bot member found: {bot_member.display_name}")
+                else:
+                    logger.warning("⚠️ Could not find bot member in guild - possible permissions issue")
+                    
+                # Check bot permissions
+                bot_permissions = self.guild.me.guild_permissions
+                required_permissions = [
+                    'manage_roles', 'manage_channels', 'view_channel', 
+                    'connect', 'speak', 'move_members'
+                ]
+                
+                missing_permissions = []
+                for perm in required_permissions:
+                    if not getattr(bot_permissions, perm):
+                        missing_permissions.append(perm)
+                        
+                if missing_permissions:
+                    logger.warning(f"⚠️ Bot missing permissions: {', '.join(missing_permissions)}")
+                else:
+                    logger.info("✅ Bot has all required permissions")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error checking bot permissions: {e}")
 
             # Create or find category
             self.category = await self._get_or_create_category()
@@ -352,7 +391,7 @@ class DiscordService:
         return result
 
     async def assign_player_to_team(self, discord_user_id: int, match_id: str, team_name: str) -> bool:
-        """Assign a Discord user to a team with improved error handling and user validation."""
+        """Assign a Discord user to a team with enhanced user discovery."""
         if self.mock_mode:
             logger.info(f"🎮 MOCK: Assigning user {discord_user_id} to {team_name} in match {match_id}")
             return True
@@ -362,43 +401,70 @@ class DiscordService:
             return False
             
         try:
-            # Find member with better error handling
+            logger.info(f"🔍 Searching for user {discord_user_id} in guild {self.guild.name} (ID: {self.guild.id})")
+            
+            # Multiple methods to find member
             member = None
-            try:
-                member = self.guild.get_member(discord_user_id)
-                if not member:
-                    # Try to fetch member from API
-                    try:
-                        member = await self.guild.fetch_member(discord_user_id)
-                        logger.info(f"✅ Fetched member {member.display_name} from Discord API")
-                    except discord.NotFound:
-                        logger.error(f"❌ Discord user {discord_user_id} not found in guild {self.guild.name}")
-                        # Create an invite for the user to join the server
-                        await self._create_server_invite_for_user(match_id, team_name, discord_user_id)
-                        return False
-                    except discord.Forbidden:
-                        logger.error(f"❌ Bot doesn't have permission to fetch member {discord_user_id}")
-                        return False
-            except Exception as e:
-                logger.error(f"❌ Error finding member {discord_user_id}: {e}")
-                return False
+            
+            # Method 1: Check cache first
+            member = self.guild.get_member(discord_user_id)
+            if member:
+                logger.info(f"✅ Found user {member.display_name} in guild cache")
+            
+            # Method 2: Fetch from API if not in cache
+            if not member:
+                try:
+                    logger.info(f"🔄 Fetching user {discord_user_id} from Discord API...")
+                    member = await self.guild.fetch_member(discord_user_id)
+                    if member:
+                        logger.info(f"✅ Fetched user {member.display_name} from Discord API")
+                except discord.NotFound:
+                    logger.error(f"❌ Discord user {discord_user_id} not found in guild {self.guild.name}")
+                    # Create an invite for the user to join the server
+                    await self._create_server_invite_for_user(match_id, team_name, discord_user_id)
+                    return False
+                except discord.Forbidden:
+                    logger.error(f"❌ Bot doesn't have permission to fetch member {discord_user_id}")
+                    logger.error("💡 Check if bot has 'Server Members Intent' enabled in Discord Developer Portal")
+                    return False
+                except discord.HTTPException as e:
+                    logger.error(f"❌ Discord API error fetching member: {e}")
+                    return False
 
             if not member:
-                logger.error(f"❌ Could not find Discord user {discord_user_id} in guild")
-                return False
+                logger.error(f"❌ Could not find Discord user {discord_user_id} in guild {self.guild.name}")
+                logger.info(f"📊 Guild members in cache: {len(self.guild.members)}")
+                
+                # Try one more method - search in members list
+                for guild_member in self.guild.members:
+                    if guild_member.id == discord_user_id:
+                        member = guild_member
+                        logger.info(f"✅ Found user {member.display_name} in members list iteration")
+                        break
+                
+                if not member:
+                    logger.error(f"❌ User {discord_user_id} not found in any member list")
+                    await self._create_server_invite_for_user(match_id, team_name, discord_user_id)
+                    return False
 
             # Find team role
             role_name = f"LoL {match_id} - {team_name}"
             team_role = None
             
+            logger.info(f"🔍 Searching for role: {role_name}")
             for role in self.guild.roles:
                 if role.name == role_name:
                     team_role = role
+                    logger.info(f"✅ Found team role: {role.name} (ID: {role.id})")
                     break
                     
             if not team_role:
                 logger.error(f"❌ Team role not found: {role_name}")
-                return False
+                # Try to create the role
+                team_role = await self._get_or_create_team_role(match_id, team_name)
+                if not team_role:
+                    logger.error("❌ Failed to create team role")
+                    return False
 
             # Check if bot has permission to manage roles
             if not self.guild.me.guild_permissions.manage_roles:
@@ -407,8 +473,14 @@ class DiscordService:
 
             # Check if bot's role is high enough to assign this role
             if self.guild.me.top_role <= team_role:
-                logger.error(f"❌ Bot's role is not high enough to assign role {role_name}")
+                logger.error(f"❌ Bot's role ({self.guild.me.top_role.name}) is not high enough to assign role {role_name}")
+                logger.error("💡 Move bot's role higher in role hierarchy")
                 return False
+
+            # Check if member already has the role
+            if team_role in member.roles:
+                logger.info(f"ℹ️ User {member.display_name} already has role {team_role.name}")
+                return True
 
             # Assign role
             try:
@@ -428,6 +500,7 @@ class DiscordService:
                 
             except discord.Forbidden:
                 logger.error(f"❌ No permission to assign role to {member.display_name}")
+                logger.error("💡 Check role hierarchy and bot permissions")
                 return False
             except discord.HTTPException as e:
                 logger.error(f"❌ Failed to assign role: {e}")

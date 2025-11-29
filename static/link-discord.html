@@ -4,7 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Привязка Discord аккаунта - LoL Voice Chat</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        :root {
+            --primary: #7289da;
+            --primary-dark: #5b73c4;
+            --primary-light: #8fa3e0;
+            --secondary: #43b581;
+            --secondary-dark: #3ca374;
+            --danger: #f04747;
+            --danger-dark: #d84040;
+            --warning: #faa61a;
+            --warning-dark: #e69510;
+            --info: #00b0f4;
+            --dark: #2c2f33;
+            --darker: #23272a;
+            --light: #f8f9fa;
+            --gray: #99aab5;
+            --gray-dark: #6c757d;
+            --border-radius: 12px;
+            --border-radius-sm: 8px;
+            --shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+            --shadow-lg: 0 15px 35px rgba(0, 0, 0, 0.15);
+            --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            --gradient: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            --gradient-secondary: linear-gradient(135deg, var(--secondary) 0%, var(--info) 100%);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -19,52 +45,82 @@
             align-items: center;
             justify-content: center;
             padding: 20px;
+            color: var(--dark);
+            line-height: 1.6;
         }
         
         .container {
             background: white;
-            border-radius: 15px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-lg);
             padding: 40px;
-            max-width: 1200px;
+            max-width: 1000px;
             width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--gradient);
         }
         
         .header {
             text-align: center;
             margin-bottom: 40px;
+            position: relative;
         }
         
         .logo {
-            font-size: 2.5rem;
+            font-size: 3.5rem;
             margin-bottom: 20px;
-            color: #7289da;
+            color: var(--primary);
+            animation: float 3s ease-in-out infinite;
+            display: inline-block;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
         }
         
         h1 {
-            color: #333;
+            color: var(--dark);
             margin-bottom: 10px;
-            font-size: 2rem;
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
         
         .subtitle {
-            color: #666;
+            color: var(--gray-dark);
             margin-bottom: 10px;
             font-size: 1.1rem;
             line-height: 1.5;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
         }
         
         .content-wrapper {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 40px;
+            gap: 30px;
             margin-bottom: 40px;
         }
         
         @media (max-width: 968px) {
             .content-wrapper {
                 grid-template-columns: 1fr;
-                gap: 30px;
+                gap: 25px;
             }
         }
         
@@ -82,19 +138,49 @@
         
         .card {
             background: white;
-            border-radius: 12px;
+            border-radius: var(--border-radius);
             padding: 25px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-            border: 1px solid #eaeaea;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--gradient);
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
         }
         
         .card h3 {
-            color: #333;
+            color: var(--dark);
             margin-bottom: 15px;
             font-size: 1.3rem;
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+
+        .card h3 i {
+            color: var(--primary);
+            width: 24px;
+            text-align: center;
         }
         
         .form-group {
@@ -105,96 +191,127 @@
         label {
             display: block;
             margin-bottom: 8px;
-            color: #333;
+            color: var(--dark);
             font-weight: 600;
+            font-size: 0.95rem;
         }
         
         input[type="text"] {
             width: 100%;
-            padding: 12px 15px;
+            padding: 14px 16px;
             border: 2px solid #e1e5e9;
-            border-radius: 8px;
+            border-radius: var(--border-radius-sm);
             font-size: 16px;
-            transition: border-color 0.3s;
+            transition: var(--transition);
+            background: var(--light);
         }
         
         input[type="text"]:focus {
             outline: none;
-            border-color: #7289da;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(114, 137, 218, 0.1);
         }
         
         input[type="text"]:disabled {
             background-color: #f8f9fa;
-            color: #6c757d;
+            color: var(--gray-dark);
             cursor: not-allowed;
         }
         
         .btn {
-            background: #7289da;
+            background: var(--gradient);
             color: white;
             border: none;
-            padding: 12px 25px;
-            border-radius: 8px;
+            padding: 14px 25px;
+            border-radius: var(--border-radius-sm);
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: var(--transition);
             width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
         }
         
         .btn:hover {
-            background: #5b73c4;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(114, 137, 218, 0.3);
+            box-shadow: 0 6px 15px rgba(114, 137, 218, 0.4);
         }
         
         .btn:disabled {
-            background: #99aab5;
+            background: var(--gray);
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
         }
+
+        .btn:disabled::before {
+            display: none;
+        }
         
         .change-btn {
-            background: #99aab5 !important;
+            background: var(--gray) !important;
             margin-top: 10px;
         }
         
         .change-btn:hover {
-            background: #7a8c99 !important;
+            background: var(--gray-dark) !important;
         }
         
         .message {
             margin-top: 15px;
-            padding: 12px;
-            border-radius: 8px;
+            padding: 14px 16px;
+            border-radius: var(--border-radius-sm);
             display: none;
+            animation: fadeIn 0.5s ease;
+            font-weight: 500;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: rgba(67, 181, 129, 0.1);
+            color: var(--secondary-dark);
+            border: 1px solid rgba(67, 181, 129, 0.2);
         }
         
         .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: rgba(240, 71, 71, 0.1);
+            color: var(--danger-dark);
+            border: 1px solid rgba(240, 71, 71, 0.2);
         }
         
         .loading {
             display: none;
             margin: 10px 0;
             text-align: center;
+            animation: fadeIn 0.5s ease;
         }
         
         .spinner {
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #7289da;
+            border-top: 3px solid var(--primary);
             border-radius: 50%;
-            width: 20px;
-            height: 20px;
+            width: 24px;
+            height: 24px;
             animation: spin 1s linear infinite;
             margin: 0 auto;
         }
@@ -205,169 +322,199 @@
         }
         
         .user-info {
-            background: #e8f4fd;
-            border: 1px solid #b6d7e8;
-            border-radius: 8px;
-            padding: 15px;
+            background: rgba(114, 137, 218, 0.05);
+            border: 1px solid rgba(114, 137, 218, 0.2);
+            border-radius: var(--border-radius-sm);
+            padding: 18px;
             text-align: left;
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
         }
         
         .user-info h3 {
-            color: #31708f;
+            color: var(--primary);
             margin-bottom: 8px;
             font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         
         .server-status {
             margin-top: 10px;
             font-size: 0.9rem;
             min-height: 20px;
-            padding: 8px;
-            border-radius: 4px;
+            padding: 10px 12px;
+            border-radius: var(--border-radius-sm);
+            display: none;
+            animation: fadeIn 0.5s ease;
         }
         
         .server-status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: rgba(67, 181, 129, 0.1);
+            color: var(--secondary-dark);
+            border: 1px solid rgba(67, 181, 129, 0.2);
         }
         
         .server-status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: rgba(240, 71, 71, 0.1);
+            color: var(--danger-dark);
+            border: 1px solid rgba(240, 71, 71, 0.2);
         }
         
         .server-status.warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
+            background: rgba(250, 166, 26, 0.1);
+            color: var(--warning-dark);
+            border: 1px solid rgba(250, 166, 26, 0.2);
         }
         
         .discord-link {
-            color: #7289da;
+            color: var(--primary);
             text-decoration: none;
             font-weight: 600;
-            border-bottom: 1px dashed #7289da;
-            transition: all 0.3s ease;
+            border-bottom: 1px dashed var(--primary);
+            transition: var(--transition);
         }
 
         .discord-link:hover {
-            color: #5b73c4;
-            border-bottom: 1px solid #5b73c4;
+            color: var(--primary-dark);
+            border-bottom: 1px solid var(--primary-dark);
             text-decoration: none;
         }
         
         .voice-channel-info {
-            background: #e8f5e8;
-            border: 2px solid #c3e6c3;
-            border-radius: 10px;
-            padding: 20px;
+            background: rgba(67, 181, 129, 0.05);
+            border: 2px solid rgba(67, 181, 129, 0.2);
+            border-radius: var(--border-radius);
+            padding: 24px;
             text-align: left;
             display: none;
+            animation: slideIn 0.5s ease;
         }
         
         .voice-channel-info h3 {
-            color: #155724;
+            color: var(--secondary-dark);
             margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         .voice-invite-link {
-            display: inline-block;
-            background: #7289da;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--gradient-secondary);
             color: white;
             text-decoration: none;
-            padding: 12px 20px;
-            border-radius: 8px;
+            padding: 14px 20px;
+            border-radius: var(--border-radius-sm);
             font-weight: 600;
             margin: 15px 0;
-            transition: all 0.3s;
+            transition: var(--transition);
             font-size: 1rem;
-            border: 2px solid #5b73c4;
+            border: none;
+            box-shadow: 0 4px 10px rgba(67, 181, 129, 0.3);
         }
         
         .voice-invite-link:hover {
-            background: #5b73c4;
             text-decoration: none;
             color: white;
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 6px 15px rgba(67, 181, 129, 0.4);
         }
         
         .channel-details {
             margin-top: 15px;
             font-size: 0.95rem;
-            color: #666;
+            color: var(--gray-dark);
             background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #d6e9c6;
+            padding: 18px;
+            border-radius: var(--border-radius-sm);
+            border: 1px solid rgba(67, 181, 129, 0.1);
         }
         
         .channel-detail-item {
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             display: flex;
+            align-items: center;
         }
         
         .channel-detail-label {
             font-weight: 600;
-            color: #333;
+            color: var(--dark);
             min-width: 80px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         
         .copy-btn {
-            background: #99aab5;
+            background: var(--gray);
             color: white;
             border: none;
-            padding: 8px 15px;
-            border-radius: 6px;
+            padding: 10px 16px;
+            border-radius: var(--border-radius-sm);
             font-size: 0.9rem;
             cursor: pointer;
             margin-left: 10px;
-            transition: background 0.3s;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
         
         .copy-btn:hover {
-            background: #7a8c99;
+            background: var(--gray-dark);
         }
         
         .match-status {
-            background: #fff3cd;
-            border: 2px solid #ffeaa7;
-            border-radius: 10px;
-            padding: 20px;
+            background: rgba(250, 166, 26, 0.05);
+            border: 2px solid rgba(250, 166, 26, 0.2);
+            border-radius: var(--border-radius);
+            padding: 24px;
             text-align: left;
             display: none;
+            animation: slideIn 0.5s ease;
         }
         
         .match-status h3 {
-            color: #856404;
+            color: var(--warning-dark);
             margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         .refresh-btn {
-            background: #17a2b8;
+            background: var(--info);
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
+            padding: 12px 20px;
+            border-radius: var(--border-radius-sm);
             font-size: 0.95rem;
             cursor: pointer;
             margin-top: 15px;
-            transition: background 0.3s;
-            display: flex;
+            transition: var(--transition);
+            display: inline-flex;
             align-items: center;
             gap: 8px;
         }
         
         .refresh-btn:hover {
-            background: #138496;
+            background: #009adc;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 176, 244, 0.3);
         }
         
         .help-section {
-            background: #f0f8ff;
-            border: 2px solid #b6d7e8;
-            border-radius: 10px;
+            background: rgba(0, 176, 244, 0.05);
+            border: 2px solid rgba(0, 176, 244, 0.2);
+            border-radius: var(--border-radius);
             padding: 25px;
         }
         
@@ -378,47 +525,58 @@
         .instruction-step {
             display: flex;
             align-items: flex-start;
-            margin-bottom: 12px;
+            margin-bottom: 16px;
+            animation: fadeIn 0.5s ease;
+            animation-fill-mode: both;
         }
+
+        .instruction-step:nth-child(1) { animation-delay: 0.1s; }
+        .instruction-step:nth-child(2) { animation-delay: 0.2s; }
+        .instruction-step:nth-child(3) { animation-delay: 0.3s; }
         
         .instruction-number {
-            background: #7289da;
+            background: var(--gradient);
             color: white;
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             font-weight: bold;
-            margin-right: 12px;
+            margin-right: 15px;
             flex-shrink: 0;
+            box-shadow: 0 4px 8px rgba(114, 137, 218, 0.3);
         }
         
         .instruction-text {
-            color: #666;
+            color: var(--gray-dark);
             font-size: 0.95rem;
-            line-height: 1.4;
+            line-height: 1.5;
         }
         
         .important-note {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 6px;
-            padding: 15px;
+            background: rgba(250, 166, 26, 0.05);
+            border: 1px solid rgba(250, 166, 26, 0.2);
+            border-radius: var(--border-radius-sm);
+            padding: 18px;
             margin-top: 20px;
+            animation: fadeIn 0.5s ease 0.4s both;
         }
         
         .important-note h4 {
-            color: #856404;
-            margin-bottom: 8px;
+            color: var(--warning-dark);
+            margin-bottom: 10px;
             font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         
         .action-buttons {
             display: flex;
-            gap: 10px;
+            gap: 12px;
             margin-top: 15px;
         }
         
@@ -434,47 +592,137 @@
                 grid-template-columns: 1fr;
                 gap: 15px;
             }
+
+            .container {
+                padding: 25px 20px;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
         }
         
         .step {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
+            background: var(--light);
+            border-radius: var(--border-radius);
+            padding: 24px 20px;
             text-align: center;
-            border-left: 4px solid #7289da;
+            border-left: 4px solid var(--primary);
+            transition: var(--transition);
+            animation: fadeIn 0.5s ease;
+            animation-fill-mode: both;
+        }
+
+        .step:nth-child(1) { animation-delay: 0.1s; }
+        .step:nth-child(2) { animation-delay: 0.2s; }
+        .step:nth-child(3) { animation-delay: 0.3s; }
+        .step:nth-child(4) { animation-delay: 0.4s; }
+
+        .step:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow);
         }
         
         .step-number {
-            background: #7289da;
+            background: var(--gradient);
             color: white;
-            width: 30px;
-            height: 30px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1rem;
+            font-size: 1.1rem;
             font-weight: bold;
-            margin: 0 auto 10px;
+            margin: 0 auto 12px;
+            box-shadow: 0 4px 8px rgba(114, 137, 218, 0.3);
         }
         
         .step-text {
-            color: #666;
+            color: var(--gray-dark);
             font-size: 0.9rem;
             line-height: 1.4;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin: 5px 0;
+        }
+
+        .status-indicator.success {
+            background: rgba(67, 181, 129, 0.1);
+            color: var(--secondary-dark);
+        }
+
+        .status-indicator.error {
+            background: rgba(240, 71, 71, 0.1);
+            color: var(--danger-dark);
+        }
+
+        .status-indicator.warning {
+            background: rgba(250, 166, 26, 0.1);
+            color: var(--warning-dark);
+        }
+
+        .status-indicator.pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(67, 181, 129, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(67, 181, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(67, 181, 129, 0); }
+        }
+
+        .server-info {
+            background: rgba(114, 137, 218, 0.05);
+            border: 1px solid rgba(114, 137, 218, 0.2);
+            border-radius: var(--border-radius-sm);
+            padding: 15px;
+            margin-top: 10px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .pulsing-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .pulsing-dot.success {
+            background: var(--secondary);
+        }
+
+        .pulsing-dot.error {
+            background: var(--danger);
+        }
+
+        .pulsing-dot.warning {
+            background: var(--warning);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">🎮</div>
+            <div class="logo">
+                <i class="fas fa-headset"></i>
+            </div>
             <h1>Привязка Discord аккаунта</h1>
-            <p class="subtitle">Свяжите ваш Discord аккаунт с League of Legends для автоматического подключения к голосовым каналам</p>
+            <p class="subtitle">Свяжите ваш Discord аккаунт с League of Legends для автоматического подключения к голосовым каналам во время матчей</p>
         </div>
         
         <div class="user-info" id="currentUserInfo" style="display: none;">
-            <h3>Текущий пользователь</h3>
+            <h3><i class="fas fa-user"></i> Текущий пользователь</h3>
             <p id="userDetails"></p>
         </div>
         
@@ -483,10 +731,10 @@
             <div class="main-content">
                 <!-- Карточка привязки Discord -->
                 <div class="card">
-                    <h3>🔗 Привязка Discord аккаунта</h3>
+                    <h3><i class="fas fa-link"></i> Привязка Discord аккаунта</h3>
                     <form id="discordLinkForm">
                         <div class="form-group">
-                            <label for="discordId">Ваш Discord ID:</label>
+                            <label for="discordId"><i class="fas fa-id-card"></i> Ваш Discord ID:</label>
                             <input 
                                 type="text" 
                                 id="discordId" 
@@ -495,7 +743,7 @@
                             >
                             <div id="changeDiscordContainer" style="display: none; margin-top: 10px;">
                                 <button type="button" id="changeDiscordBtn" class="btn change-btn">
-                                    ✏️ Изменить Discord ID
+                                    <i class="fas fa-edit"></i> Изменить Discord ID
                                 </button>
                             </div>
                             <div id="serverStatus" class="server-status" style="display: none;"></div>
@@ -503,46 +751,50 @@
                         
                         <div class="loading" id="loading">
                             <div class="spinner"></div>
-                            <p style="text-align: center; margin-top: 10px; color: #666;">Привязываем аккаунт...</p>
+                            <p style="text-align: center; margin-top: 10px; color: var(--gray-dark);">Привязываем аккаунт...</p>
                         </div>
                         
-                        <button type="submit" class="btn" id="submitBtn">Привязать Discord аккаунт</button>
+                        <button type="submit" class="btn" id="submitBtn">
+                            <i class="fas fa-link"></i> Привязать Discord аккаунт
+                        </button>
                     </form>
                     <div class="message" id="message"></div>
                 </div>
                 
                 <!-- Карточка статуса матча -->
                 <div class="match-status" id="matchStatus">
-                    <h3>🎯 Статус матча</h3>
+                    <h3><i class="fas fa-gamepad"></i> Статус матча</h3>
                     <p id="matchStatusText"></p>
                     <button class="refresh-btn" id="refreshMatchBtn">
-                        <span>🔄</span> Обновить статус
+                        <i class="fas fa-sync-alt"></i> Обновить статус
                     </button>
                 </div>
 
                 <!-- Карточка голосового канала -->
                 <div class="voice-channel-info" id="voiceChannelInfo">
-                    <h3>🎙️ Голосовой канал вашей команды</h3>
+                    <h3><i class="fas fa-microphone-alt"></i> Голосовой канал вашей команды</h3>
                     <p>Матч начался! Присоединяйтесь к голосовому каналу вашей команды:</p>
                     
                     <div class="action-buttons">
                         <a href="#" id="voiceInviteLink" class="voice-invite-link" target="_blank">
-                            🎮 Присоединиться к голосовому каналу
+                            <i class="fas fa-headset"></i> Присоединиться к голосовому каналу
                         </a>
-                        <button class="copy-btn" id="copyInviteBtn">📋 Копировать ссылку</button>
+                        <button class="copy-btn" id="copyInviteBtn">
+                            <i class="far fa-copy"></i> Копировать ссылку
+                        </button>
                     </div>
                     
                     <div class="channel-details">
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label">Канал:</span>
+                            <span class="channel-detail-label"><i class="fas fa-hashtag"></i> Канал:</span>
                             <span id="channelName"></span>
                         </div>
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label">Команда:</span>
+                            <span class="channel-detail-label"><i class="fas fa-users"></i> Команда:</span>
                             <span id="teamName"></span>
                         </div>
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label">Матч:</span>
+                            <span class="channel-detail-label"><i class="fas fa-flag"></i> Матч:</span>
                             <span id="matchId"></span>
                         </div>
                     </div>
@@ -553,7 +805,7 @@
             <div class="sidebar">
                 <!-- Карточка помощи -->
                 <div class="help-section">
-                    <h3>💡 Помощь и инструкции</h3>
+                    <h3><i class="fas fa-question-circle"></i> Помощь и инструкции</h3>
                     
                     <div class="instruction-steps">
                         <div class="instruction-step">
@@ -570,19 +822,40 @@
                                 <strong>Присоединитесь к серверу</strong><br>
                                 Убедитесь, что вы находитесь на 
                                 <a href="https://discord.gg/UcfX74R4" target="_blank" class="discord-link">
-                                    🎮 нашем Discord сервере
+                                    <i class="fab fa-discord"></i> нашем Discord сервере
                                 </a>
                             </div>
                         </div>
                     </div>
                     
                     <div class="important-note">
-                        <h4>💡 Важно знать:</h4>
-                        <ul style="margin-left: 20px; color: #666;">
+                        <h4><i class="fas fa-lightbulb"></i> Важно знать:</h4>
+                        <ul style="margin-left: 20px; color: var(--gray-dark);">
                             <li>Если нужно изменить Discord ID - нажмите кнопку "Изменить"</li>
                             <li>Голосовые каналы создаются автоматически после начала матча</li>
                             <li>Вы будете автоматически подключены к каналу вашей команды</li>
                         </ul>
+                    </div>
+                </div>
+
+                <!-- Карточка статуса подключения -->
+                <div class="card">
+                    <h3><i class="fas fa-plug"></i> Статус подключения</h3>
+                    <div class="status-indicator" id="botConnectedCheck">
+                        <span class="pulsing-dot warning"></span>
+                        Проверка подключения бота...
+                    </div>
+                    <div class="status-indicator" id="serverMembersCheck">
+                        <span class="pulsing-dot warning"></span>
+                        Проверка прав доступа...
+                    </div>
+                    <div class="status-indicator" id="manageRolesCheck">
+                        <span class="pulsing-dot warning"></span>
+                        Проверка управления ролями...
+                    </div>
+                    <div class="status-indicator" id="manageChannelsCheck">
+                        <span class="pulsing-dot warning"></span>
+                        Проверка управления каналами...
                     </div>
                 </div>
             </div>
@@ -630,6 +903,10 @@
         const matchStatus = document.getElementById('matchStatus');
         const matchStatusText = document.getElementById('matchStatusText');
         const refreshMatchBtn = document.getElementById('refreshMatchBtn');
+        const botConnectedCheck = document.getElementById('botConnectedCheck');
+        const serverMembersCheck = document.getElementById('serverMembersCheck');
+        const manageRolesCheck = document.getElementById('manageRolesCheck');
+        const manageChannelsCheck = document.getElementById('manageChannelsCheck');
 
         // Пытаемся получить информацию о текущем пользователе
         async function loadCurrentUser() {
@@ -646,11 +923,68 @@
                         
                         // Проверяем статус матча и голосовые каналы
                         checkMatchStatus(data.summoner_id);
+                        
+                        // Запускаем диагностику Discord
+                        verifyDiscordSetup();
                     }
                 }
             } catch (error) {
                 console.log('Не удалось получить информацию о пользователе автоматически');
             }
+        }
+
+        // Проверяем настройки Discord
+        async function verifyDiscordSetup() {
+            try {
+                const token = localStorage.getItem('authToken');
+                if (!token) return;
+                
+                // Проверка информации о гильдии
+                const guildResponse = await fetch('/api/discord/debug-guild-info', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (guildResponse.ok) {
+                    const guildInfo = await guildResponse.json();
+                    
+                    // Обновляем проверки прав
+                    updatePermissionChecks(guildInfo);
+                    
+                } else {
+                    updateStatusIndicator(botConnectedCheck, false, "Бот не подключен к Discord");
+                }
+            } catch (error) {
+                console.log('Error verifying Discord setup:', error);
+                updateStatusIndicator(botConnectedCheck, false, "Ошибка подключения к боту");
+            }
+        }
+
+        // Обновляем проверки прав
+        function updatePermissionChecks(guildInfo) {
+            // Проверка подключения бота
+            updateStatusIndicator(botConnectedCheck, true, "Бот подключен к Discord");
+            
+            // Проверка SERVER MEMBERS INTENT (косвенно через возможность получения участников)
+            const hasServerMembersIntent = guildInfo.member_count > 0;
+            updateStatusIndicator(serverMembersCheck, hasServerMembersIntent, 
+                hasServerMembersIntent ? "SERVER MEMBERS INTENT включен" : "SERVER MEMBERS INTENT не включен");
+            
+            // Проверка прав Manage Roles
+            const hasManageRoles = guildInfo.bot_permissions?.manage_roles;
+            updateStatusIndicator(manageRolesCheck, hasManageRoles,
+                hasManageRoles ? "Право Manage Roles есть" : "Нет права Manage Roles");
+            
+            // Проверка прав Manage Channels
+            const hasManageChannels = guildInfo.bot_permissions?.manage_channels;
+            updateStatusIndicator(manageChannelsCheck, hasManageChannels,
+                hasManageChannels ? "Право Manage Channels есть" : "Нет права Manage Channels");
+        }
+
+        // Показываем статус проверки прав
+        function updateStatusIndicator(element, isGood, message) {
+            const dot = element.querySelector('.pulsing-dot');
+            element.className = `status-indicator ${isGood ? 'success pulse' : 'error'}`;
+            element.innerHTML = `${isGood ? '<span class="pulsing-dot success"></span>' : '<span class="pulsing-dot error"></span>'} ${message}`;
         }
 
         // Проверяем статус матча и голосовые каналы
@@ -736,11 +1070,6 @@
                 
                 // Показываем уведомление о успешном создании канала
                 showMessage('🎉 Матч начался! Голосовой канал вашей команды готов. Присоединяйтесь!', 'success');
-                
-                // Логируем для отладки
-                console.log('Voice channel displayed for match:', matchInfo.match_id, 'Team:', matchInfo.team_name);
-            } else {
-                console.log('No voice channel available despite match being in progress');
             }
         }
 
@@ -846,7 +1175,7 @@
             } else if (status.on_server === false) {
                 let message = '❌ Пользователь не найден на сервере';
                 if (status.server_invite_available) {
-                    message += `<br><a href="${status.server_invite}" target="_blank" style="color: #7289da; text-decoration: underline;">Присоединиться к серверу</a>`;
+                    message += `<br><a href="${status.server_invite}" target="_blank" style="color: var(--primary); text-decoration: underline;">Присоединиться к серверу</a>`;
                 } else {
                     message += '<br>Пожалуйста, присоединитесь к Discord серверу бота.';
                 }
@@ -855,14 +1184,6 @@
             } else {
                 serverStatus.innerHTML = '⚠️ Не удалось проверить статус';
                 serverStatus.className = 'server-status warning';
-            }
-            
-            if (!status.bot_has_permissions) {
-                serverStatus.innerHTML += '<br>❌ У бота недостаточно прав на сервере';
-            }
-            
-            if (!status.can_assign_roles) {
-                serverStatus.innerHTML += '<br>❌ Бот не может назначать роли';
             }
         }
 
@@ -881,11 +1202,11 @@
             // Показываем загрузку
             loadingDiv.style.display = 'block';
             submitBtn.disabled = true;
+            messageDiv.style.display = 'none';
             
             try {
                 let token = localStorage.getItem('authToken');
                 
-                // Если нет токена, пробуем аутентифицироваться
                 if (!token) {
                     const authResponse = await fetch('/api/auth/auto-auth');
                     if (authResponse.ok) {
@@ -898,39 +1219,25 @@
                 if (!token) {
                     throw new Error('Не удалось аутентифицироваться. Запустите League of Legends и попробуйте снова.');
                 }
+
+                // Отправляем как строку
+                const requestBody = {
+                    discord_user_id: discordId
+                };
                 
-                // Проверяем, есть ли уже привязанный аккаунт
-                const currentLinkResponse = await fetch('/api/discord/linked-account', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                let isUpdate = false;
-                if (currentLinkResponse.ok) {
-                    const currentData = await currentLinkResponse.json();
-                    if (currentData.discord_user_id) {
-                        isUpdate = true;
-                    }
-                }
-                
-                // Отправляем запрос на привязку
                 const response = await fetch('/api/discord/link-account', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({
-                        discord_user_id: parseInt(discordId)
-                    })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
-                    const action = isUpdate ? 'обновлен' : 'привязан';
-                    showMessage(`✅ Discord аккаунт успешно ${action}! Теперь вы можете использовать голосовые каналы в играх.`, 'success');
+                    showMessage(`✅ ${data.message} (Сохранено: ${data.saved_value})`, 'success');
                     
                     // Блокируем форму после успешной привязки
                     lockForm(discordId);
@@ -948,12 +1255,18 @@
                     }
                     
                 } else {
-                    throw new Error(data.detail || 'Ошибка при привязке аккаунта');
+                    // Обработка ошибок валидации
+                    if (response.status === 422) {
+                        const errorDetail = data.detail || 'Ошибка валидации';
+                        throw new Error(`Ошибка валидации: ${errorDetail}`);
+                    } else {
+                        throw new Error(data.detail || `HTTP error! status: ${response.status}`);
+                    }
                 }
                 
             } catch (error) {
+                console.error('❌ Ошибка при привязке:', error);
                 showMessage(`❌ ${error.message}`, 'error');
-                // Разблокируем кнопку при ошибке
                 submitBtn.disabled = false;
             } finally {
                 loadingDiv.style.display = 'none';
@@ -989,9 +1302,9 @@
             const inviteUrl = voiceInviteLink.href;
             navigator.clipboard.writeText(inviteUrl).then(() => {
                 const originalText = copyInviteBtn.textContent;
-                copyInviteBtn.textContent = '✅ Скопировано!';
+                copyInviteBtn.innerHTML = '<i class="fas fa-check"></i> Скопировано!';
                 setTimeout(() => {
-                    copyInviteBtn.textContent = originalText;
+                    copyInviteBtn.innerHTML = '<i class="far fa-copy"></i> Копировать ссылку';
                 }, 2000);
             }).catch(err => {
                 console.error('Ошибка копирования: ', err);
@@ -1002,7 +1315,7 @@
         discordIdInput.addEventListener('input', function() {
             const value = this.value.trim();
             if (value && !isValidDiscordId(value)) {
-                this.style.borderColor = '#dc3545';
+                this.style.borderColor = 'var(--danger)';
             } else {
                 this.style.borderColor = '#e1e5e9';
                 // Проверяем статус при валидном ID

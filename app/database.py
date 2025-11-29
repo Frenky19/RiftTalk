@@ -240,10 +240,11 @@ class RedisManager:
     def save_user_match_info(self, discord_user_id: int, match_info: dict, ttl: int = 3600) -> bool:
         """Save user match information for automatic voice channel management."""
         try:
+            # Преобразуем в строку для consistency
             key = f"user_discord:{discord_user_id}"
             # Используем hset для правильного формата
             self.redis.hset(key, mapping={
-                "match_id": match_info.get('match_id', ''),
+                "match_id": str(match_info.get('match_id', '')),
                 "team_name": match_info.get('team_name', ''),
                 "assigned_at": match_info.get('assigned_at', '')
             })

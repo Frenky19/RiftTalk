@@ -4,6 +4,7 @@ import json
 import random
 import redis
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import ValidationError
 from app.services.discord_service import discord_service
 from app.services.lcu_service import lcu_service
 from app.utils.security import get_current_user
@@ -276,8 +277,19 @@ async def auto_assign_team(
 
         # Выполняем назначение на команду
         logger.info(f"🔄 Assigning user to team: {user_actual_team}")
+        
+        # Преобразуем Discord ID в int для Discord API
+        try:
+            discord_id_int = int(discord_user_id)
+        except (ValueError, TypeError) as e:
+            logger.error(f"❌ Invalid Discord ID format: {discord_user_id}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid Discord ID format: {discord_user_id}"
+            )
+            
         success = await discord_service.assign_player_to_team(
-            int(discord_user_id), match_id, user_actual_team
+            discord_id_int, match_id, user_actual_team
         )
         
         if success:
@@ -395,31 +407,118 @@ async def link_discord_account(
     request: DiscordLinkRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Link Discord account to current LoL user."""
+    """Link Discord account to current LoL user with comprehensive error handling."""
     try:
         summoner_id = current_user['sub']
         user_key = f"user:{summoner_id}"
         
-        # Сохраняем Discord ID
-        redis_manager.redis.hset(user_key, "discord_user_id", str(request.discord_user_id))
+        # Используем строковый ID после валидации
+        discord_user_id_str = request.discord_user_id
         
-        # Обновляем время последнего обновления
-        redis_manager.redis.hset(user_key, "discord_linked_at", datetime.now(timezone.utc).isoformat())
+        logger.info(f"💾 Starting Discord link process for summoner {summoner_id}")
+        logger.info(f"📝 Received Discord ID: '{discord_user_id_str}' (type: {type(discord_user_id_str)})")
         
-        logger.info(f"✅ Linked Discord account {request.discord_user_id} to summoner {summoner_id}")
+        # Проверяем, что Discord ID не пустой после валидации
+        if not discord_user_id_str or not discord_user_id_str.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="Discord ID cannot be empty after validation"
+            )
+        
+        # Очищаем Discord ID (на всякий случай)
+        clean_discord_id = ''.join(filter(str.isdigit, discord_user_id_str))
+        
+        if len(clean_discord_id) < 17:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Discord ID too short: {len(clean_discord_id)} digits (minimum 17)"
+            )
+            
+        if len(clean_discord_id) > 20:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Discord ID too long: {len(clean_discord_id)} digits (maximum 20)"
+            )
+        
+        logger.info(f"✅ Cleaned Discord ID: {clean_discord_id}")
+        
+        # Сохраняем как hash с правильными полями
+        user_data = {
+            "discord_user_id": clean_discord_id,
+            "summoner_id": summoner_id,
+            "discord_linked_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Удаляем старый ключ и создаем новый как hash
+        logger.info(f"🗑️ Removing old key: {user_key}")
+        redis_manager.redis.delete(user_key)
+        
+        logger.info(f"💾 Saving new user data: {user_data}")
+        result = redis_manager.redis.hset(user_key, mapping=user_data)
+        redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+        
+        # Проверяем, что данные сохранились правильно
+        saved_data = redis_manager.redis.hgetall(user_key)
+        logger.info(f"✅ Saved user data: {saved_data}")
+        
+        if not saved_data.get('discord_user_id'):
+            logger.error(f"❌ Failed to save Discord ID. Redis returned: {saved_data}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to save Discord ID to database - no data saved"
+            )
+        
+        # Проверяем, что сохраненное значение совпадает с отправленным
+        saved_discord_id = saved_data.get('discord_user_id')
+        if saved_discord_id != clean_discord_id:
+            logger.error(f"❌ Data mismatch! Sent: {clean_discord_id}, Saved: {saved_discord_id}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Data corruption: sent {clean_discord_id} but saved {saved_discord_id}"
+            )
+        
+        logger.info(f"🎉 Successfully linked Discord account {clean_discord_id} to summoner {summoner_id}")
         
         return {
             "status": "success",
             "message": "Discord account linked successfully",
-            "discord_user_id": request.discord_user_id,
-            "summoner_id": summoner_id
+            "discord_user_id": clean_discord_id,
+            "summoner_id": summoner_id,
+            "saved_correctly": True,
+            "saved_value": saved_discord_id,
+            "debug": {
+                "received_type": type(request.discord_user_id).__name__,
+                "cleaned_value": clean_discord_id,
+                "redis_saved_value": saved_discord_id
+            }
         }
         
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        logger.error(f"❌ Pydantic validation error in link_discord_account: {e}")
+        logger.error(f"📦 Error details: {e.errors() if hasattr(e, 'errors') else str(e)}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "type": "validation_error",
+                "message": str(e),
+                "errors": e.errors() if hasattr(e, 'errors') else None
+            }
+        )
     except Exception as e:
-        logger.error(f"❌ Failed to link Discord account: {e}")
+        logger.error(f"❌ Unexpected error in link_discord_account: {e}")
+        logger.error(f"📦 Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"🔍 Stack trace: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to link Discord account: {str(e)}"
+            detail={
+                "type": "unexpected_error",
+                "message": f"Failed to link Discord account: {str(e)}",
+                "error_type": type(e).__name__
+            }
         )
 
 
@@ -427,36 +526,60 @@ async def link_discord_account(
 async def get_linked_discord_account(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get linked Discord account information."""
+    """Get linked Discord account information with improved Redis handling."""
     try:
-        user_key = f"user:{current_user['sub']}"
-        discord_user_id = None
+        summoner_id = current_user['sub']
+        user_key = f"user:{summoner_id}"
         
-        try:
-            # Try to get as hash first (correct way)
-            discord_user_id = redis_manager.redis.hget(user_key, "discord_user_id")
-        except redis.exceptions.ResponseError as e:
-            if "WRONGTYPE" in str(e):
-                logger.warning(f"⚠️ Redis key {user_key} has wrong type. Attempting recovery...")
-                try:
-                    # If it's a string, try to parse it
-                    user_data = redis_manager.redis.get(user_key)
-                    if user_data:
-                        try:
-                            user_info = json.loads(user_data)
-                            discord_user_id = user_info.get('discord_user_id')
-                            logger.info(f"✅ Recovered Discord ID from string key: {discord_user_id}")
-                        except json.JSONDecodeError:
-                            logger.error(f"❌ Failed to parse user data as JSON: {user_data}")
-                except Exception as parse_error:
-                    logger.error(f"❌ Failed to recover Discord ID: {parse_error}")
-            else:
-                raise e
+        logger.info(f"🔍 Getting linked account for summoner: {summoner_id}")
+        
+        # Получаем данные как hash
+        user_data = redis_manager.redis.hgetall(user_key)
+        logger.info(f"📦 Raw Redis data for {user_key}: {user_data}")
+        
+        discord_user_id = user_data.get('discord_user_id')
+        
+        if not discord_user_id:
+            # Проверяем, не сохранился ли ключ в старом формате (string)
+            try:
+                old_format_data = redis_manager.redis.get(user_key)
+                if old_format_data:
+                    logger.warning(f"⚠️ Found old format data for {user_key}: {old_format_data}")
+                    try:
+                        # Пробуем распарсить как JSON
+                        parsed_data = json.loads(old_format_data)
+                        discord_user_id = parsed_data.get('discord_user_id')
+                        if discord_user_id:
+                            logger.info(f"🔄 Converting old format to hash for {user_key}")
+                            # Конвертируем в hash формат
+                            redis_manager.redis.delete(user_key)
+                            new_data = {
+                                "discord_user_id": str(discord_user_id),
+                                "summoner_id": summoner_id,
+                                "converted_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            redis_manager.redis.hset(user_key, mapping=new_data)
+                            redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+                    except json.JSONDecodeError:
+                        # Если это не JSON, возможно это просто строка с ID
+                        discord_user_id = old_format_data
+                        logger.info(f"🔄 Converting string ID to hash for {user_key}")
+                        redis_manager.redis.delete(user_key)
+                        new_data = {
+                            "discord_user_id": str(discord_user_id),
+                            "summoner_id": summoner_id,
+                            "converted_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        redis_manager.redis.hset(user_key, mapping=new_data)
+                        redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+            except Exception as e:
+                logger.error(f"❌ Error checking old format: {e}")
         
         return {
-            "summoner_id": current_user['sub'],
+            "summoner_id": summoner_id,
             "discord_user_id": discord_user_id,
-            "linked": discord_user_id is not None
+            "linked": discord_user_id is not None,
+            "data_source": "hash" if user_data else "old_format"
         }
     except Exception as e:
         logger.error(f"Failed to get linked account: {e}")
@@ -508,7 +631,7 @@ async def get_discord_status():
 
 @router.get("/user-info")
 async def get_discord_user_info(
-    discord_user_id: int,
+    discord_user_id: str,  # Изменено на str
     current_user: dict = Depends(get_current_user)
 ):
     """Get information about Discord user."""
@@ -603,7 +726,7 @@ async def emergency_fix_teams(
 
 @router.get("/user-server-status/{discord_user_id}")
 async def check_user_server_status(
-    discord_user_id: int,
+    discord_user_id: str,  # Изменено на str
     current_user: dict = Depends(get_current_user)
 ):
     """Check if user is on the Discord server and bot has permissions."""
@@ -621,16 +744,22 @@ async def check_user_server_status(
             
         # Check if user is on server
         try:
-            member = discord_service.guild.get_member(discord_user_id)
+            # Преобразуем в int для Discord API
+            discord_id_int = int(discord_user_id)
+            
+            member = discord_service.guild.get_member(discord_id_int)
             if not member:
                 try:
-                    member = await discord_service.guild.fetch_member(discord_user_id)
+                    member = await discord_service.guild.fetch_member(discord_id_int)
                 except discord.NotFound:
                     status["on_server"] = False
                 except discord.Forbidden:
                     status["on_server"] = "unknown"  # Can't check due to permissions
             else:
                 status["on_server"] = True
+        except (ValueError, TypeError) as e:
+            logger.error(f"❌ Invalid Discord ID format: {discord_user_id}")
+            status["on_server"] = "invalid_id"
         except Exception as e:
             logger.error(f"Error checking member status: {e}")
             
@@ -654,7 +783,7 @@ async def check_user_server_status(
             status_code=500,
             detail=f"Failed to check user status: {str(e)}"
         )
-        
+
 
 @router.get("/user-match-info/{summoner_id}")
 async def get_user_match_info(
@@ -845,3 +974,363 @@ async def get_match_status(
             status_code=500,
             detail=f"Failed to get match status: {str(e)}"
         )
+
+
+@router.post("/force-update-discord-id")
+async def force_update_discord_id(
+    new_discord_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Force update Discord ID and prevent overwriting."""
+    try:
+        summoner_id = current_user['sub']
+        user_key = f"user:{summoner_id}"
+        
+        # Получаем текущие данные
+        current_data = redis_manager.redis.hgetall(user_key)
+        logger.info(f"📊 Current user data before update: {current_data}")
+        
+        # Обновляем ТОЛЬКО Discord ID, сохраняя остальные поля
+        update_data = {
+            "discord_user_id": str(new_discord_id),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "force_updated": "true"  # Помечаем, что это принудительное обновление
+        }
+        
+        # Обновляем только нужные поля, не трогая остальные
+        redis_manager.redis.hset(user_key, mapping=update_data)
+        
+        # Проверяем результат
+        updated_data = redis_manager.redis.hgetall(user_key)
+        logger.info(f"✅ Updated user data: {updated_data}")
+        
+        return {
+            "status": "success",
+            "message": f"Discord ID force updated to {new_discord_id}",
+            "previous_discord_id": current_data.get('discord_user_id'),
+            "new_discord_id": new_discord_id,
+            "updated_data": updated_data
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Force update failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Force update failed: {str(e)}"
+        )
+
+
+@router.post("/clear-redis-data")
+async def clear_redis_data_for_user(
+    current_user: dict = Depends(get_current_user)
+):
+    """Clear all Redis data for current user to fix corruption."""
+    try:
+        summoner_id = current_user['sub']
+        
+        # Удаляем все возможные ключи для этого пользователя
+        keys_to_delete = [
+            f"user:{summoner_id}",
+            f"user_discord:{summoner_id}",
+            f"user_match:{summoner_id}",
+            f"user_invite:{summoner_id}"
+        ]
+        
+        deleted_count = 0
+        for key in keys_to_delete:
+            if redis_manager.redis.exists(key):
+                redis_manager.redis.delete(key)
+                deleted_count += 1
+                logger.info(f"✅ Deleted Redis key: {key}")
+        
+        return {
+            "status": "success",
+            "message": f"Cleared {deleted_count} Redis keys for user",
+            "summoner_id": summoner_id,
+            "deleted_keys": keys_to_delete
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to clear Redis data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear Redis data: {str(e)}"
+        )
+
+
+@router.get("/debug-user-data")
+async def debug_user_data(
+    current_user: dict = Depends(get_current_user)
+):
+    """Debug endpoint to see all user data in Redis."""
+    try:
+        summoner_id = current_user['sub']
+        
+        keys_to_check = [
+            f"user:{summoner_id}",
+            f"user_discord:{summoner_id}", 
+            f"user_match:{summoner_id}",
+            f"user_invite:{summoner_id}"
+        ]
+        
+        debug_info = {}
+        for key in keys_to_check:
+            key_type = redis_manager.redis.type(key)
+            debug_info[key] = {
+                "exists": redis_manager.redis.exists(key),
+                "type": key_type,
+                "data": None
+            }
+            
+            if key_type == 'hash':
+                debug_info[key]['data'] = redis_manager.redis.hgetall(key)
+            elif key_type == 'string':
+                debug_info[key]['data'] = redis_manager.redis.get(key)
+            elif key_type == 'list':
+                debug_info[key]['data'] = redis_manager.redis.lrange(key, 0, -1)
+        
+        return {
+            "summoner_id": summoner_id,
+            "debug_info": debug_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug user data failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Debug failed: {str(e)}"
+        )
+
+
+@router.get("/debug-guild-info")
+async def debug_guild_info(current_user: dict = Depends(get_current_user)):
+    """Debug endpoint to get detailed guild information."""
+    try:
+        if not discord_service.connected or not discord_service.guild:
+            return {"error": "Discord not connected"}
+            
+        guild = discord_service.guild
+        bot_member = guild.me
+        
+        # Get role information
+        roles_info = []
+        for role in guild.roles:
+            roles_info.append({
+                "name": role.name,
+                "id": str(role.id),
+                "position": role.position,
+                "permissions": role.permissions.value,
+                "is_bot_role": role == bot_member.top_role
+            })
+        
+        # Get member count information
+        members = guild.members
+        member_sample = [{"id": str(m.id), "name": m.display_name} for m in members[:5]]  # First 5 members
+        
+        return {
+            "guild_name": guild.name,
+            "guild_id": str(guild.id),
+            "member_count": guild.member_count,
+            "bot_permissions": {
+                "manage_roles": bot_member.guild_permissions.manage_roles,
+                "manage_channels": bot_member.guild_permissions.manage_channels,
+                "view_channel": bot_member.guild_permissions.view_channel,
+                "administrator": bot_member.guild_permissions.administrator
+            },
+            "bot_top_role": {
+                "name": bot_member.top_role.name,
+                "position": bot_member.top_role.position
+            },
+            "roles": roles_info,
+            "member_sample": member_sample,
+            "available_guilds": [
+                {"name": g.name, "id": str(g.id)} for g in discord_service.client.guilds
+            ] if discord_service.client else []
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get guild debug info: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get guild info: {str(e)}"
+        )
+
+
+@router.get("/search-user/{discord_user_id}")
+async def search_discord_user(
+    discord_user_id: str,  # Изменено на str
+    current_user: dict = Depends(get_current_user)
+):
+    """Search for a specific user in Discord guild."""
+    try:
+        if not discord_service.connected or not discord_service.guild:
+            return {"error": "Discord not connected"}
+            
+        guild = discord_service.guild
+        
+        # Преобразуем в int для Discord API
+        try:
+            discord_id_int = int(discord_user_id)
+        except (ValueError, TypeError) as e:
+            return {
+                "searched_user_id": discord_user_id,
+                "error": f"Invalid Discord ID format: {discord_user_id}"
+            }
+        
+        # Method 1: Check cache
+        member_cache = guild.get_member(discord_id_int)
+        
+        # Method 2: Try to fetch from API
+        member_fetched = None
+        try:
+            member_fetched = await guild.fetch_member(discord_id_int)
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            logger.error(f"Error fetching member: {e}")
+            
+        # Method 3: Iterate through members
+        member_iter = None
+        for m in guild.members:
+            if m.id == discord_id_int:
+                member_iter = m
+                break
+                
+        return {
+            "searched_user_id": discord_user_id,
+            "searched_user_id_int": discord_id_int,
+            "in_cache": member_cache is not None,
+            "in_api": member_fetched is not None,
+            "in_iteration": member_iter is not None,
+            "cache_info": {
+                "name": member_cache.display_name if member_cache else None,
+                "roles": [r.name for r in member_cache.roles] if member_cache else []
+            } if member_cache else None,
+            "guild_info": {
+                "name": guild.name,
+                "id": str(guild.id),
+                "total_members": guild.member_count,
+                "cached_members": len(guild.members)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to search user: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to search user: {str(e)}"
+        )
+
+
+@router.get("/list-server-members")
+async def list_server_members(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all members from Discord server for debugging."""
+    try:
+        if not discord_service.connected or not discord_service.guild:
+            return {"error": "Discord not connected"}
+            
+        guild = discord_service.guild
+        members_info = []
+        
+        for member in guild.members:
+            if not member.bot:  # Skip bots
+                members_info.append({
+                    "id": str(member.id),
+                    "name": member.display_name,
+                    "username": member.name,
+                    "discriminator": getattr(member, 'discriminator', '0'),
+                    "bot": member.bot,
+                    "status": str(member.status) if hasattr(member, 'status') else 'unknown'
+                })
+        
+        return {
+            "total_members": len(members_info),
+            "members": members_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to list server members: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list members: {str(e)}"
+        )
+
+
+@router.post("/test-id-transfer")
+async def test_discord_id_transfer(
+    test_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Test endpoint to check Discord ID transfer precision."""
+    received_id = test_data.get('discord_user_id')
+    
+    return {
+        "received_type": type(received_id).__name__,
+        "received_value": received_id,
+        "received_raw": str(received_id),
+        "as_int": int(received_id) if isinstance(received_id, (int, str)) and str(received_id).isdigit() else None,
+        "as_str": str(received_id),
+        "precision_lost": str(received_id) != "262175818275356672" if received_id else None
+    }
+
+
+@router.post("/debug-link")
+async def debug_discord_link(
+    debug_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Debug endpoint for Discord linking issues."""
+    try:
+        received_data = debug_data.get('discord_user_id')
+        
+        return {
+            "received_type": type(received_data).__name__,
+            "received_value": received_data,
+            "expected_type": "str",
+            "summoner_id": current_user['sub'],
+            "note": "This endpoint helps debug data transfer issues"
+        }
+    except Exception as e:
+        logger.error(f"Debug link error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@router.post("/test-validation")
+async def test_validation(
+    test_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Test endpoint to validate Discord ID without saving."""
+    try:
+        # Создаем временный запрос для валидации
+        from app.schemas import DiscordLinkRequest
+        
+        # Используем Pydantic для валидации
+        validated_data = DiscordLinkRequest(**test_data)
+        
+        return {
+            "status": "success",
+            "validated_data": {
+                "discord_user_id": validated_data.discord_user_id,
+                "type": type(validated_data.discord_user_id).__name__
+            },
+            "raw_input": test_data,
+            "note": "This is only validation test - no data saved"
+        }
+        
+    except ValidationError as e:
+        logger.error(f"❌ Validation error in test: {e}")
+        return {
+            "status": "validation_error",
+            "errors": e.errors(),
+            "raw_input": test_data
+        }
+    except Exception as e:
+        logger.error(f"❌ Error in test validation: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "raw_input": test_data
+        }

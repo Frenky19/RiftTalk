@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -23,6 +24,49 @@ logger = logging.getLogger(__name__)
 
 # Глобальная переменная для автоматического токена (для демо-целей)
 auto_auth_token = None
+
+
+async def validate_user_data_integrity():
+    """Validate and fix user data integrity in Redis."""
+    try:
+        logger.info("🔍 Validating user data integrity...")
+        
+        # Ищем все user keys
+        user_keys = redis_manager.redis.keys("user:*")
+        fixed_count = 0
+        
+        for key in user_keys:
+            try:
+                key_type = redis_manager.redis.type(key)
+                
+                if key_type == 'string':
+                    # Конвертируем старый формат в hash
+                    old_data = redis_manager.redis.get(key)
+                    if old_data:
+                        try:
+                            parsed_data = json.loads(old_data)
+                            # Создаем новый hash
+                            redis_manager.redis.delete(key)
+                            redis_manager.redis.hset(key, mapping=parsed_data)
+                            fixed_count += 1
+                            logger.info(f"✅ Fixed user key: {key}")
+                        except json.JSONDecodeError:
+                            # Если это не JSON, создаем простой hash
+                            redis_manager.redis.delete(key)
+                            redis_manager.redis.hset(key, "data", old_data)
+                            fixed_count += 1
+                            logger.info(f"✅ Fixed string user key: {key}")
+            except Exception as e:
+                logger.error(f"❌ Error fixing key {key}: {e}")
+                continue
+                
+        if fixed_count > 0:
+            logger.info(f"✅ Fixed {fixed_count} user keys")
+        else:
+            logger.info("✅ User data integrity check passed")
+            
+    except Exception as e:
+        logger.error(f"❌ User data integrity check failed: {e}")
 
 
 @asynccontextmanager
@@ -67,6 +111,9 @@ async def auto_authenticate_via_lcu():
 async def initialize_services():
     """Initialize all services optimized for Windows."""
     logger.info("🚀 Initializing services for Windows...")
+    
+    # Проверяем целостность данных пользователей
+    await validate_user_data_integrity()
     
     # Автоматическая аутентификация через LCU
     await auto_authenticate_via_lcu()
@@ -564,6 +611,24 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+# Добавляем обработчик для логирования ошибок валидации
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Логируем ошибки валидации для отладки."""
+    logger.error(f"❌ Validation error for {request.url}:")
+    logger.error(f"📦 Request body: {await request.body()}")
+    logger.error(f"🔍 Errors: {exc.errors()}")
+    
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Validation error",
+            "errors": exc.errors(),
+            "body_received": str(await request.body())
+        },
+    )
 
 # Добавляем middleware аутентификации для demo
 if settings.DEMO_AUTH_ENABLED:
