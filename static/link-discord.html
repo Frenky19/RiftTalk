@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Привязка Discord аккаунта - LoL Voice Chat</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/x-icon" href="static/logo/icon_L.ico">
     <style>
         :root {
             --primary: #7289da;
@@ -78,7 +79,7 @@
         
         .logo {
             font-size: 3.5rem;
-            margin-bottom: 20px;
+            margin-bottom: 5px;
             color: var(--primary);
             animation: float 3s ease-in-out infinite;
             display: inline-block;
@@ -732,13 +733,32 @@
         .pulsing-dot.warning {
             background: var(--warning);
         }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 5px;
+        }
+
+        .logo img {
+            max-width: 180px; /* Уменьшаем размер логотипа */
+            height: auto;
+            display: inline-block;
+            border-radius: 12px; /* Добавляем скругление углов */
+        }
+
+        /* Для мобильных устройств сделаем еще меньше */
+        @media (max-width: 768px) {
+            .logo img {
+                max-width: 120px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <div class="logo">
-                <i class="fas fa-headset"></i>
+                <img src="static/logo/PNG_LOL.png" alt="LoL Voice Chat Logo">
             </div>
             <h1>Привязка Discord аккаунта</h1>
             <p class="subtitle">Свяжите ваш Discord аккаунт с League of Legends для автоматического подключения к голосовым каналам во время матчей</p>
