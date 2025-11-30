@@ -1,154 +1,225 @@
-import redis
-import json
-import logging
-from typing import Dict, Any, List, Optional
-from urllib.parse import urlparse
-import os
+"""
+Database module with automatic fallback to in-memory storage
+"""
 
-from app.utils.exceptions import DatabaseException
+import logging
+import json
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone, timedelta
+import threading
 
 logger = logging.getLogger(__name__)
 
 
-class RedisManager:
-
+class MemoryStorage:
+    """In-Memory хранилище с интерфейсом совместимым с Redis"""
+    
     def __init__(self):
-        self._init_redis()
-        self.fix_redis_key_types()  # Автоматически исправляем ключи при инициализации
-
-    def _init_redis(self):
-        """Initialize Redis connection for local Windows setup."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Для локального запуска используем localhost
-                redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-                parsed = urlparse(redis_url)
-                
-                connection_params = {
-                    'host': parsed.hostname or 'localhost',
-                    'port': parsed.port or 6379,
-                    'db': int(parsed.path.lstrip('/')) if parsed.path else 0,
-                    'decode_responses': True,
-                    'socket_connect_timeout': 5,
-                    'retry_on_timeout': True,
-                    'health_check_interval': 30
-                }
-                
-                # Add password if present
-                if parsed.password:
-                    connection_params['password'] = parsed.password
-                    
-                self.redis = redis.Redis(**connection_params)
-                
-                # Test connection
-                self.redis.ping()
-                logger.info(f"✅ Redis connected to {connection_params['host']}:{connection_params['port']}")
-                break
-                
-            except redis.ConnectionError as e:
-                logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}")
-                if attempt == max_retries - 1:
-                    raise DatabaseException(f"Redis connection failed after {max_retries} attempts - make sure Redis is running on localhost:6379")
-                import time
-                time.sleep(2)
-            except Exception as e:
-                logger.error(f"Unexpected Redis error: {e}")
-                raise DatabaseException(f"Redis initialization failed: {e}")
+        self._data = {}
+        self._expiry = {}
+        self._lock = threading.RLock()
+        logger.info("✅ In-Memory хранилище инициализировано")
+    
+    def ping(self):
+        """Всегда возвращает True для совместимости с Redis"""
+        return True
+    
+    def hset(self, key: str, mapping: Dict[str, Any]) -> bool:
+        """Установка hash значения"""
+        with self._lock:
+            if key not in self._data:
+                self._data[key] = {}
             
-    def fix_redis_key_types(self):
-        """Fix Redis keys that were saved with wrong types."""
-        try:
-            logger.info("🔧 Checking for Redis key type issues...")
-            fixed_count = 0
+            if not isinstance(self._data[key], dict):
+                self._data[key] = {}
             
-            # Паттерны для поиска проблемных ключей
-            patterns = ["user:*", "user_discord:*", "user_match:*", "user_invite:*"]
+            self._data[key].update(mapping)
+            return True
+    
+    def hget(self, key: str, field: str) -> Optional[str]:
+        """Получение значения из hash по полю"""
+        with self._lock:
+            if key in self._data and isinstance(self._data[key], dict):
+                return self._data[key].get(field)
+            return None
+    
+    def hgetall(self, key: str) -> Dict[str, Any]:
+        """Получение всех полей hash"""
+        with self._lock:
+            if key in self._data and isinstance(self._data[key], dict):
+                return self._data[key].copy()
+            return {}
+    
+    def get(self, key: str) -> Optional[str]:
+        """Получение значения по ключу"""
+        with self._lock:
+            # Проверяем expiry
+            if key in self._expiry and datetime.now(timezone.utc) > self._expiry[key]:
+                del self._data[key]
+                del self._expiry[key]
+                return None
             
-            for pattern in patterns:
-                for key in self.redis.scan_iter(match=pattern):
-                    try:
-                        # Пробуем прочитать как hash
-                        data = self.redis.hgetall(key)
-                        if data:
-                            continue  # Ключ в правильном формате
-                        
-                        # Если не hash, пробуем прочитать как string
-                        str_data = self.redis.get(key)
-                        if str_data:
-                            logger.warning(f"⚠️ Fixing key type for {key}")
-                            try:
-                                # Парсим JSON и конвертируем в hash
-                                parsed_data = json.loads(str_data)
-                                if isinstance(parsed_data, dict):
-                                    self.redis.delete(key)  # Удаляем старый ключ
-                                    self.redis.hset(key, mapping=parsed_data)
-                                    fixed_count += 1
-                                    logger.info(f"✅ Fixed key {key} from string to hash")
-                            except json.JSONDecodeError:
-                                # Если не JSON, создаем простой hash
-                                self.redis.delete(key)
-                                self.redis.hset(key, "data", str_data)
-                                fixed_count += 1
-                                logger.info(f"✅ Fixed key {key} from string to hash with single field")
-                                
-                    except redis.exceptions.ResponseError as e:
-                        if "WRONGTYPE" in str(e):
-                            logger.warning(f"🔄 Converting key {key} from wrong type...")
-                            # Получаем данные любым способом
-                            try:
-                                raw_data = self.redis.get(key)
-                                if raw_data:
-                                    self.redis.delete(key)
-                                    self.redis.hset(key, "value", raw_data)
-                                    fixed_count += 1
-                                    logger.info(f"✅ Converted key {key} to hash")
-                            except:
-                                try:
-                                    # Другой тип? Пробуем получить как список
-                                    raw_data = self.redis.lrange(key, 0, -1)
-                                    if raw_data:
-                                        self.redis.delete(key)
-                                        self.redis.hset(key, "items", json.dumps(raw_data))
-                                        fixed_count += 1
-                                        logger.info(f"✅ Converted key {key} from list to hash")
-                                except:
-                                    logger.error(f"❌ Cannot convert key {key} - unknown type")
-                    
-            if fixed_count > 0:
-                logger.info(f"✅ Fixed {fixed_count} Redis keys with type issues")
+            if key in self._data:
+                if isinstance(self._data[key], (dict, list)):
+                    return json.dumps(self._data[key])
+                return str(self._data[key])
+            return None
+    
+    def setex(self, key: str, time: int, value: Any) -> bool:
+        """Установка значения с expiry"""
+        with self._lock:
+            self._data[key] = value
+            if time > 0:
+                self._expiry[key] = datetime.now(timezone.utc) + timedelta(seconds=time)
+            return True
+    
+    def expire(self, key: str, time: int) -> bool:
+        """Установка времени жизни для существующего ключа"""
+        with self._lock:
+            if key in self._data:
+                if time > 0:
+                    self._expiry[key] = datetime.now(timezone.utc) + timedelta(seconds=time)
+                else:
+                    # Если время 0 или отрицательное, удаляем expiry
+                    if key in self._expiry:
+                        del self._expiry[key]
+                return True
+            return False
+    
+    def delete(self, key: str) -> bool:
+        """Удаление ключа"""
+        with self._lock:
+            if key in self._data:
+                del self._data[key]
+            if key in self._expiry:
+                del self._expiry[key]
+            return True
+    
+    def exists(self, key: str) -> bool:
+        """Проверка существования ключа"""
+        with self._lock:
+            # Проверяем expiry
+            if key in self._expiry and datetime.now(timezone.utc) > self._expiry[key]:
+                del self._data[key]
+                del self._expiry[key]
+                return False
+            return key in self._data
+    
+    def scan_iter(self, match: str = None):
+        """Итерация по ключам (упрощенная версия)"""
+        with self._lock:
+            current_time = datetime.now(timezone.utc)
+            
+            # Очищаем просроченные ключи
+            expired_keys = [k for k, exp in self._expiry.items() if current_time > exp]
+            for key in expired_keys:
+                del self._data[key]
+                del self._expiry[key]
+            
+            # Возвращаем ключи по паттерну
+            for key in list(self._data.keys()):
+                if match is None or (match and match.replace('*', '') in key):
+                    yield key
+    
+    def type(self, key: str) -> str:
+        """Определение типа ключа (упрощенная версия)"""
+        with self._lock:
+            if key not in self._data:
+                return "none"
+            if isinstance(self._data[key], dict):
+                return "hash"
+            elif isinstance(self._data[key], list):
+                return "list"
             else:
-                logger.info("✅ No Redis key type issues found")
-                
-        except Exception as e:
-            logger.error(f"❌ Error fixing Redis key types: {e}")
+                return "string"
+    
+    def pipeline(self):
+        """Возвращает pipeline для batch операций"""
+        return MemoryPipeline(self)
 
+
+class MemoryPipeline:
+    """In-Memory pipeline для batch операций"""
+    
+    def __init__(self, storage: MemoryStorage):
+        self.storage = storage
+        self.commands = []
+    
+    def hset(self, key: str, mapping: Dict[str, Any] = None):
+        """Добавляет hset команду в pipeline"""
+        self.commands.append(('hset', key, mapping))
+        return self
+    
+    def expire(self, key: str, time: int):
+        """Добавляет expire команду в pipeline"""
+        self.commands.append(('expire', key, time))
+        return self
+    
+    def set(self, key: str, value: Any, ex: int = None):
+        """Добавляет set команду в pipeline"""
+        self.commands.append(('set', key, value, ex))
+        return self
+    
+    def delete(self, key: str):
+        """Добавляет delete команду в pipeline"""
+        self.commands.append(('delete', key))
+        return self
+    
+    def execute(self):
+        """Выполняет все команды в pipeline"""
+        results = []
+        for command in self.commands:
+            try:
+                if command[0] == 'hset':
+                    result = self.storage.hset(command[1], command[2])
+                    results.append(result)
+                elif command[0] == 'expire':
+                    # Вызываем метод expire
+                    result = self.storage.expire(command[1], command[2])
+                    results.append(result)
+                elif command[0] == 'set':
+                    if command[3] is not None:
+                        result = self.storage.setex(command[1], command[3], command[2])
+                    else:
+                        self.storage._data[command[1]] = command[2]
+                        result = True
+                    results.append(result)
+                elif command[0] == 'delete':
+                    result = self.storage.delete(command[1])
+                    results.append(result)
+            except Exception as e:
+                logger.error(f"Pipeline command error: {e}")
+                results.append(False)
+        
+        return results
+
+
+class DatabaseManager:
+    """Mock менеджер базы данных с интерфейсом совместимым с RedisManager"""
+    
+    def __init__(self):
+        self.redis = MemoryStorage()
+        logger.info("✅ Mock Database Manager инициализирован")
+    
     def create_voice_room(self, room_id: str, match_id: str, room_data: dict, ttl: int = 3600) -> bool:
         """Create voice room with proper data serialization."""
         try:
-            # Логируем данные для отладки
-            logger.info(f"💾 Creating Redis room: room:{room_id}, match_room:{match_id}")
-            logger.info(f"📊 Room data: {room_data}")
+            logger.info(f"💾 Creating memory room: room:{room_id}, match_room:{match_id}")
             
-            pipeline = self.redis.pipeline()
+            # Сохраняем room_data
+            self.redis.hset(f"room:{room_id}", room_data)
             
-            # Простая проверка - если room_data не dict, преобразуем
-            if not hasattr(room_data, 'items'):
-                logger.error(f"room_data is not a dict: {type(room_data)}")
-                return False
-                
-            pipeline.hset(f"room:{room_id}", mapping=room_data)
-            pipeline.expire(f"room:{room_id}", ttl)
-            pipeline.set(f"match_room:{match_id}", room_id, ex=ttl)
+            # Устанавливаем TTL для room
+            self.redis.expire(f"room:{room_id}", ttl)
             
-            results = pipeline.execute()
+            # Сохраняем связь match_id -> room_id
+            self.redis.setex(f"match_room:{match_id}", ttl, room_id)
             
-            # Проверяем результаты
-            logger.info(f"✅ Redis operations completed: {results}")
-            return all(results)
+            logger.info(f"✅ Memory room created: {room_id}")
+            return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to create voice room in Redis: {e}")
+            logger.error(f"❌ Failed to create voice room in memory: {e}")
             return False
 
     def get_voice_room(self, room_id: str) -> Dict[str, Any]:
@@ -166,23 +237,23 @@ class RedisManager:
             for key, value in room_data.items():
                 if key == 'players' and value:
                     try:
-                        result[key] = json.loads(value)
+                        result[key] = json.loads(value) if isinstance(value, str) else value
                     except json.JSONDecodeError:
                         result[key] = value.split(',') if value else []
                 elif key in ['blue_team', 'red_team'] and value:
                     try:
-                        result[key] = json.loads(value)
+                        result[key] = json.loads(value) if isinstance(value, str) else value
                         logger.info(f"✅ Successfully parsed {key}: {result[key]}")
                     except json.JSONDecodeError:
                         result[key] = value.split(',') if value else []
                         logger.warning(f"⚠️ Used fallback parsing for {key}: {result[key]}")
                 elif key == 'discord_channels' and value:
                     try:
-                        result[key] = json.loads(value)
+                        result[key] = json.loads(value) if isinstance(value, str) else value
                     except json.JSONDecodeError:
                         result[key] = {}
                 elif key in ['is_active', 'mock_mode']:
-                    result[key] = value.lower() == 'true'
+                    result[key] = str(value).lower() == 'true'
                 else:
                     result[key] = value
                     
@@ -197,7 +268,9 @@ class RedisManager:
         """Get voice room by match ID."""
         try:
             room_id = self.redis.get(f"match_room:{match_id}")
-            return self.get_voice_room(room_id) if room_id else {}
+            if room_id:
+                return self.get_voice_room(room_id)
+            return {}
         except Exception as e:
             logger.error(f"Failed to get room by match: {e}")
             return {}
@@ -208,10 +281,11 @@ class RedisManager:
             room_id = self.redis.get(f"match_room:{match_id}")
             if not room_id:
                 return False
-            pipeline = self.redis.pipeline()
-            pipeline.delete(f"room:{room_id}")
-            pipeline.delete(f"match_room:{match_id}")
-            return all(pipeline.execute())
+            
+            self.redis.delete(f"room:{room_id}")
+            self.redis.delete(f"match_room:{match_id}")
+            return True
+            
         except Exception as e:
             logger.error(f"Failed to delete voice room: {e}")
             return False
@@ -220,18 +294,18 @@ class RedisManager:
         """Get all active voice rooms."""
         try:
             rooms = []
-            pattern = "room:*"
-            for key in self.redis.scan_iter(match=pattern):
-                room_id = key.replace("room:", "")
-                room_data = self.get_voice_room(room_id)
-                if room_data and room_data.get('is_active'):
-                    rooms.append({
-                        'room_id': room_id,
-                        'match_id': room_data.get('match_id'),
-                        'players': room_data.get('players', []),
-                        'created_at': room_data.get('created_at'),
-                        'is_active': room_data.get('is_active', False)
-                    })
+            for key in self.redis.scan_iter():
+                if key.startswith("room:"):
+                    room_id = key.replace("room:", "")
+                    room_data = self.get_voice_room(room_id)
+                    if room_data and room_data.get('is_active'):
+                        rooms.append({
+                            'room_id': room_id,
+                            'match_id': room_data.get('match_id'),
+                            'players': room_data.get('players', []),
+                            'created_at': room_data.get('created_at'),
+                            'is_active': room_data.get('is_active', False)
+                        })
             return rooms
         except Exception as e:
             logger.error(f"Failed to get active rooms: {e}")
@@ -240,14 +314,8 @@ class RedisManager:
     def save_user_match_info(self, discord_user_id: int, match_info: dict, ttl: int = 3600) -> bool:
         """Save user match information for automatic voice channel management."""
         try:
-            # Преобразуем в строку для consistency
             key = f"user_discord:{discord_user_id}"
-            # Используем hset для правильного формата
-            self.redis.hset(key, mapping={
-                "match_id": str(match_info.get('match_id', '')),
-                "team_name": match_info.get('team_name', ''),
-                "assigned_at": match_info.get('assigned_at', '')
-            })
+            self.redis.hset(key, match_info)
             self.redis.expire(key, ttl)
             return True
         except Exception as e:
@@ -264,5 +332,12 @@ class RedisManager:
             logger.error(f"Failed to get user match info: {e}")
             return None
 
+    def fix_redis_key_types(self):
+        """Mock method - ничего не делает для памяти"""
+        logger.info("✅ Memory storage doesn't need key type fixes")
+        return True
 
-redis_manager = RedisManager()
+
+# Глобальный экземпляр
+redis_manager = DatabaseManager()
+logger.info("✅ Using In-Memory database storage (Redis not available)")

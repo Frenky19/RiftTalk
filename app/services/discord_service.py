@@ -6,7 +6,36 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 from discord import Guild, VoiceChannel, CategoryChannel, Role
 from app.config import settings
-from app.database import redis_manager
+try:
+    from app.database import redis_manager
+except Exception as e:
+    # Fallback для случаев когда Redis недоступен
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Redis not available, using memory storage: {e}")
+    
+    # Создаем простой fallback
+    class FallbackStorage:
+        def __init__(self):
+            self._data = {}
+        
+        def get(self, key):
+            return self._data.get(key)
+        
+        def setex(self, key, ttl, value):
+            self._data[key] = value
+            return True
+        
+        def delete(self, key):
+            if key in self._data:
+                del self._data[key]
+            return True
+    
+    class FallbackManager:
+        def __init__(self):
+            self.redis = FallbackStorage()
+    
+    redis_manager = FallbackManager()
 
 logger = logging.getLogger(__name__)
 

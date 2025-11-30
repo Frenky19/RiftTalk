@@ -1,7 +1,20 @@
+import os
+import sys
 from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import platform
+
+# Для работы в .exe
+if getattr(sys, 'frozen', False):
+    # Если запущено как .exe
+    base_dir = os.path.dirname(sys.executable)
+else:
+    # Если запущено как скрипт
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Обновляем пути
+os.chdir(base_dir)
 
 
 class Settings(BaseSettings):

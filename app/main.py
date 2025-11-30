@@ -7,11 +7,11 @@ from contextlib import asynccontextmanager
 import logging
 import os
 import json
+import sys
 from datetime import datetime, timezone
-import redis  # Добавляем импорт redis для обработки ошибок
+import redis
 
 from app.config import settings
-from app.database import redis_manager
 from app.services.lcu_service import lcu_service
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
@@ -22,40 +22,110 @@ from app.endpoints import demo
 
 logger = logging.getLogger(__name__)
 
+# Определяем базовую директорию для статических файлов
+if getattr(sys, 'frozen', False):
+    # Если приложение собрано в exe
+    base_dir = os.path.dirname(sys.executable)
+else:
+    # В режиме разработки
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+static_dir = os.path.join(base_dir, 'static')
+
+try:
+    from app.database import redis_manager
+except Exception as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"❌ Database import failed: {e}")
+    
+    # Создаем простой fallback
+    class FallbackStorage:
+        def __init__(self):
+            self._data = {}
+        
+        def hset(self, key, mapping):
+            self._data[key] = mapping
+            return True
+        
+        def hgetall(self, key):
+            return self._data.get(key, {})
+        
+        def get(self, key):
+            return self._data.get(key)
+        
+        def setex(self, key, ttl, value):
+            self._data[key] = value
+            return True
+        
+        def delete(self, key):
+            if key in self._data:
+                del self._data[key]
+            return True
+        
+        def scan_iter(self, match=None):
+            return []
+    
+    class FallbackManager:
+        def __init__(self):
+            self.redis = FallbackStorage()
+        
+        def create_voice_room(self, room_id, match_id, room_data, ttl=3600):
+            return True
+        
+        def get_voice_room(self, room_id):
+            return {}
+        
+        def get_voice_room_by_match(self, match_id):
+            return {}
+        
+        def delete_voice_room(self, match_id):
+            return True
+        
+        def get_all_active_rooms(self):
+            return []
+    
+    redis_manager = FallbackManager()
+
+
 # Глобальная переменная для автоматического токена (для демо-целей)
 auto_auth_token = None
 
 
 async def validate_user_data_integrity():
-    """Validate and fix user data integrity in Redis."""
+    """Validate and fix user data integrity in storage."""
     try:
         logger.info("🔍 Validating user data integrity...")
         
-        # Ищем все user keys
-        user_keys = redis_manager.redis.keys("user:*")
+        # Используем scan_iter для поиска ключей пользователей
+        user_keys = []
+        try:
+            for key in redis_manager.redis.scan_iter(match="user:*"):
+                user_keys.append(key)
+        except Exception as e:
+            logger.error(f"❌ Error scanning keys: {e}")
+            return
+        
         fixed_count = 0
         
         for key in user_keys:
             try:
-                key_type = redis_manager.redis.type(key)
-                
-                if key_type == 'string':
-                    # Конвертируем старый формат в hash
-                    old_data = redis_manager.redis.get(key)
-                    if old_data:
-                        try:
-                            parsed_data = json.loads(old_data)
-                            # Создаем новый hash
-                            redis_manager.redis.delete(key)
-                            redis_manager.redis.hset(key, mapping=parsed_data)
-                            fixed_count += 1
-                            logger.info(f"✅ Fixed user key: {key}")
-                        except json.JSONDecodeError:
-                            # Если это не JSON, создаем простой hash
-                            redis_manager.redis.delete(key)
-                            redis_manager.redis.hset(key, "data", old_data)
-                            fixed_count += 1
-                            logger.info(f"✅ Fixed string user key: {key}")
+                # Для MemoryStorage мы не можем проверить тип, поэтому просто попробуем получить данные
+                old_data = redis_manager.redis.get(key)
+                if old_data and isinstance(old_data, str):
+                    try:
+                        parsed_data = json.loads(old_data)
+                        # Если это строка и она парсится как JSON, конвертируем в hash
+                        redis_manager.redis.delete(key)
+                        redis_manager.redis.hset(key, mapping=parsed_data)
+                        fixed_count += 1
+                        logger.info(f"✅ Fixed user key: {key}")
+                    except json.JSONDecodeError:
+                        # Если это не JSON, создаем простой hash
+                        redis_manager.redis.delete(key)
+                        redis_manager.redis.hset(key, "data", old_data)
+                        fixed_count += 1
+                        logger.info(f"✅ Fixed string user key: {key}")
             except Exception as e:
                 logger.error(f"❌ Error fixing key {key}: {e}")
                 continue
@@ -643,18 +713,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files
-static_dir = "static"
+# Serve static files - ИСПРАВЛЕННЫЙ КОД ДЛЯ .EXE
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
-    
-    @app.get("/demo")
-    async def demo_page():
-        """Serve demo page for testing."""
-        demo_file = os.path.join(static_dir, "demo.html")
-        if os.path.exists(demo_file):
-            return FileResponse(demo_file)
-        raise HTTPException(status_code=404, detail="Demo file not found")
+    logger.info(f"✅ Static files served from: {static_dir}")
+else:
+    # Если в собранном приложении static не рядом с exe, попробуем найти относительно текущего файла
+    base_dir_fallback = os.path.dirname(os.path.abspath(__file__))
+    static_dir_fallback = os.path.join(base_dir_fallback, 'static')
+    if os.path.exists(static_dir_fallback):
+        app.mount("/static", StaticFiles(directory=static_dir_fallback), name="static")
+        static_dir = static_dir_fallback
+        logger.info(f"✅ Static files served from fallback: {static_dir}")
+    else:
+        logger.error("❌ Static directory not found!")
+
+@app.get("/demo")
+async def demo_page():
+    """Serve demo page for testing."""
+    demo_file = os.path.join(static_dir, "demo.html")
+    if os.path.exists(demo_file):
+        return FileResponse(demo_file)
+    raise HTTPException(status_code=404, detail="Demo file not found")
+
+
+@app.get("/link-discord")
+async def link_discord_page():
+    """Serve Discord linking page (public access)."""
+    link_discord_file = os.path.join(static_dir, "link-discord.html")
+    if os.path.exists(link_discord_file):
+        return FileResponse(link_discord_file)
+    raise HTTPException(status_code=404, detail="Link Discord page not found")
 
 
 # Include routers
@@ -683,15 +772,6 @@ async def get_auto_token():
         return {"access_token": auto_auth_token, "auto_generated": True}
     else:
         raise HTTPException(status_code=404, detail="No auto-token available")
-
-
-@app.get("/link-discord")
-async def link_discord_page():
-    """Serve Discord linking page (public access)."""
-    link_discord_file = os.path.join(static_dir, "link-discord.html")
-    if os.path.exists(link_discord_file):
-        return FileResponse(link_discord_file)
-    raise HTTPException(status_code=404, detail="Link Discord page not found")
 
 
 @app.get("/health")
