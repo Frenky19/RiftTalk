@@ -27,8 +27,8 @@ async def start_voice_chat(
             'red_team': request.red_team or []
         }
         
-        # Создаем голосовую комнату
-        result = await voice_service.create_voice_room(
+        # 🔥 ИСПРАВЛЕНИЕ: Используем create_or_get_voice_room вместо create_voice_room
+        result = await voice_service.create_or_get_voice_room(
             request.match_id,
             request.players,
             team_data
@@ -290,4 +290,120 @@ async def cleanup_expired_rooms(current_user: dict = Depends(get_current_user)):
         raise HTTPException(
             status_code=500,
             detail=f"Cleanup failed: {str(e)}"
+        )
+
+
+@router.post("/{match_id}/join-existing")
+async def join_existing_voice_room(
+    match_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Join an existing voice room for a match."""
+    try:
+        summoner_id = current_user['sub']
+        
+        # Проверяем, существует ли комната
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Voice room not found for this match"
+            )
+        
+        # Определяем команду игрока
+        blue_team = voice_service.safe_json_parse(room_data.get('blue_team'), [])
+        red_team = voice_service.safe_json_parse(room_data.get('red_team'), [])
+        
+        team_name = None
+        if summoner_id in blue_team:
+            team_name = "Blue Team"
+        elif summoner_id in red_team:
+            team_name = "Red Team"
+        
+        if not team_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Player not found in any team for this match"
+            )
+        
+        # Добавляем игрока в существующую комнату
+        success = await voice_service.add_player_to_existing_room(summoner_id, match_id, team_name)
+        
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to join existing voice room"
+            )
+        
+        # Получаем Discord канал команды
+        discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+        team_channel = None
+        
+        if team_name == "Blue Team" and discord_channels.get('blue_team'):
+            team_channel = discord_channels['blue_team']
+        elif team_name == "Red Team" and discord_channels.get('red_team'):
+            team_channel = discord_channels['red_team']
+        
+        return {
+            "status": "success",
+            "message": f"Joined existing voice room for {team_name}",
+            "match_id": match_id,
+            "team_name": team_name,
+            "room_id": room_data.get('room_id'),
+            "discord_channel": team_channel
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to join existing room: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to join existing room: {str(e)}"
+        )
+
+
+@router.get("/{match_id}/status")
+async def get_voice_room_status(
+    match_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get status of a voice room including player count and channel info."""
+    try:
+        # Получаем данные комнаты
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Voice room not found"
+            )
+        
+        # Получаем информацию о Discord каналах
+        discord_channels = voice_service.get_voice_room_discord_channels(match_id)
+        
+        # Подсчитываем игроков
+        players = voice_service.safe_json_parse(room_data.get('players'), [])
+        blue_team = voice_service.safe_json_parse(room_data.get('blue_team'), [])
+        red_team = voice_service.safe_json_parse(room_data.get('red_team'), [])
+        
+        return {
+            "status": "success",
+            "match_id": match_id,
+            "room_id": room_data.get('room_id'),
+            "total_players": len(players),
+            "blue_team_count": len(blue_team),
+            "red_team_count": len(red_team),
+            "match_started": room_data.get('match_started') == 'true',
+            "discord_channels": discord_channels,
+            "is_active": room_data.get('is_active') == 'true',
+            "created_at": room_data.get('created_at')
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get room status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get room status: {str(e)}"
         )

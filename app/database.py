@@ -145,10 +145,30 @@ class MemoryPipeline:
         self.storage = storage
         self.commands = []
     
-    def hset(self, key: str, mapping: Dict[str, Any] = None):
-        """Добавляет hset команду в pipeline"""
-        self.commands.append(('hset', key, mapping))
-        return self
+    def hset(self, key: str, mapping: Dict[str, Any]) -> bool:
+        """Установка hash значения"""
+        with self._lock:
+            if key not in self._data:
+                self._data[key] = {}
+            
+            if not isinstance(self._data[key], dict):
+                self._data[key] = {}
+            
+            self._data[key].update(mapping)
+            return True
+
+    # Добавляем метод для установки одного поля
+    def hset_field(self, key: str, field: str, value: Any) -> bool:
+        """Установка одного поля в hash"""
+        with self._lock:
+            if key not in self._data:
+                self._data[key] = {}
+            
+            if not isinstance(self._data[key], dict):
+                self._data[key] = {}
+            
+            self._data[key][field] = value
+            return True
     
     def expire(self, key: str, time: int):
         """Добавляет expire команду в pipeline"""

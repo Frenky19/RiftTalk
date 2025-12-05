@@ -51,6 +51,7 @@ class DiscordService:
         self.connection_task: Optional[asyncio.Task] = None
         self.category_name = "LoL Voice Chat"
         self.mock_mode = False
+        self._match_channels_cache = {}  # Кэш каналов по match_id
 
     async def connect(self) -> bool:
         """Connect to Discord or fallback to mock mode."""
@@ -232,11 +233,41 @@ class DiscordService:
                 self.mock_mode = True
                 return
 
+            # 🔥 ИНИЦИАЛИЗИРУЕМ КЭШ СУЩЕСТВУЮЩИХ КАНАЛОВ
+            await self._initialize_channel_cache()
             logger.info("✅ Discord service fully initialized")
 
         except Exception as e:
             logger.error(f"❌ Error initializing Discord: {e}")
             self.mock_mode = True
+
+    async def _initialize_channel_cache(self):
+        """Initialize cache of existing match channels."""
+        try:
+            if not self.category:
+                return
+                
+            logger.info("🔄 Initializing channel cache...")
+            for channel in self.category.voice_channels:
+                if "LoL Match" in channel.name and isinstance(channel, VoiceChannel):
+                    # Извлекаем match_id и team_name из имени канала
+                    # Формат: "LoL Match {match_id} - {team_name}"
+                    parts = channel.name.split(" - ")
+                    if len(parts) == 2:
+                        match_part = parts[0].replace("LoL Match ", "").strip()
+                        team_name = parts[1].strip()
+                        
+                        if match_part and team_name:
+                            if match_part not in self._match_channels_cache:
+                                self._match_channels_cache[match_part] = {}
+                            
+                            self._match_channels_cache[match_part][team_name] = channel
+                            logger.info(f"📥 Cached channel: {channel.name}")
+            
+            logger.info(f"✅ Channel cache initialized: {len(self._match_channels_cache)} matches")
+            
+        except Exception as e:
+            logger.error(f"❌ Error initializing channel cache: {e}")
 
     async def _get_or_create_category(self) -> Optional[CategoryChannel]:
         """Get or create category."""
@@ -287,32 +318,120 @@ class DiscordService:
             logger.error(f"❌ Failed to create team role: {e}")
             return None
 
-    async def create_voice_channel(self, match_id: str, team_name: str) -> Dict[str, Any]:
-        """Create voice channel with proper access restrictions."""
+    async def create_or_get_voice_channel(self, match_id: str, team_name: str) -> Dict[str, Any]:
+        """Create or get existing voice channel for a team in a match."""
         if self.mock_mode or not self.connected or not self.guild or not self.category:
             logger.info(f"🎮 MOCK: Creating voice channel for {team_name} in match {match_id}")
             return self._create_mock_channel_data(match_id, team_name)
+        
         try:
             channel_name = f"LoL Match {match_id} - {team_name}"
-            # Create team role
+            
+            # 🔥 ПРОВЕРЯЕМ КЭШ СНАЧАЛА
+            if match_id in self._match_channels_cache and team_name in self._match_channels_cache[match_id]:
+                existing_channel = self._match_channels_cache[match_id][team_name]
+                logger.info(f"✅ Found cached channel for {team_name} in match {match_id}")
+                
+                # Обновляем приглашение
+                invite = await existing_channel.create_invite(
+                    max_uses=0,  # Без ограничения использований
+                    unique=False,
+                    reason=f"Recreated invite for {team_name} in match {match_id}"
+                )
+                
+                # Получаем роль
+                team_role = await self._get_or_create_team_role(match_id, team_name)
+                
+                return {
+                    "channel_id": str(existing_channel.id),
+                    "channel_name": channel_name,
+                    "invite_url": invite.url,
+                    "match_id": match_id,
+                    "team_name": team_name,
+                    "role_id": str(team_role.id) if team_role else "",
+                    "mock": False,
+                    "secured": True,
+                    "existing": True,
+                    "cached": True
+                }
+            
+            # Ищем существующий канал в категории
+            existing_channel = None
+            for channel in self.category.voice_channels:
+                if channel.name == channel_name:
+                    existing_channel = channel
+                    logger.info(f"✅ Found existing voice channel: {channel_name}")
+                    
+                    # Обновляем кэш
+                    if match_id not in self._match_channels_cache:
+                        self._match_channels_cache[match_id] = {}
+                    self._match_channels_cache[match_id][team_name] = channel
+                    break
+            
+            # Если канал уже существует - возвращаем его
+            if existing_channel:
+                # Обновляем permissions
+                team_role = await self._get_or_create_team_role(match_id, team_name)
+                if team_role:
+                    overwrites = {
+                        self.guild.default_role: discord.PermissionOverwrite(
+                            view_channel=False,
+                            connect=False
+                        ),
+                        team_role: discord.PermissionOverwrite(
+                            view_channel=True,
+                            connect=True,
+                            speak=True
+                        ),
+                        self.guild.me: discord.PermissionOverwrite(
+                            view_channel=True,
+                            connect=True,
+                            speak=True,
+                            manage_channels=True,
+                            manage_roles=True
+                        )
+                    }
+                    await existing_channel.edit(overwrites=overwrites)
+                
+                # Создаем приглашение
+                invite = await existing_channel.create_invite(
+                    max_uses=0,
+                    unique=False,
+                    reason=f"Recreated invite for {team_name} in match {match_id}"
+                )
+                
+                return {
+                    "channel_id": str(existing_channel.id),
+                    "channel_name": channel_name,
+                    "invite_url": invite.url,
+                    "match_id": match_id,
+                    "team_name": team_name,
+                    "role_id": str(team_role.id) if team_role else "",
+                    "mock": False,
+                    "secured": True,
+                    "existing": True
+                }
+            
+            # Создаем новый канал только если он не существует
+            logger.info(f"🔄 Creating NEW voice channel: {channel_name}")
+            
+            # Создаем роль команды
             team_role = await self._get_or_create_team_role(match_id, team_name)
             if not team_role:
                 logger.error("❌ Failed to create team role, falling back to mock")
                 return self._create_mock_channel_data(match_id, team_name)
-            # Configure permission overwrites
+            
+            # Настраиваем права доступа
             overwrites = {
-                # Deny access for everyone by default
                 self.guild.default_role: discord.PermissionOverwrite(
                     view_channel=False,
                     connect=False
                 ),
-                # Allow access for team members
                 team_role: discord.PermissionOverwrite(
                     view_channel=True,
                     connect=True,
                     speak=True
                 ),
-                # Bot has full access
                 self.guild.me: discord.PermissionOverwrite(
                     view_channel=True,
                     connect=True,
@@ -321,48 +440,29 @@ class DiscordService:
                     manage_roles=True
                 )
             }
-            # Check for existing channels
-            existing_channel = None
-            for channel in self.category.voice_channels:
-                if (channel.name == channel_name or (
-                    f"match {match_id}"
-                ) in channel.name.lower() and team_name in channel.name):
-                    existing_channel = channel
-                    break
-            if existing_channel:
-                logger.info(f"✅ Voice channel already exists: {existing_channel.name}")
-                # Update permissions for existing channel
-                await existing_channel.edit(overwrites=overwrites)
-                invite = await existing_channel.create_invite(
-                    max_uses=5,
-                    unique=True,
-                    reason="Auto-regenerated for LoL match"
-                )
-                return {
-                    "channel_id": str(existing_channel.id),
-                    "channel_name": channel_name,
-                    "invite_url": invite.url,
-                    "match_id": match_id,
-                    "team_name": team_name,
-                    "role_id": str(team_role.id),
-                    "mock": False,
-                    "secured": True
-                }
-            logger.info(f"🔄 Creating secured voice channel: {channel_name}")
-            # Create voice channel with restrictions
+            
+            # Создаем голосовой канал
             voice_channel = await self.guild.create_voice_channel(
                 name=channel_name,
                 category=self.category,
                 overwrites=overwrites,
                 reason=f"Secured voice chat for {team_name} in LoL match {match_id}"
             )
-            # Create invite
+            
+            # Обновляем кэш
+            if match_id not in self._match_channels_cache:
+                self._match_channels_cache[match_id] = {}
+            self._match_channels_cache[match_id][team_name] = voice_channel
+            
+            # Создаем приглашение
             invite = await voice_channel.create_invite(
-                max_uses=5,
-                unique=True,
+                max_uses=0,
+                unique=False,
                 reason="Auto-generated for secured LoL match"
             )
-            logger.info(f"✅ Created secured Discord voice channel: {voice_channel.name}")
+            
+            logger.info(f"✅ Created new Discord voice channel: {voice_channel.name}")
+            
             return {
                 "channel_id": str(voice_channel.id),
                 "channel_name": channel_name,
@@ -371,10 +471,12 @@ class DiscordService:
                 "team_name": team_name,
                 "role_id": str(team_role.id),
                 "mock": False,
-                "secured": True
+                "secured": True,
+                "existing": False
             }
+            
         except Exception as e:
-            logger.error(f"❌ Failed to create secured Discord channel: {e}")
+            logger.error(f"❌ Failed to create/get Discord channel: {e}")
             return self._create_mock_channel_data(match_id, team_name)
 
     def _create_mock_channel_data(self, match_id: str, team_name: str) -> Dict[str, Any]:
@@ -389,21 +491,23 @@ class DiscordService:
             "role_id": f"mock_role_{mock_channel_id}",
             "mock": True,
             "secured": False,
+            "existing": False,
             "note": "Это тестовые данные. Для реальных Discord каналов установите Discord и настройте бота."
         }
 
-    async def create_team_channels(
+    async def create_or_get_team_channels(
         self,
         match_id: str,
         blue_team: List[str],
         red_team: List[str]
     ) -> Dict[str, Any]:
-        """Create secured channels for both teams with role-based access."""
-        logger.info(f"🎮 Creating secured team channels for match {match_id}")
+        """Create or get existing channels for both teams with role-based access."""
+        logger.info(f"🎮 Creating or getting team channels for match {match_id}")
 
-        blue_channel = await self.create_voice_channel(match_id, "Blue Team")
+        # 🔥 ОДИН КАНАЛ НА КОМАНДУ, НЕ СОЗДАЕМ НОВЫЙ ЕСЛИ УЖЕ ЕСТЬ
+        blue_channel = await self.create_or_get_voice_channel(match_id, "Blue Team")
         await asyncio.sleep(0.5)
-        red_channel = await self.create_voice_channel(match_id, "Red Team")
+        red_channel = await self.create_or_get_voice_channel(match_id, "Red Team")
 
         result = {
             "match_id": match_id,
@@ -411,12 +515,20 @@ class DiscordService:
             "red_team": red_channel,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "mock_mode": self.mock_mode,
-            "secured": not self.mock_mode
+            "secured": not self.mock_mode,
+            "unique_channels": True  # Гарантируем, что каналы уникальны на матч
         }
+        
         if self.mock_mode:
             result["note"] = "Режим разработки: используются тестовые данные Discord"
         else:
             result["note"] = "Каналы защищены: игроки имеют доступ только к каналам своей команды"
+            
+        # Логируем для отладки
+        logger.info(f"✅ Team channels for match {match_id}:")
+        logger.info(f"🔵 Blue channel: {blue_channel.get('channel_name')} (existing: {blue_channel.get('existing')})")
+        logger.info(f"🔴 Red channel: {red_channel.get('channel_name')} (existing: {red_channel.get('existing')})")
+        
         return result
 
     async def assign_player_to_team(self, discord_user_id: int, match_id: str, team_name: str) -> bool:
@@ -430,7 +542,7 @@ class DiscordService:
             return False
             
         try:
-            logger.info(f"🔍 Searching for user {discord_user_id} in guild {self.guild.name} (ID: {self.guild.id})")
+            logger.info(f"🔍 Assigning user {discord_user_id} to {team_name} in match {match_id}")
             
             # Multiple methods to find member
             member = None
@@ -509,6 +621,16 @@ class DiscordService:
             # Check if member already has the role
             if team_role in member.roles:
                 logger.info(f"ℹ️ User {member.display_name} already has role {team_role.name}")
+                
+                # Но все равно сохраняем информацию о матче
+                user_key = f"user_discord:{discord_user_id}"
+                match_info = {
+                    'match_id': match_id,
+                    'team_name': team_name,
+                    'assigned_at': datetime.now(timezone.utc).isoformat()
+                }
+                redis_manager.redis.setex(user_key, 3600, json.dumps(match_info))
+                
                 return True
 
             # Assign role
@@ -619,7 +741,7 @@ class DiscordService:
             logger.error(f"❌ Error during role cleanup: {e}")
 
     async def cleanup_match_channels(self, match_data: Dict[str, Any]):
-        """Cleanup channels and roles after match ends with improved error handling."""
+        """Cleanup channels and roles after match ends with improved cleanup."""
         logger.info(f"🧹 Starting cleanup for match: {match_data}")
         
         if self.mock_mode:
@@ -627,55 +749,53 @@ class DiscordService:
             return
             
         try:
-            tasks = []
             match_id = match_data.get('match_id')
             
-            logger.info(f"🔍 Looking for channels to cleanup in match data: {list(match_data.keys())}")
+            if not match_id:
+                logger.warning("⚠️ No match ID provided for cleanup")
+                return
             
-            # Cleanup blue team channel
-            if 'blue_team' in match_data and match_data['blue_team']:
-                blue_team_data = match_data['blue_team']
-                # Проверяем, не mock ли это и есть ли channel_id
-                if not blue_team_data.get('mock', True) and blue_team_data.get('channel_id'):
-                    try:
-                        channel_id = int(blue_team_data['channel_id'])
-                        tasks.append(self.delete_voice_channel(channel_id))
-                        logger.info(f"🔵 Queueing blue team channel cleanup: {channel_id}")
-                    except (ValueError, TypeError) as e:
-                        logger.error(f"❌ Invalid blue team channel ID: {blue_team_data.get('channel_id')}, error: {e}")
+            logger.info(f"🔍 Looking for channels to cleanup for match {match_id}")
             
-            # Cleanup red team channel  
-            if 'red_team' in match_data and match_data['red_team']:
-                red_team_data = match_data['red_team']
-                if not red_team_data.get('mock', True) and red_team_data.get('channel_id'):
-                    try:
-                        channel_id = int(red_team_data['channel_id'])
-                        tasks.append(self.delete_voice_channel(channel_id))
-                        logger.info(f"🔴 Queueing red team channel cleanup: {channel_id}")
-                    except (ValueError, TypeError) as e:
-                        logger.error(f"❌ Invalid red team channel ID: {red_team_data.get('channel_id')}, error: {e}")
-            
-            # Execute all cleanup tasks
-            if tasks:
-                logger.info(f"🔄 Executing {len(tasks)} cleanup tasks...")
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 🔥 ИЩЕМ И УДАЛЯЕМ ВСЕ КАНАЛЫ ЭТОГО МАТЧА В КАТЕГОРИИ
+            if self.category:
+                channels_to_delete = []
+                for channel in self.category.voice_channels:
+                    if isinstance(channel, VoiceChannel) and f"LoL Match {match_id}" in channel.name:
+                        channels_to_delete.append(channel)
                 
-                # Log results
-                for i, result in enumerate(results):
-                    if isinstance(result, Exception):
-                        logger.error(f"❌ Cleanup task {i} failed: {result}")
-                    else:
-                        logger.info(f"✅ Cleanup task {i} completed successfully")
-            else:
-                logger.info("ℹ️ No channels to cleanup")
+                logger.info(f"🔍 Found {len(channels_to_delete)} channels to delete")
                 
+                # Удаляем каналы
+                for channel in channels_to_delete:
+                    try:
+                        # Сначала отключаем всех участников
+                        members = channel.members
+                        if members:
+                            logger.info(f"🔌 Disconnecting {len(members)} members from {channel.name}")
+                            for member in members:
+                                try:
+                                    await member.move_to(None)
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Failed to disconnect {member.display_name}: {e}")
+                        
+                        # Удаляем канал
+                        await channel.delete(reason=f"LoL match {match_id} ended")
+                        logger.info(f"✅ Deleted channel: {channel.name}")
+                    except discord.NotFound:
+                        logger.warning(f"⚠️ Channel {channel.name} not found (already deleted)")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to delete channel {channel.name}: {e}")
+            
             # Cleanup roles
-            if match_id:
-                logger.info(f"👤 Cleaning up roles for match {match_id}")
-                await self.cleanup_team_roles(match_id)
-            else:
-                logger.warning("⚠️ No match ID provided for role cleanup")
-                
+            logger.info(f"👤 Cleaning up roles for match {match_id}")
+            await self.cleanup_team_roles(match_id)
+            
+            # 🔥 ОЧИЩАЕМ КЭШ ЭТОГО МАТЧА
+            if match_id in self._match_channels_cache:
+                del self._match_channels_cache[match_id]
+                logger.info(f"🗑️ Cleared cache for match {match_id}")
+                    
             logger.info(f"✅ Cleanup completed for match {match_id}")
             
         except Exception as e:
@@ -765,6 +885,7 @@ class DiscordService:
                 await self.client.close()
             self.connected = False
             self.mock_mode = False
+            self._match_channels_cache = {}  # Очищаем кэш
             logger.info("✅ Discord service disconnected")
         except Exception as e:
             logger.error(f"Error during Discord disconnect: {e}")
@@ -776,6 +897,7 @@ class DiscordService:
             "mock_mode": self.mock_mode,
             "guild_available": self.guild is not None,
             "category_available": self.category is not None,
+            "cached_matches": len(self._match_channels_cache),
             "status": "mock" if self.mock_mode else "connected" if self.connected else "disconnected"
         }
 

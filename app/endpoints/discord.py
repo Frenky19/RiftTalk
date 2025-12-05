@@ -5,12 +5,12 @@ import random
 import redis
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import ValidationError
-from app.services.discord_service import discord_service
 from app.services.lcu_service import lcu_service
+from app.services.voice_service import voice_service
 from app.utils.security import get_current_user
 from app.database import redis_manager
 from app.schemas import DiscordLinkRequest, DiscordAssignRequest
-from app.services.voice_service import voice_service
+from app.services.discord_service import discord_service
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -865,17 +865,29 @@ async def get_match_status(
                 except json.JSONDecodeError:
                     match_info = {}
         
-        if not match_info:
-            return {
-                "match_id": None,
-                "match_started": False,
-                "in_champ_select": False,
-                "in_loading_screen": False,
-                "in_progress": False,
-                "voice_channel": None
-            }
+        match_id = match_info.get('match_id') if match_info else None
         
-        match_id = match_info.get('match_id')
+        # 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Если match_id не найден, пробуем получить его из LCU
+        if not match_id:
+            try:
+                # Проверяем, подключен ли LCU
+                if lcu_service.lcu_connector.is_connected():
+                    # Получаем текущую фазу
+                    phase = await lcu_service.lcu_connector.get_game_flow_phase()
+                    logger.info(f"🎮 Current phase from LCU: {phase}")
+                    
+                    # Если фаза InProgress, то получаем данные о матче
+                    if phase == "InProgress":
+                        session = await lcu_service.lcu_connector.get_current_session()
+                        if session and session.get('gameData', {}).get('gameId'):
+                            match_id = f"match_{session['gameData']['gameId']}"
+                            logger.info(f"🎮 Found match_id from LCU: {match_id}")
+                            # Сохраняем match_id для пользователя
+                            redis_manager.redis.hset(match_info_key, 'match_id', match_id)
+                            redis_manager.redis.expire(match_info_key, 3600)
+            except Exception as e:
+                logger.error(f"❌ Error getting match_id from LCU: {e}")
+        
         if not match_id:
             return {
                 "match_id": None,
@@ -888,11 +900,60 @@ async def get_match_status(
         
         # Получаем информацию о голосовой комнате
         room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        
+        # 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Если комната не найдена, но игра в процессе, создаем комнату!
         if not room_data:
+            try:
+                # Проверяем, подключен ли LCU
+                if lcu_service.lcu_connector.is_connected():
+                    phase = await lcu_service.lcu_connector.get_game_flow_phase()
+                    logger.info(f"🎮 Current phase for room creation: {phase}")
+                    
+                    if phase == "InProgress":
+                        # Пытаемся получить данные о командах
+                        teams_data = await lcu_service.lcu_connector.get_teams()
+                        if teams_data:
+                            blue_team_ids = [str(player.get('summonerId')) for player in teams_data.get('blue_team', []) if player.get('summonerId')]
+                            red_team_ids = [str(player.get('summonerId')) for player in teams_data.get('red_team', []) if player.get('summonerId')]
+                            all_players = blue_team_ids + red_team_ids
+                            
+                            logger.info(f"🔵 Blue team IDs from LCU: {blue_team_ids}")
+                            logger.info(f"🔴 Red team IDs from LCU: {red_team_ids}")
+                            
+                            if all_players:
+                                # Создаем голосовую комнату
+                                room_result = await voice_service.create_or_get_voice_room(
+                                    match_id, 
+                                    all_players, 
+                                    {'blue_team': blue_team_ids, 'red_team': red_team_ids}
+                                )
+                                logger.info(f"✅ Created room from match-status: {room_result}")
+                                
+                                # Обновляем room_data
+                                room_data = voice_service.redis.get_voice_room_by_match(match_id)
+                                if room_data:
+                                    logger.info(f"✅ Room created successfully: {room_data.get('room_id')}")
+                                else:
+                                    logger.error("❌ Room still not found after creation!")
+                            else:
+                                logger.warning("⚠️ No player data from LCU for room creation")
+                        else:
+                            logger.warning("⚠️ No team data from LCU for room creation")
+                    else:
+                        logger.info(f"🔶 Not creating room - current phase is {phase}, not InProgress")
+                else:
+                    logger.warning("🔶 LCU not connected, cannot create room")
+            except Exception as e:
+                logger.error(f"❌ Error creating room from match-status: {e}")
+                import traceback
+                logger.error(f"🔍 Stack trace: {traceback.format_exc()}")
+        
+        if not room_data:
+            logger.warning(f"⚠️ No room data found for match {match_id}")
             return {
                 "match_id": match_id,
                 "match_started": False,
-                "in_champ_select": True,  # Предполагаем, что идет выбор чемпионов
+                "in_champ_select": False,
                 "in_loading_screen": False,
                 "in_progress": False,
                 "voice_channel": None
@@ -900,7 +961,6 @@ async def get_match_status(
         
         # ТОЧНОЕ ОПРЕДЕЛЕНИЕ ФАЗЫ МАТЧА ЧЕРЕЗ LCU
         try:
-            from app.services.lcu_service import lcu_service
             game_phase = await lcu_service.lcu_connector.get_game_flow_phase()
             
             # Определяем точные фазы
@@ -939,6 +999,9 @@ async def get_match_status(
             team_name = "Red Team"
         else:
             # Если пользователь не в одной из команд, не возвращаем канал
+            logger.warning(f"⚠️ User {summoner_id} not found in any team for match {match_id}")
+            logger.info(f"🔵 Blue team: {blue_team}")
+            logger.info(f"🔴 Red team: {red_team}")
             return {
                 "match_id": match_id,
                 "match_started": True,
