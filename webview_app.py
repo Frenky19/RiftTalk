@@ -175,7 +175,7 @@ def run_webview():
             resizable=True,
             fullscreen=False,
             min_size=(800, 600),
-            confirm_close=True
+            confirm_close=False,
         )
         
         logger.info("Окно создано, запуск WebView...")
