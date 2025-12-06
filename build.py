@@ -1,5 +1,6 @@
+#!/usr/bin/env python3
 """
-Исправленный build script для LoL Voice Chat - Windows с hooks
+Build script для LoL Voice Chat с WebView
 """
 
 import os
@@ -7,30 +8,115 @@ import sys
 import shutil
 import subprocess
 
-
-def clean_build_dirs():
-    """Очистка папок сборки"""
-    dirs_to_clean = ['dist', 'build', '__pycache__']
-    for dir_name in dirs_to_clean:
+def clean_build():
+    """Очистка предыдущих сборок"""
+    for dir_name in ['dist', 'build', '__pycache__', 'hooks']:
         if os.path.exists(dir_name):
             shutil.rmtree(dir_name, ignore_errors=True)
-            print(f"✅ Очищено: {dir_name}")
+            print(f"Очищено: {dir_name}")
 
-
-def build_with_hooks():
-    """Сборка с использованием hooks"""
-    print("🔨 Запускаем сборку с hooks...")
-    
-    # Создаем папку для hooks если её нет
+def create_hooks():
+    """Создание hooks для PyInstaller"""
     hooks_dir = 'hooks'
     os.makedirs(hooks_dir, exist_ok=True)
     
-    # Создаем базовую команду
+    # Hook для pywebview
+    webview_hook = '''"""
+PyInstaller hook for pywebview
+"""
+
+hiddenimports = [
+    'pywebview.platforms.win32',
+    'pywebview.platforms.cef',
+    'pywebview.libs',
+]
+'''
+    
+    with open(os.path.join(hooks_dir, 'hook-pywebview.py'), 'w', encoding='utf-8') as f:
+        f.write(webview_hook)
+    print("✅ Hook для pywebview создан")
+    
+    # Hook для passlib
+    passlib_hook = '''"""
+PyInstaller hook for passlib
+"""
+
+from PyInstaller.utils.hooks import collect_submodules
+
+hiddenimports = collect_submodules('passlib')
+'''
+    
+    with open(os.path.join(hooks_dir, 'hook-passlib.py'), 'w', encoding='utf-8') as f:
+        f.write(passlib_hook)
+    print("✅ Hook для passlib создан")
+
+def build_with_pyinstaller():
+    """Сборка с PyInstaller"""
+    print("Сборка EXE с WebView...")
+    
+    # Основные скрытые импорты
+    hidden_imports = [
+        # Основное приложение
+        'app',
+        'app.main',
+        'app.config',
+        'app.database',
+        'app.models',
+        'app.schemas',
+        'app.utils',
+        'app.services',
+        'app.endpoints',
+        'app.middleware',
+        
+        # FastAPI и веб
+        'fastapi',
+        'fastapi.staticfiles',
+        'starlette',
+        'uvicorn',
+        'uvicorn.lifespan.on',
+        'uvicorn.lifespan.off',
+        
+        # Discord
+        'discord',
+        'discord.voice_client',
+        
+        # WebView
+        'pywebview',
+        'pywebview.platforms.win32',
+        
+        # Асинхронность
+        'aiohttp',
+        'aiohttp.client',
+        
+        # Валидация
+        'pydantic',
+        'pydantic_core',
+        'pydantic_settings',
+        
+        # Авторизация
+        'passlib',
+        'passlib.handlers',
+        'passlib.handlers.bcrypt',
+        'jose',
+        'jose.constants',
+        
+        # Redis
+        'redis',
+        'redis.asyncio',
+        
+        # Утилиты
+        'dotenv',
+        'websockets',
+        'multipart',
+        'python_multipart',
+    ]
+    
+    # Команда PyInstaller
     cmd = [
         'pyinstaller',
         '--name=LoLVoiceChat',
         '--onefile',
-        '--console',
+        '--windowed',  # Без консоли
         '--clean',
         '--add-data=app;app',
         '--add-data=static;static',
@@ -38,57 +124,37 @@ def build_with_hooks():
         '--additional-hooks-dir=hooks',
     ]
     
-    # Добавляем hidden imports
-    hidden_imports = [
-        # FastAPI и веб
-        'uvicorn.lifespan.on', 'uvicorn.lifespan.off', 'uvicorn.loops.auto',
-        'uvicorn.protocols.http', 'uvicorn.protocols.websockets', 'uvicorn.logging',
-        
-        # Наше приложение
-        'app.main', 'app.config', 'app.database', 'app.models', 'app.schemas',
-        'app.utils.exceptions', 'app.utils.security', 'app.utils.logger',
-        'app.utils.lcu_connector', 'app.services.lcu_service', 'app.services.discord_service',
-        'app.services.voice_service', 'app.services.cleanup_service', 'app.endpoints.voice',
-        'app.endpoints.auth', 'app.endpoints.lcu', 'app.endpoints.discord', 'app.endpoints.demo',
-        'app.middleware.demo_auth',
-        
-        # Сторонние библиотеки
-        'pydantic', 'pydantic_core', 'pydantic_settings',
-        'dotenv', 'discord', 'aiohttp', 'python_jose', 'passlib',
-        'bcrypt', 'fastapi', 'starlette', 'websockets', 'python_multipart',
-        'jinja2', 'click', 'anyio', 'httpx', 'jose', 'cryptography',
-        'requests',
-        
-        # Критически важные подмодули
-        'passlib.handlers', 'passlib.handlers.bcrypt', 'passlib.handlers.sha2_crypt',
-        'passlib.handlers.pbkdf2', 'passlib.handlers.argon2', 'passlib.handlers.django',
-        'passlib.handlers.md5_crypt', 'passlib.handlers.des_crypt',
-    ]
+    # Добавляем иконку если есть
+    icon_path = 'static/logo/icon_L.ico'
+    if os.path.exists(icon_path):
+        cmd.append(f'--icon={icon_path}')
+        print(f"Используется иконка: {icon_path}")
     
+    # Добавляем скрытые импорты
     for imp in hidden_imports:
         cmd.append(f'--hidden-import={imp}')
     
-    # Добавляем основной файл
-    cmd.append('launcher.py')
+    # Точка входа
+    cmd.append('webview_app.py')
+    
+    print(f"Запуск PyInstaller...")
     
     try:
-        print("🚀 Запускаем PyInstaller с hooks...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            # Проверяем результат
             exe_path = 'dist/LoLVoiceChat.exe'
             if os.path.exists(exe_path):
-                print(f"✅ Исполняемый файл создан: {exe_path}")
+                size = os.path.getsize(exe_path) / (1024 * 1024)
+                print(f"✅ EXE создан: {exe_path} ({size:.1f} MB)")
                 return True
             else:
-                print("❌ Исполняемый файл не найден")
+                print("❌ EXE файл не найден")
                 return False
         else:
-            print(f"❌ Ошибка сборки (код: {result.returncode})")
+            print("❌ Ошибка PyInstaller:")
             if result.stderr:
-                print("=== STDERR ===")
-                print(result.stderr)
+                print(result.stderr[-1000:])
             return False
             
     except subprocess.TimeoutExpired:
@@ -98,146 +164,127 @@ def build_with_hooks():
         print(f"❌ Ошибка сборки: {e}")
         return False
 
-
-def create_distribution_package():
-    """Создание дистрибутивного пакета"""
-    print("📦 Создаем дистрибутивный пакет...")
+def create_package():
+    """Создание пакета"""
+    print("Создание пакета...")
     
-    package_dir = "dist/LoLVoiceChat_Package"
+    package_dir = "dist/LoLVoiceChat_WebView"
     os.makedirs(package_dir, exist_ok=True)
     
-    # Копируем исполняемый файл
+    # Копируем EXE
     exe_src = "dist/LoLVoiceChat.exe"
     if os.path.exists(exe_src):
         shutil.copy2(exe_src, os.path.join(package_dir, "LoLVoiceChat.exe"))
-        print("✅ Исполняемый файл скопирован")
+        print("✅ EXE скопирован")
     else:
-        print("❌ Исполняемый файл не найден")
+        print("❌ EXE не найден")
         return False
     
-    # Копируем .env файл
+    # Копируем .env
     if os.path.exists('.env'):
         shutil.copy2('.env', package_dir)
-        print("✅ .env файл скопирован")
+        print("✅ .env скопирован")
     
-    # Копируем папку static
-    if os.path.exists('static'):
-        shutil.copytree('static', os.path.join(package_dir, 'static'), dirs_exist_ok=True)
-        print("✅ Static папка скопирована")
-    
-    # Создаем README
-    readme_content = """# LoL Voice Chat - Windows Application
-
-## Установка и запуск
-
-1. **Распакуйте** этот ZIP файл в любую папку
-2. **Запустите** `LoLVoiceChat.exe` или `Start.bat`
-3. **Приложение автоматически:**
-   - Запустит сервер голосового чата
-   - Откроет браузер со страницей настройки
-   - Создаст файл логов `lol_voice_chat.log`
-
-## Особенности
-
-- ✅ **Не требует Redis** - использует встроенное хранилище
-- ✅ **Автозапуск** - все запускается автоматически
-- ✅ **Полная функциональность** - все возможности голосового чата
-
-## Требования
-
-- Windows 10/11
-- Установленный League of Legends
-- Запущенный Discord
-- Доступ к интернету
-
-## Устранение проблем
-
-### Если приложение не запускается:
-1. Проверьте файл `lol_voice_chat.log`
-2. Убедитесь что порт 8000 свободен
-3. Попробуйте запустить от имени администратора
-
-## Важно!
-
-- Не удаляйте файлы из папки приложения
-- Закрывайте приложение через Ctrl+C в консоли
-- Для полной остановки закройте окно консоли
-"""
-
-    with open(os.path.join(package_dir, "README.txt"), "w", encoding="utf-8") as f:
-        f.write(readme_content)
-    print("✅ README создан")
-    
-    # Создаем BAT файл для запуска
+    # Создаем батник
     bat_content = """@echo off
 chcp 65001 >nul
-title LoL Voice Chat
+title LoL Voice Chat (WebView)
 echo ========================================
-echo    LoL Voice Chat - Запуск приложения
+echo    LoL Voice Chat - Desktop App
 echo ========================================
 echo.
 echo Запуск приложения...
+echo Ожидайте 5-10 секунд...
 echo.
 LoLVoiceChat.exe
+echo.
+echo Приложение запущено!
+echo Окно должно открыться автоматически.
 pause
 """
     
     with open(os.path.join(package_dir, "Start.bat"), "w", encoding="utf-8") as f:
         f.write(bat_content)
-    print("✅ BAT файл создан")
+    print("✅ Start.bat создан")
     
-    # Создаем ZIP архив
-    shutil.make_archive("dist/LoLVoiceChat_v1.0.0", 'zip', package_dir)
-    print("✅ ZIP архив создан: dist/LoLVoiceChat_v1.0.0.zip")
+    # Создаем README
+    readme_content = """# LoL Voice Chat - Desktop Application
+
+## Установка
+1. Распакуйте все файлы в одну папку
+2. Запустите Start.bat или LoLVoiceChat.exe
+
+## Особенности
+- ✅ Встроенный интерфейс (не требуется браузер)
+- ✅ Без консоли
+- ✅ Автоматический запуск сервера
+- ✅ Полный функционал голосового чата
+
+## Первый запуск
+1. Приложение откроет окно с интерфейсом
+2. Привяжите Discord аккаунт
+3. Запустите League of Legends
+4. Присоединяйтесь к играм!
+
+## Устранение проблем
+- Если окно не открывается: проверьте файл lol_voice_chat.log
+- Убедитесь что .env файл присутствует
+- Проверьте настройки Discord бота
+"""
+    
+    with open(os.path.join(package_dir, "README.txt"), "w", encoding="utf-8") as f:
+        f.write(readme_content)
+    print("✅ README создан")
+    
+    # Создаем ZIP
+    import datetime
+    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    zip_name = f"dist/LoLVoiceChat_WebView_{date_str}"
+    
+    shutil.make_archive(zip_name, 'zip', package_dir)
+    print(f"✅ ZIP создан: {zip_name}.zip")
     
     return True
 
-
 def main():
-    """Главная функция сборки"""
-    print("🎮 Сборка LoL Voice Chat для Windows")
+    """Главная функция"""
+    print("🎮 Сборка LoL Voice Chat с WebView")
     print("=" * 50)
     
+    # Проверка файлов
+    required_files = ['webview_app.py', '.env', 'app', 'static']
+    for f in required_files:
+        if not os.path.exists(f):
+            print(f"❌ Отсутствует: {f}")
+            return
+    
     # Очистка
-    print("🗑️ Очистка предыдущих сборок...")
-    clean_build_dirs()
+    clean_build()
     
-    # Создаем hook для passlib
-    print("🔧 Создаем hooks для PyInstaller...")
-    hooks_dir = 'hooks'
-    os.makedirs(hooks_dir, exist_ok=True)
+    # Создание hooks
+    create_hooks()
     
-    hook_content = '''"""
-PyInstaller hook for passlib
-"""
-
-from PyInstaller.utils.hooks import collect_submodules
-
-# Включаем все подмодули passlib
-hiddenimports = collect_submodules('passlib')
-'''
+    # Сборка
+    if not build_with_pyinstaller():
+        print("❌ Сборка не удалась")
+        return
     
-    with open(os.path.join(hooks_dir, 'hook-passlib.py'), 'w', encoding='utf-8') as f:
-        f.write(hook_content)
-    print("✅ Hook для passlib создан")
+    # Пакет
+    if not create_package():
+        print("⚠️  Ошибка создания пакета")
     
-    # Прямая сборка с hooks
-    print("🔨 Запуск сборки с hooks...")
-    if build_with_hooks():
-        print("\n✅ Сборка завершена успешно!")
-        
-        # Создаем пакет
-        if create_distribution_package():
-            print("\n🎉 Дистрибутив создан успешно!")
-            print("📦 Пакет: dist/LoLVoiceChat_v1.0.0.zip")
-            print("🚀 Исполняемый файл: dist/LoLVoiceChat.exe")
-            print("\n💡 Запустите Start.bat из папки пакета для тестирования")
+    print("\n✅ Сборка завершена!")
+    print("\n📁 Результаты в dist/:")
+    for item in os.listdir('dist'):
+        path = os.path.join('dist', item)
+        if os.path.isfile(path):
+            size = os.path.getsize(path) / (1024 * 1024)
+            print(f"  📄 {item} ({size:.1f} MB)")
         else:
-            print("❌ Ошибка создания пакета")
-    else:
-        print("\n❌ Сборка не удалась!")
-        sys.exit(1)
-
+            print(f"  📁 {item}")
+    
+    print("\n🚀 Для тестирования: dist/LoLVoiceChat_WebView/Start.bat")
+    print("=" * 50)
 
 if __name__ == "__main__":
     main()

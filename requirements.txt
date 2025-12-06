@@ -35,5 +35,8 @@ passlib[bcrypt]==1.7.4
 aiohttp==3.13.2
 discord.py==2.6.4
 discord==2.3.2
-pyinstaller
 pillow
+pyinstaller
+pyinstaller-hooks-contrib
+pywebview
+cefpython3
