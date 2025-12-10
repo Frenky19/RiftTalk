@@ -1,26 +1,25 @@
-#!/usr/bin/env python3
 """
-Build script для LoL Voice Chat с WebView
+Build script for LoL Voice Chat with WebView
 """
 
 import os
-import sys
 import shutil
 import subprocess
+import secrets
+
 
 def clean_build():
-    """Очистка предыдущих сборок"""
+    """Clean previous builds."""
     for dir_name in ['dist', 'build', '__pycache__', 'hooks']:
         if os.path.exists(dir_name):
             shutil.rmtree(dir_name, ignore_errors=True)
-            print(f"Очищено: {dir_name}")
+            print(f'Cleaned: {dir_name}')
+
 
 def create_hooks():
-    """Создание hooks для PyInstaller"""
+    """Create hooks for PyInstaller."""
     hooks_dir = 'hooks'
     os.makedirs(hooks_dir, exist_ok=True)
-    
-    # Hook для pywebview
     webview_hook = '''"""
 PyInstaller hook for pywebview
 """
@@ -31,12 +30,10 @@ hiddenimports = [
     'pywebview.libs',
 ]
 '''
-    
-    with open(os.path.join(hooks_dir, 'hook-pywebview.py'), 'w', encoding='utf-8') as f:
+    webview_hook_path = os.path.join(hooks_dir, 'hook-pywebview.py')
+    with open(webview_hook_path, 'w', encoding='utf-8') as f:
         f.write(webview_hook)
-    print("✅ Hook для pywebview создан")
-    
-    # Hook для passlib
+    print('✅ Hook for pywebview created')
     passlib_hook = '''"""
 PyInstaller hook for passlib
 """
@@ -45,18 +42,85 @@ from PyInstaller.utils.hooks import collect_submodules
 
 hiddenimports = collect_submodules('passlib')
 '''
-    
-    with open(os.path.join(hooks_dir, 'hook-passlib.py'), 'w', encoding='utf-8') as f:
+    passlib_hook_path = os.path.join(hooks_dir, 'hook-passlib.py')
+    with open(passlib_hook_path, 'w', encoding='utf-8') as f:
         f.write(passlib_hook)
-    print("✅ Hook для passlib создан")
+    print('✅ Hook for passlib created')
+
+
+def encrypt_env_file():
+    """Encrypt .env file and embed it in the code."""
+    print('Encrypting .env file...')
+    if not os.path.exists('.env'):
+        print('❌ .env file not found')
+        return False
+    try:
+        # Read .env file
+        with open('.env', 'r', encoding='utf-8') as f:
+            env_content = f.read()
+        # Generate encryption key
+        encryption_key = secrets.token_hex(32)
+
+        # Simple XOR encryption
+        def xor_encrypt(text, key):
+            encrypted = []
+            key_bytes = key.encode('utf-8')
+            for i, char in enumerate(text):
+                key_char = key_bytes[i % len(key_bytes)]
+                encrypted_char = chr(ord(char) ^ key_char)
+                encrypted.append(encrypted_char)
+            return ''.join(encrypted)
+        # Encrypt the content
+        encrypted_content = xor_encrypt(env_content, encryption_key)
+        # Create Python module with encrypted data
+        encrypted_module = f'''"""
+Encrypted environment variables module
+Generated during build process
+"""
+
+import os
+import sys
+
+ENCRYPTED_ENV = {repr(encrypted_content)}
+ENCRYPTION_KEY = {repr(encryption_key)}
+
+def decrypt_env():
+    """Decrypt and load environment variables."""
+    key_bytes = ENCRYPTION_KEY.encode('utf-8')
+    decrypted_chars = []
+    for i, char in enumerate(ENCRYPTED_ENV):
+        key_char = key_bytes[i % len(key_bytes)]
+        decrypted_char = chr(ord(char) ^ key_char)
+        decrypted_chars.append(decrypted_char)
+    decrypted_content = ''.join(decrypted_chars)
+    # Parse and set environment variables
+    for line in decrypted_content.split('\\n'):
+        line = line.strip()
+        if line and not line.startswith('#'):
+            if '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
+    return True
+
+# Auto-load on import
+if getattr(sys, 'frozen', False):
+    decrypt_env()
+'''
+        # Save encrypted module
+        with open('app/encrypted_env.py', 'w', encoding='utf-8') as f:
+            f.write(encrypted_module)
+        print('✅ .env encrypted and embedded in code')
+        return True
+    except Exception as e:
+        print(f'❌ Error encrypting .env: {e}')
+        return False
+
 
 def build_with_pyinstaller():
-    """Сборка с PyInstaller"""
-    print("Сборка EXE с WebView...")
-    
-    # Основные скрытые импорты
+    """Build with PyInstaller."""
+    print('Building EXE with WebView...')
     hidden_imports = [
-        # Основное приложение
+        # Main application
         'app',
         'app.main',
         'app.config',
@@ -67,125 +131,104 @@ def build_with_pyinstaller():
         'app.services',
         'app.endpoints',
         'app.middleware',
-        
-        # FastAPI и веб
+        'app.encrypted_env',
+        # FastAPI and web
         'fastapi',
         'fastapi.staticfiles',
         'starlette',
         'uvicorn',
         'uvicorn.lifespan.on',
         'uvicorn.lifespan.off',
-        
         # Discord
         'discord',
         'discord.voice_client',
-        
         # WebView
         'pywebview',
         'pywebview.platforms.win32',
-        
-        # Асинхронность
+        # Async
         'aiohttp',
         'aiohttp.client',
-        
-        # Валидация
+        # Validation
         'pydantic',
         'pydantic_core',
         'pydantic_settings',
-        
-        # Авторизация
+        # Authentication
         'passlib',
         'passlib.handlers',
         'passlib.handlers.bcrypt',
         'jose',
         'jose.constants',
-        
         # Redis
         'redis',
         'redis.asyncio',
-        
-        # Утилиты
+        # Utilities
         'dotenv',
         'websockets',
         'multipart',
         'python_multipart',
     ]
-    
-    # Команда PyInstaller
     cmd = [
         'pyinstaller',
         '--name=LoLVoiceChat',
         '--onefile',
-        '--windowed',  # Без консоли
+        '--windowed',
         '--clean',
         '--add-data=app;app',
         '--add-data=static;static',
-        '--add-data=.env;.',
         '--additional-hooks-dir=hooks',
     ]
-    
-    # Добавляем иконку если есть
     icon_path = 'static/logo/icon_L.ico'
     if os.path.exists(icon_path):
         cmd.append(f'--icon={icon_path}')
-        print(f"Используется иконка: {icon_path}")
-    
-    # Добавляем скрытые импорты
+        print(f'Using icon: {icon_path}')
     for imp in hidden_imports:
         cmd.append(f'--hidden-import={imp}')
-    
-    # Точка входа
     cmd.append('webview_app.py')
-    
-    print(f"Запуск PyInstaller...")
-    
+    print('Running PyInstaller...')
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
         if result.returncode == 0:
             exe_path = 'dist/LoLVoiceChat.exe'
             if os.path.exists(exe_path):
                 size = os.path.getsize(exe_path) / (1024 * 1024)
-                print(f"✅ EXE создан: {exe_path} ({size:.1f} MB)")
+                print(f'✅ EXE created: {exe_path} ({size:.1f} MB)')
                 return True
             else:
-                print("❌ EXE файл не найден")
+                print('❌ EXE file not found')
                 return False
         else:
-            print("❌ Ошибка PyInstaller:")
+            print('❌ PyInstaller error:')
             if result.stderr:
                 print(result.stderr[-1000:])
             return False
-            
     except subprocess.TimeoutExpired:
-        print("❌ Сборка заняла слишком много времени")
+        print('❌ Build took too long')
         return False
     except Exception as e:
-        print(f"❌ Ошибка сборки: {e}")
+        print(f'❌ Build error: {e}')
         return False
 
+
 def create_package():
-    """Создание пакета"""
-    print("Создание пакета...")
-    
-    package_dir = "dist/LoLVoiceChat_WebView"
+    """Create package without .env file."""
+    print('Creating package...')
+    package_dir = 'dist/LoLVoiceChat_WebView'
     os.makedirs(package_dir, exist_ok=True)
-    
-    # Копируем EXE
-    exe_src = "dist/LoLVoiceChat.exe"
+    # Copy EXE
+    exe_src = 'dist/LoLVoiceChat.exe'
     if os.path.exists(exe_src):
-        shutil.copy2(exe_src, os.path.join(package_dir, "LoLVoiceChat.exe"))
-        print("✅ EXE скопирован")
+        shutil.copy2(exe_src, os.path.join(package_dir, 'LoLVoiceChat.exe'))
+        print('✅ EXE copied')
     else:
-        print("❌ EXE не найден")
+        print('❌ EXE not found')
         return False
-    
-    # Копируем .env
-    if os.path.exists('.env'):
-        shutil.copy2('.env', package_dir)
-        print("✅ .env скопирован")
-    
-    # Создаем батник
+    print('✅ .env embedded in EXE (not copied separately)')
+    # Create batch file
     bat_content = """@echo off
 chcp 65001 >nul
 title LoL Voice Chat (WebView)
@@ -193,98 +236,100 @@ echo ========================================
 echo    LoL Voice Chat - Desktop App
 echo ========================================
 echo.
-echo Запуск приложения...
-echo Ожидайте 5-10 секунд...
+echo Starting application...
+echo Please wait 5-10 seconds...
 echo.
 LoLVoiceChat.exe
 echo.
-echo Приложение запущено!
-echo Окно должно открыться автоматически.
+echo Application started!
+echo Window should open automatically.
 pause
 """
-    
-    with open(os.path.join(package_dir, "Start.bat"), "w", encoding="utf-8") as f:
+    bat_path = os.path.join(package_dir, 'Start.bat')
+    with open(bat_path, 'w', encoding='utf-8') as f:
         f.write(bat_content)
-    print("✅ Start.bat создан")
-    
-    # Создаем README
+    print('✅ Start.bat created')
+    # Create README
     readme_content = """# LoL Voice Chat - Desktop Application
 
-## Установка
-1. Распакуйте все файлы в одну папку
-2. Запустите Start.bat или LoLVoiceChat.exe
+## Installation
+1. Extract all files to one folder
+2. Run Start.bat or LoLVoiceChat.exe
 
-## Особенности
-- ✅ Встроенный интерфейс (не требуется браузер)
-- ✅ Без консоли
-- ✅ Автоматический запуск сервера
-- ✅ Полный функционал голосового чата
+## Features
+- ✅ Built-in interface (no browser required)
+- ✅ No console window
+- ✅ Automatic server startup
+- ✅ Full voice chat functionality
 
-## Первый запуск
-1. Приложение откроет окно с интерфейсом
-2. Привяжите Discord аккаунт
-3. Запустите League of Legends
-4. Присоединяйтесь к играм!
+## First launch
+1. Application will open window with interface
+2. Link Discord account
+3. Launch League of Legends
+4. Join games!
 
-## Устранение проблем
-- Если окно не открывается: проверьте файл lol_voice_chat.log
-- Убедитесь что .env файл присутствует
-- Проверьте настройки Discord бота
+## Troubleshooting
+- If window doesn't open: check lol_voice_chat.log file
 """
-    
-    with open(os.path.join(package_dir, "README.txt"), "w", encoding="utf-8") as f:
+    readme_path = os.path.join(package_dir, 'README.txt')
+    with open(readme_path, 'w', encoding='utf-8') as f:
         f.write(readme_content)
-    print("✅ README создан")
-    
-    # Создаем ZIP
+    print('✅ README created')
+    # Create ZIP
     import datetime
-    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    zip_name = f"dist/LoLVoiceChat_WebView_{date_str}"
-    
+    date_str = datetime.datetime.now().strftime('%Y%m%d_%H%M')
+    zip_name = f'dist/LoLVoiceChat_WebView_{date_str}'
     shutil.make_archive(zip_name, 'zip', package_dir)
-    print(f"✅ ZIP создан: {zip_name}.zip")
-    
+    print(f'✅ ZIP created: {zip_name}.zip')
     return True
 
+
+def cleanup_temp_files():
+    """Clean up temporary encryption files."""
+    temp_files = ['app/encrypted_env.py']
+    for file in temp_files:
+        if os.path.exists(file):
+            os.remove(file)
+            print(f'Cleaned up: {file}')
+
+
 def main():
-    """Главная функция"""
-    print("🎮 Сборка LoL Voice Chat с WebView")
-    print("=" * 50)
-    
-    # Проверка файлов
+    """Main function."""
+    print('🎮 Building LoL Voice Chat with WebView')
+    print('=' * 50)
+    # Check required files
     required_files = ['webview_app.py', '.env', 'app', 'static']
     for f in required_files:
         if not os.path.exists(f):
-            print(f"❌ Отсутствует: {f}")
+            print(f'❌ Missing: {f}')
             return
-    
-    # Очистка
     clean_build()
-    
-    # Создание hooks
     create_hooks()
-    
-    # Сборка
-    if not build_with_pyinstaller():
-        print("❌ Сборка не удалась")
+    # Encrypt .env before building
+    if not encrypt_env_file():
+        print('❌ Failed to encrypt .env file')
         return
-    
-    # Пакет
+    if not build_with_pyinstaller():
+        print('❌ Build failed')
+        cleanup_temp_files()
+        return
     if not create_package():
-        print("⚠️  Ошибка создания пакета")
-    
-    print("\n✅ Сборка завершена!")
-    print("\n📁 Результаты в dist/:")
+        print('⚠️  Package creation error')
+    # Clean up temporary files
+    cleanup_temp_files()
+    print('\n✅ Build completed!')
+    print('\n📁 Results in dist/:')
     for item in os.listdir('dist'):
         path = os.path.join('dist', item)
         if os.path.isfile(path):
             size = os.path.getsize(path) / (1024 * 1024)
-            print(f"  📄 {item} ({size:.1f} MB)")
+            print(f'  📄 {item} ({size:.1f} MB)')
         else:
-            print(f"  📁 {item}")
-    
-    print("\n🚀 Для тестирования: dist/LoLVoiceChat_WebView/Start.bat")
-    print("=" * 50)
+            print(f'  📁 {item}')
+    print('\n🚀 For testing: dist/LoLVoiceChat_WebView/Start.bat')
+    print('🔒 .env file is encrypted and embedded in EXE')
+    print('=' * 50)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()

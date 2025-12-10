@@ -1,9 +1,12 @@
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import List, Optional, Dict, Any
+
+from pydantic import BaseModel
 
 
 class Player(BaseModel):
+    """Represents a player in a match."""
+
     summoner_id: str
     summoner_name: str
     champion_id: int
@@ -11,6 +14,8 @@ class Player(BaseModel):
 
 
 class MatchData(BaseModel):
+    """Represents match data."""
+
     match_id: str
     players: List[Player]
     game_mode: str
@@ -18,6 +23,8 @@ class MatchData(BaseModel):
 
 
 class VoiceRoom(BaseModel):
+    """Represents a voice room for a match."""
+
     room_id: str
     match_id: str
     players: List[str]
