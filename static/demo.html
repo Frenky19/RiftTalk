@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -481,62 +481,62 @@
     <div class="container">
         <header>
             <h1>🎮 LoL Auto Voice Chat - Demo</h1>
-            <p>Автоматическое создание голосовых комнат при выборе чемпионов</p>
+            <p>Automatic voice room creation during champion selection</p>
         </header>
         
         <div class="demo-info" id="demoInfo">
-            <strong>💡 Статус:</strong> Загрузка...
+            <strong>💡 Status:</strong> Loading...
         </div>
         
         <div class="auto-refresh" id="autoRefresh">
-            🔄 Автообновление статуса каждые 10 секунд
+            🔄 Auto-refreshing status every 10 seconds
         </div>
 
-        <!-- Автоматический workflow -->
+        <!-- Automatic workflow -->
         <div class="auto-voice-flow">
-            <h3>🔄 Автоматический Workflow</h3>
+            <h3>🔄 Automatic Workflow</h3>
             <div class="security-note">
-                <strong>🎯 НОВАЯ ФУНКЦИЯ:</strong> Голосовые комнаты создаются автоматически при входе в выбор чемпионов!
+                <strong>🎯 NEW FEATURE:</strong> Voice rooms are created automatically when entering champion selection!
             </div>
             
             <div class="flow-steps">
                 <div class="flow-step" id="step1">
                     <div class="step-number">1</div>
-                    <div class="step-title">Запуск League of Legends</div>
-                    <div class="step-description">LCU подключен к клиенту</div>
+                    <div class="step-title">Launch League of Legends</div>
+                    <div class="step-description">LCU connected to client</div>
                 </div>
                 
                 <div class="flow-step" id="step2">
                     <div class="step-number">2</div>
-                    <div class="step-title">Выбор чемпионов (ChampSelect)</div>
-                    <div class="step-description">Автоматическое создание комнат</div>
+                    <div class="step-title">Champion Selection (ChampSelect)</div>
+                    <div class="step-description">Automatic room creation</div>
                 </div>
                 
                 <div class="flow-step" id="step3">
                     <div class="step-number">3</div>
-                    <div class="step-title">Начало игры (InProgress)</div>
-                    <div class="step-description">Автоназначение на команды</div>
+                    <div class="step-title">Game Start (InProgress)</div>
+                    <div class="step-description">Auto team assignment</div>
                 </div>
                 
                 <div class="flow-step" id="step4">
                     <div class="step-number">4</div>
-                    <div class="step-title">Конец игры (EndOfGame)</div>
-                    <div class="step-description">Автоочистка комнат</div>
+                    <div class="step-title">Game End (EndOfGame)</div>
+                    <div class="step-description">Automatic room cleanup</div>
                 </div>
             </div>
 
             <div class="event-log" id="eventLog">
-                <div class="log-entry info">Журнал событий LCU...</div>
+                <div class="log-entry info">LCU event log...</div>
             </div>
 
-            <button onclick="clearEventLog()" class="warning">Очистить журнал</button>
+            <button onclick="clearEventLog()" class="warning">Clear Log</button>
             <button onclick="testChampSelectDebug()" class="success">Debug: Champ Select Data</button>
         </div>
 
-        <!-- Статус аутентификации -->
+        <!-- Authentication status -->
         <div class="auth-status" id="authStatus" style="display: none;">
-            <h3>🔑 Статус аутентификации</h3>
-            <div id="authStatusContent">Загрузка...</div>
+            <h3>🔑 Authentication Status</h3>
+            <div id="authStatusContent">Loading...</div>
         </div>
         
         <div class="status-panel">
@@ -594,48 +594,48 @@
             </div>
         </div>
 
-        <!-- Управление Discord пользователями -->
+        <!-- Discord user management -->
         <div class="advanced-controls">
-            <h3>👤 Управление Discord пользователями</h3>
+            <h3>👤 Discord User Management</h3>
             
             <div class="input-group">
                 <label for="discordUserIdInput">Discord User ID:</label>
-                <input type="text" id="discordUserIdInput" placeholder="Введите ваш Discord ID">
+                <input type="text" id="discordUserIdInput" placeholder="Enter your Discord ID">
                 <div style="margin-top: 10px;">
-                    <button onclick="saveDiscordUser()" class="success">Сохранить Discord ID (в Redis)</button>
-                    <button onclick="clearDiscordUser()" class="warning">Очистить</button>
-                    <button onclick="verifyDiscordUser()">Проверить пользователя</button>
-                    <button onclick="checkLinkedAccount()">Проверить привязку</button>
+                    <button onclick="saveDiscordUser()" class="success">Save Discord ID (to Redis)</button>
+                    <button onclick="clearDiscordUser()" class="warning">Clear</button>
+                    <button onclick="verifyDiscordUser()">Verify User</button>
+                    <button onclick="checkLinkedAccount()">Check Link</button>
                     <button onclick="fixRedisKeys()" class="warning">🔧 Fix Redis Keys</button>
                 </div>
             </div>
             
             <div class="user-info" id="currentUserInfo" style="display: none;">
-                <strong>Текущий пользователь:</strong> 
+                <strong>Current User:</strong> 
                 <span id="currentUserId"></span>
                 <br>
-                <small>ID сохранен в localStorage</small>
+                <small>ID saved in localStorage</small>
             </div>
 
             <div class="user-info" id="serverUserInfo" style="display: none;">
-                <strong>Привязанный Discord (сервер):</strong> 
+                <strong>Linked Discord (server):</strong> 
                 <span id="serverUserId"></span>
                 <br>
-                <small>ID сохранен в Redis</small>
+                <small>ID saved in Redis</small>
             </div>
             
             <div class="discord-help">
-                <strong>💡 Как найти Discord ID:</strong>
+                <strong>💡 How to find Discord ID:</strong>
                 <ol>
-                    <li>Откройте Discord</li>
-                    <li>Перейдите в Настройки → Дополнительно</li>
-                    <li>Включите "Режим разработчика"</li>
-                    <li>Правой кнопкой по вашему аватару → "Копировать ID пользователя"</li>
+                    <li>Open Discord</li>
+                    <li>Go to Settings → Advanced</li>
+                    <li>Enable "Developer Mode"</li>
+                    <li>Right-click your avatar → "Copy User ID"</li>
                 </ol>
             </div>
         </div>
 
-        <!-- Основные контролы -->
+        <!-- Main controls -->
         <div class="controls">
             <button onclick="testEndpoint('/')">Test Root Endpoint</button>
             <button onclick="testEndpoint('/health')">Test Health Check</button>
@@ -650,17 +650,17 @@
             <button onclick="cleanupExpiredRooms()" class="warning">🧹 Cleanup Expired Rooms</button>
         </div>
 
-        <!-- Ручное управление (для тестирования) -->
+        <!-- Manual control (for testing) -->
         <div class="team-assignment">
-            <h3>🎯 Ручное управление (для тестирования)</h3>
+            <h3>🎯 Manual Control (for testing)</h3>
             <div class="security-note">
-                <strong>💡 Примечание:</strong> В автоматическом режиме эти шаги выполняются автоматически. 
-                Используйте ручное управление только для тестирования.
+                <strong>💡 Note:</strong> In automatic mode, these steps are performed automatically. 
+                Use manual control only for testing.
             </div>
             
             <div class="input-group">
-                <label for="matchIdInput">Match ID (автозаполняется при создании комнаты):</label>
-                <input type="text" id="matchIdInput" placeholder="Введите match_id или он заполнится автоматически">
+                <label for="matchIdInput">Match ID (auto-filled when creating room):</label>
+                <input type="text" id="matchIdInput" placeholder="Enter match_id or it will auto-fill">
             </div>
             
             <div>
@@ -671,14 +671,14 @@
             </div>
 
             <div class="match-id-display" id="currentMatchId" style="display: none;">
-                <strong>Текущий Match ID:</strong> <span id="matchIdValue"></span>
+                <strong>Current Match ID:</strong> <span id="matchIdValue"></span>
             </div>
         </div>
 
-        <!-- Список активных комнат -->
+        <!-- Active rooms list -->
         <div class="advanced-controls">
-            <h3>📊 Активные голосовые комнаты</h3>
-            <button onclick="getActiveRooms()">Обновить список</button>
+            <h3>📊 Active Voice Rooms</h3>
+            <button onclick="getActiveRooms()">Refresh List</button>
             <div id="activeRoomsList" class="rooms-list">
                 <div class="loading">
                     <div class="spinner"></div>
@@ -705,13 +705,13 @@
             checkAllStatuses();
             getActiveRooms();
             loadDiscordUser();
-            // Автоматическое обновление статуса каждые 10 секунд
+            // Automatic status refresh every 10 seconds
             refreshInterval = setInterval(checkAllStatuses, 10000);
-            // Мониторинг событий LCU каждые 5 секунд
+            // LCU event monitoring every 5 seconds
             setInterval(checkLCUEvents, 5000);
         });
 
-        // Автоматическая аутентификация
+        // Automatic authentication
         async function autoAuthenticate() {
             try {
                 const response = await fetch(`${API_BASE}/api/auth/auto-auth`);
@@ -721,21 +721,21 @@
                     currentToken = data.access_token;
                     console.log(`✅ Auto-authenticated as: ${data.summoner_name} (Source: ${data.source})`);
                     
-                    // Обновляем интерфейс
+                    // Update UI
                     updateAuthStatus(data);
                     
                     if (data.source === 'lcu_auto') {
-                        addEventLog(`✅ Автоматическая аутентификация через LCU: ${data.summoner_name}`, 'success');
+                        addEventLog(`✅ Auto-authenticated via LCU: ${data.summoner_name}`, 'success');
                     } else {
-                        addEventLog(`🔶 Демо-режим: ${data.summoner_name}`, 'warning');
+                        addEventLog(`🔶 Demo mode: ${data.summoner_name}`, 'warning');
                     }
 
-                    // Проверяем привязанный аккаунт
+                    // Check linked account
                     checkLinkedAccount();
                 }
             } catch (error) {
                 console.log('Auto-auth failed:', error);
-                addEventLog('❌ Ошибка автоматической аутентификации', 'error');
+                addEventLog('❌ Auto-authentication error', 'error');
             }
         }
 
@@ -749,9 +749,9 @@
                     showResult('Auto Token', {
                         access_token: data.access_token,
                         auto_generated: data.auto_generated,
-                        note: 'Токен сгенерирован автоматически при запуске приложения'
+                        note: 'Token automatically generated when application starts'
                     }, true);
-                    addEventLog('✅ Получен автоматический токен', 'success');
+                    addEventLog('✅ Got auto token', 'success');
                 }
             } catch (error) {
                 showResult('Auto Token', {error: error.message}, false);
@@ -764,14 +764,14 @@
             
             authStatus.style.display = 'block';
             authContent.innerHTML = `
-                <div><strong>Имя:</strong> ${authData.summoner_name}</div>
+                <div><strong>Name:</strong> ${authData.summoner_name}</div>
                 <div><strong>ID:</strong> ${authData.summoner_id}</div>
-                <div><strong>Источник:</strong> ${authData.source === 'lcu_auto' ? 'LCU (авто)' : 'Демо-режим'}</div>
-                <div><strong>Статус:</strong> ✅ Аутентифицирован</div>
+                <div><strong>Source:</strong> ${authData.source === 'lcu_auto' ? 'LCU (auto)' : 'Demo mode'}</div>
+                <div><strong>Status:</strong> ✅ Authenticated</div>
             `;
         }
 
-        // Новые функции для автоматического workflow
+        // New functions for automatic workflow
         function addEventLog(message, type = 'info') {
             const timestamp = new Date().toLocaleTimeString();
             const logEntry = {
@@ -803,7 +803,7 @@
         function clearEventLog() {
             eventLog = [];
             updateEventLogDisplay();
-            addEventLog('Журнал очищен', 'info');
+            addEventLog('Log cleared', 'info');
         }
 
         async function checkLCUEvents() {
@@ -821,7 +821,7 @@
                     const newPhase = data.game_phase;
                     
                     if (newPhase && newPhase !== currentGamePhase) {
-                        addEventLog(`🎮 Фаза игры изменилась: ${currentGamePhase} → ${newPhase}`, 'success');
+                        addEventLog(`🎮 Game phase changed: ${currentGamePhase} → ${newPhase}`, 'success');
                         currentGamePhase = newPhase;
                         updateWorkflowSteps(newPhase);
                     }
@@ -832,12 +832,12 @@
         }
 
         function updateWorkflowSteps(currentPhase) {
-            // Сброс всех шагов
+            // Reset all steps
             document.querySelectorAll('.flow-step').forEach(step => {
                 step.className = 'flow-step';
             });
             
-            // Активация шагов в зависимости от фазы
+            // Activate steps based on phase
             const step1 = document.getElementById('step1');
             const step2 = document.getElementById('step2');
             const step3 = document.getElementById('step3');
@@ -880,7 +880,7 @@
                 });
                 const data = await response.json();
                 
-                // Показать результат в специальном блоке
+                // Show result in special block
                 const resultElement = document.getElementById('champSelectDebugResult');
                 const contentElement = document.getElementById('champSelectDebugContent');
                 if (response.ok) {
@@ -890,7 +890,7 @@
                     
                     if (data.champ_select_debug && data.champ_select_debug.champ_select_data) {
                         const csData = data.champ_select_debug.champ_select_data;
-                        addEventLog(`🎯 Данные выбора чемпионов: ${csData.players ? csData.players.length : 0} игроков`, 'success');
+                        addEventLog(`🎯 Champion select data: ${csData.players ? csData.players.length : 0} players`, 'success');
                     }
                 } else {
                     showResult('Champ Select Debug', data, false);
@@ -901,13 +901,13 @@
             }
         }
 
-        // Основные функции
+        // Main functions
         async function checkAllStatuses() {
             await checkApiStatus();
             await checkHealthStatus();
-            // Обновляем время последнего обновления
+            // Update last refresh time
             document.getElementById('autoRefresh').innerHTML = 
-                `🔄 Автообновление статуса (последнее: ${new Date().toLocaleTimeString()})`;
+                `🔄 Auto-refreshing status (last: ${new Date().toLocaleTimeString()})`;
         }
         
         async function checkApiStatus() {
@@ -930,7 +930,7 @@
                 const data = await response.json();
                 
                 // Update demo info message
-                document.getElementById('demoInfo').innerHTML = `<strong>💡 Статус:</strong> ${data.message}`;
+                document.getElementById('demoInfo').innerHTML = `<strong>💡 Status:</strong> ${data.message}`;
                 
                 // Update Redis status
                 const redisStatus = data.services.redis;
@@ -1074,7 +1074,7 @@
                         warning: 'This uses test_player. For real matches, use Real Authentication.'
                     }, true);
                     
-                    // Проверяем привязанный аккаунт после аутентификации
+                    // Check linked account after authentication
                     checkLinkedAccount();
                 } else {
                     showResult('Basic Authentication', data, false);
@@ -1103,7 +1103,7 @@
                         message: `Authenticated as ${data.summoner_name} (ID: ${data.summoner_id})`
                     }, true);
                     
-                    // Проверяем привязанный аккаунт после аутентификации
+                    // Check linked account after authentication
                     checkLinkedAccount();
                 } else {
                     showResult('Real Authentication (LCU)', data, false);
@@ -1129,18 +1129,18 @@
             const userId = document.getElementById('discordUserIdInput').value.trim();
             
             if (!userId) {
-                alert('⚠️ Пожалуйста, введите Discord User ID');
+                alert('⚠️ Please enter Discord User ID');
                 return;
             }
             
             // Basic Discord ID validation
             if (!/^\d{17,20}$/.test(userId)) {
-                alert('❌ Неверный формат Discord ID. Должен содержать 17-20 цифр.\n\nКак найти ID: Настройки → Дополнительно → Режим разработчика → ПКМ по аватару → Копировать ID');
+                alert('❌ Invalid Discord ID format. Must contain 17-20 digits.\n\nHow to find ID: Settings → Advanced → Developer Mode → Right-click avatar → Copy User ID');
                 return;
             }
             
             if (!currentToken) {
-                alert('❌ Сначала выполните аутентификацию (Test Authentication)');
+                alert('❌ First perform authentication (Test Authentication)');
                 return;
             }
 
@@ -1159,12 +1159,12 @@
                 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Ошибка при сохранении на сервере');
+                    throw new Error(errorData.detail || 'Server save error');
                 }
                 
                 const data = await response.json();
                 
-                // Сохраняем в localStorage для удобства
+                // Save to localStorage for convenience
                 currentDiscordUserId = userId;
                 localStorage.setItem('discordUserId', userId);
                 
@@ -1175,12 +1175,12 @@
                     user_id: userId,
                     status: 'saved',
                     server_response: data,
-                    note: 'Discord ID сохранен в Redis на сервере'
+                    note: 'Discord ID saved to Redis on server'
                 }, true);
                 
                 console.log('✅ Discord user saved to Redis:', userId);
                 
-                // Проверяем привязку
+                // Check link
                 checkLinkedAccount();
                 
             } catch (error) {
@@ -1193,7 +1193,7 @@
             
             if (!currentToken) {
                 console.log("❌ No token available");
-                alert('❌ Сначала выполните аутентификацию (Test Authentication)');
+                alert('❌ First perform authentication (Test Authentication)');
                 return;
             }
 
@@ -1277,7 +1277,7 @@
             
             showResult('Discord User Cleared', {
                 status: 'cleared',
-                note: 'Discord ID удален из localStorage'
+                note: 'Discord ID removed from localStorage'
             }, true);
         }
 
@@ -1298,7 +1298,7 @@
         function requireDiscordUser() {
             const userId = getCurrentDiscordUser();
             if (!userId) {
-                alert('❌ Сначала сохраните ваш Discord User ID в разделе "Управление Discord пользователями"');
+                alert('❌ First save your Discord User ID in "Discord User Management" section');
                 return null;
             }
             return userId;
@@ -1352,11 +1352,11 @@
                 // Update LCU status display
                 updateLCUStatusDisplay(data);
                 showResult('LCU Status', data, response.status === 200);
-                addEventLog('✅ Проверка статуса LCU выполнена', 'success');
+                addEventLog('✅ LCU status check completed', 'success');
                 
             } catch (error) {
                 showResult('LCU Status', {error: error.message}, false);
-                addEventLog('❌ Ошибка проверки статуса LCU', 'error');
+                addEventLog('❌ LCU status check error', 'error');
             }
         }
 
@@ -1510,7 +1510,7 @@
                 });
                 const data = await response.json();
                 
-                // Сохраняем match_id для последующих операций
+                // Save match_id for subsequent operations
                 if (data.match_id) {
                     lastMatchId = data.match_id;
                     document.getElementById('matchIdInput').value = lastMatchId;
@@ -1520,7 +1520,7 @@
                 
                 showResult('Voice Room Creation', data, response.status === 200);
                 
-                // Обновляем список активных комнат
+                // Update active rooms list
                 getActiveRooms();
                 
             } catch (error) {
@@ -1557,7 +1557,7 @@
                 });
                 const data = await response.json();
                 
-                // Сохраняем match_id для последующих операций
+                // Save match_id for subsequent operations
                 if (data.match_id) {
                     lastMatchId = data.match_id;
                     document.getElementById('matchIdInput').value = lastMatchId;
@@ -1572,7 +1572,7 @@
                 
                 showResult(resultMessage, data, response.status === 200);
                 
-                // Обновляем список активных комнат
+                // Update active rooms list
                 getActiveRooms();
                 
             } catch (error) {
@@ -1597,7 +1597,7 @@
                     }
                 }
 
-                // Автоматическое назначение на команду
+                // Automatic team assignment
                 const assignResponse = await fetch(`${API_BASE}/api/discord/auto-assign-team?match_id=${matchId}`, {
                     method: 'POST',
                     headers: {
@@ -1612,7 +1612,7 @@
                 
                 const data = await assignResponse.json();
                 
-                // Теперь данные содержат только одну ссылку - на команду пользователя
+                // Now data contains only one link - to user's team
                 showResult(`Auto Assign Team for ${matchId}`, data, true);
                 
             } catch (error) {
@@ -1644,7 +1644,7 @@
                 const data = await response.json();
                 showResult(`End Voice Chat for ${matchId}`, data, response.status === 200);
                 
-                // Обновляем список активных комнат
+                // Update active rooms list
                 getActiveRooms();
                 
             } catch (error) {
@@ -1680,7 +1680,7 @@
         }
 
         async function forceCleanup() {
-            if (!confirm('⚠️ Вы уверены? Это отключит всех участников и удалит ВСЕ голосовые комнаты!')) {
+            if (!confirm('⚠️ Are you sure? This will disconnect all participants and delete ALL voice rooms!')) {
                 return;
             }
 
@@ -1702,7 +1702,7 @@
                 const data = await response.json();
                 showResult('Force Cleanup All Matches', data, response.status === 200);
                 
-                // Обновляем список активных комнат
+                // Update active rooms list
                 getActiveRooms();
                 
             } catch (error) {
@@ -1743,7 +1743,7 @@
             const container = document.getElementById('activeRoomsList');
             
             if (data.active_rooms && data.active_rooms.length > 0) {
-                let html = `<h4>Активные комнаты (${data.count}):</h4>`;
+                let html = `<h4>Active rooms (${data.count}):</h4>`;
                 
                 data.active_rooms.forEach(room => {
                     html += `
@@ -1762,7 +1762,7 @@
                 
                 container.innerHTML = html;
             } else {
-                container.innerHTML = '<p>🚫 Нет активных голосовых комнат</p>';
+                container.innerHTML = '<p>🚫 No active voice rooms</p>';
             }
         }
 
@@ -1787,7 +1787,7 @@
                 const data = await response.json();
                 showResult('Cleanup Expired Rooms', data, response.status === 200);
                 
-                // Обновляем список активных комнат
+                // Update active rooms list
                 setTimeout(() => getActiveRooms(), 1000);
             } catch (error) {
                 showResult('Cleanup Expired Rooms', {error: error.message}, false);
@@ -1795,11 +1795,11 @@
         }
 
 
-        // Вспомогательные функции
+        // Helper functions
         function getMatchId() {
             const input = document.getElementById('matchIdInput').value;
             if (!input) {
-                alert('⚠️ Пожалуйста, введите Match ID или создайте новую комнату');
+                alert('⚠️ Please enter Match ID or create a new room');
                 return null;
             }
             return input;
@@ -1826,7 +1826,7 @@
             await endVoiceChat();
         }
 
-        // Это кусок для теста
+        // Debug session data
         async function debugSessionData() {
             showLoading('results');
             try {
@@ -1865,7 +1865,7 @@
                 const data = await response.json();
                 showResult('Emergency Fix Teams', data, response.status === 200);
                 
-                // После фикса пробуем автоназначение снова
+                // After fix, try auto-assignment again
                 setTimeout(() => autoAssignTeam(), 1000);
             } catch (error) {
                 showResult('Emergency Fix Teams', {error: error.message}, false);
@@ -1893,7 +1893,6 @@
                 showResult('Debug Team Assignment', {error: error.message}, false);
             }
         }
-        // Тут тест заканчивается
 
         async function autoFixTeams() {
             const matchId = getMatchId();
@@ -1914,7 +1913,7 @@
                 const data = await response.json();
                 showResult('Auto Fix Teams', data, response.status === 200);
                 
-                // После исправления пробуем автоназначение
+                // After fixing, try auto-assignment
                 if (data.auto_fixed) {
                     setTimeout(() => autoAssignTeam(), 1000);
                 }
@@ -1934,13 +1933,13 @@
                 <small>${new Date().toLocaleTimeString()}</small>
             `;
             
-            // Специальное отображение для автоматического назначения
+            // Special display for auto assignment
             if (data.team_name && data.discord_invite_url) {
                 let discordInfo = `
                     <div class="discord-info">
-                        <h4>🎯 Автоматическое назначение на команду: ${data.team_name}</h4>
+                        <h4>🎯 Auto assigned to team: ${data.team_name}</h4>
                         <div class="discord-channel">
-                            <strong>Ваш голосовой канал:</strong> 
+                            <strong>Your voice channel:</strong> 
                             <a href="${data.discord_invite_url}" target="_blank" class="discord-link">
                                 ${data.discord_channel_name || data.discord_invite_url}
                             </a>
@@ -1949,12 +1948,12 @@
                             </button>
                         </div>
                         <div class="discord-help">
-                            <strong>💡 Что произошло:</strong>
+                            <strong>💡 What happened:</strong>
                             <ol>
-                                <li>Система автоматически определила вашу команду: <strong>${data.team_name}</strong></li>
-                                <li>Вы были назначены на соответствующий голосовой канал</li>
-                                <li>Нажмите на ссылку выше чтобы присоединиться к каналу</li>
-                                <li>При входе в любой голосовой канал вы будете автоматически перемещены в канал вашей команды</li>
+                                <li>System automatically determined your team: <strong>${data.team_name}</strong></li>
+                                <li>You were assigned to corresponding voice channel</li>
+                                <li>Click link above to join channel</li>
+                                <li>When entering any voice channel you will be auto-moved to your team's channel</li>
                             </ol>
                         </div>
                     </div>
@@ -1962,12 +1961,12 @@
                 
                 content = content.replace('</small>', `</small>${discordInfo}`);
             }
-            // Отображение для создания комнаты (без ссылок)
+            // Display for room creation (no links)
             else if (data.note && data.note.includes('secured')) {
                 let securityInfo = `
                     <div class="security-note">
-                        <strong>🔒 Безопасность включена:</strong> Discord каналы созданы, но ссылки не показаны для безопасности.
-                        Используйте кнопку "Auto Assign to My Team" чтобы получить доступ к вашему каналу.
+                        <strong>🔒 Security enabled:</strong> Discord channels created, but links not shown for security.
+                        Use "Auto Assign to My Team" button to get access to your channel.
                     </div>
                 `;
                 content = content.replace('</small>', `</small>${securityInfo}`);
@@ -1999,7 +1998,7 @@
 
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
-                alert('Ссылка скопирована в буфер обмена!');
+                alert('Link copied to clipboard!');
             });
         }
     </script>

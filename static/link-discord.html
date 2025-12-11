@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Привязка Discord аккаунта - LoL Voice Chat</title>
+    <title>Link Discord Account - LoL Voice Chat</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" type="image/x-icon" href="static/logo/icon_L.ico">
     <style>
@@ -602,13 +602,13 @@
             }
         }
 
-        /* Убираем скроллбар на WebView */
+        /* Hide scrollbar in WebView */
         .container::-webkit-scrollbar {
             width: 0;
             background: transparent;
         }
         
-        /* Для Firefox */
+        /* For Firefox */
         .container {
             scrollbar-width: none;
         }
@@ -620,33 +620,33 @@
             <div class="logo">
                 <img src="static/logo/PNG_LOL.png" alt="LoL Voice Chat Logo">
             </div>
-            <h1>Привязка Discord аккаунта</h1>
-            <p class="subtitle">Свяжите ваш Discord аккаунт с League of Legends для автоматического подключения к голосовым каналам во время матчей</p>
+            <h1>Discord Account Linking</h1>
+            <p class="subtitle">Link your Discord account with League of Legends for automatic voice channel connection during matches</p>
         </div>
         
         <div class="user-info" id="currentUserInfo" style="display: none;">
-            <h3><i class="fas fa-user"></i> Текущий пользователь</h3>
+            <h3><i class="fas fa-user"></i> Current User</h3>
             <p id="userDetails"></p>
         </div>
         
         <div class="content-wrapper">
-            <!-- Левая колонка - основная функциональность -->
+            <!-- Left column - main functionality -->
             <div class="main-content">
-                <!-- Карточка привязки Discord -->
+                <!-- Discord linking card -->
                 <div class="card">
-                    <h3><i class="fas fa-link"></i> Привязка Discord аккаунта</h3>
+                    <h3><i class="fas fa-link"></i> Discord Account Linking</h3>
                     <form id="discordLinkForm">
                         <div class="form-group">
-                            <label for="discordId"><i class="fas fa-id-card"></i> Ваш Discord ID:</label>
+                            <label for="discordId"><i class="fas fa-id-card"></i> Your Discord ID:</label>
                             <input 
                                 type="text" 
                                 id="discordId" 
-                                placeholder="Введите ваш Discord ID (только цифры)"
+                                placeholder="Enter your Discord ID (numbers only)"
                                 required
                             >
                             <div id="changeDiscordContainer" style="display: none; margin-top: 10px;">
                                 <button type="button" id="changeDiscordBtn" class="btn change-btn">
-                                    <i class="fas fa-edit"></i> Изменить Discord ID
+                                    <i class="fas fa-edit"></i> Change Discord ID
                                 </button>
                             </div>
                             <div id="serverStatus" class="server-status" style="display: none;"></div>
@@ -654,118 +654,118 @@
                         
                         <div class="loading" id="loading">
                             <div class="spinner"></div>
-                            <p style="text-align: center; margin-top: 10px; color: var(--gray-dark);">Привязываем аккаунт...</p>
+                            <p style="text-align: center; margin-top: 10px; color: var(--gray-dark);">Linking account...</p>
                         </div>
                         
                         <button type="submit" class="btn" id="submitBtn">
-                            <i class="fas fa-link"></i> Привязать Discord аккаунт
+                            <i class="fas fa-link"></i> Link Discord Account
                         </button>
                     </form>
                     <div class="message" id="message"></div>
                 </div>
                 
-                <!-- Карточка статуса матча -->
+                <!-- Match status card -->
                 <div class="match-status" id="matchStatus">
-                    <h3><i class="fas fa-gamepad"></i> Статус матча</h3>
+                    <h3><i class="fas fa-gamepad"></i> Match Status</h3>
                     <p id="matchStatusText"></p>
                     <button class="refresh-btn" id="refreshMatchBtn">
-                        <i class="fas fa-sync-alt"></i> Обновить статус
+                        <i class="fas fa-sync-alt"></i> Refresh Status
                     </button>
                 </div>
 
-                <!-- Карточка голосового канала -->
+                <!-- Voice channel card -->
                 <div class="voice-channel-info" id="voiceChannelInfo">
-                    <h3><i class="fas fa-microphone-alt"></i> Голосовой канал вашей команды</h3>
-                    <p>Матч начался! Присоединяйтесь к голосовому каналу вашей команды:</p>
+                    <h3><i class="fas fa-microphone-alt"></i> Your Team's Voice Channel</h3>
+                    <p>The match has started! Join your team's voice channel:</p>
                     
                     <div class="action-buttons">
                         <a href="#" id="voiceInviteLink" class="voice-invite-link" target="_blank">
-                            <i class="fas fa-headset"></i> Присоединиться к голосовому каналу
+                            <i class="fas fa-headset"></i> Join Voice Channel
                         </a>
                         <button class="copy-btn" id="copyInviteBtn">
-                            <i class="far fa-copy"></i> Копировать ссылку
+                            <i class="far fa-copy"></i> Copy Link
                         </button>
                     </div>
                     
                     <div class="channel-details">
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label"><i class="fas fa-hashtag"></i> Канал:</span>
+                            <span class="channel-detail-label"><i class="fas fa-hashtag"></i> Channel:</span>
                             <span id="channelName"></span>
                         </div>
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label"><i class="fas fa-users"></i> Команда:</span>
+                            <span class="channel-detail-label"><i class="fas fa-users"></i> Team:</span>
                             <span id="teamName"></span>
                         </div>
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label"><i class="fas fa-flag"></i> Матч:</span>
+                            <span class="channel-detail-label"><i class="fas fa-flag"></i> Match:</span>
                             <span id="matchId"></span>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Правая колонка - справочная информация -->
+            <!-- Right column - help information -->
             <div class="sidebar">
-                <!-- Карточка помощи -->
+                <!-- Help card -->
                 <div class="help-section">
-                    <h3><i class="fas fa-question-circle"></i> Помощь и инструкции</h3>
+                    <h3><i class="fas fa-question-circle"></i> Help & Instructions</h3>
                     
                     <div class="instruction-steps">
                         <div class="instruction-step">
                             <div class="instruction-number">1</div>
                             <div class="instruction-text">
-                                <strong>Как найти Discord ID?</strong><br>
-                                Откройте Discord → Настройки → Дополнительно → Включите "Режим разработчика" → Правый клик на вашем аватаре → "Копировать ID пользователя"
+                                <strong>How to find Discord ID?</strong><br>
+                                Open Discord → Settings → Advanced → Enable "Developer Mode" → Right-click on your avatar → "Copy User ID"
                             </div>
                         </div>
                         
                         <div class="instruction-step">
                             <div class="instruction-number">2</div>
                             <div class="instruction-text">
-                                <strong>Присоединитесь к серверу</strong><br>
-                                Убедитесь, что вы находитесь на 
+                                <strong>Join our server</strong><br>
+                                Make sure you're in 
                                 <a href="https://discord.gg/UcfX74R4" target="_blank" class="discord-link">
-                                    <i class="fab fa-discord"></i> нашем Discord сервере
+                                    <i class="fab fa-discord"></i> Our Discord server
                                 </a>
                             </div>
                         </div>
                     </div>
                     
                     <div class="important-note">
-                        <h4><i class="fas fa-lightbulb"></i> Важно знать:</h4>
+                        <h4><i class="fas fa-lightbulb"></i> Important to know:</h4>
                         <ul style="margin-left: 20px; color: var(--gray-dark);">
-                            <li>Если нужно изменить Discord ID - нажмите кнопку "Изменить"</li>
-                            <li>Голосовые каналы создаются автоматически после начала матча</li>
-                            <li>Вы будете автоматически подключены к каналу вашей команды</li>
+                            <li>If you need to change Discord ID - click "Change" button</li>
+                            <li>Voice channels are created automatically after match starts</li>
+                            <li>You will be automatically connected to your team's channel</li>
                         </ul>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- Шаги процесса -->
+        <!-- Process steps -->
         <div class="steps">
             <div class="step">
                 <div class="step-number">1</div>
-                <div class="step-text">Введите Discord ID и привяжите аккаунт</div>
+                <div class="step-text">Enter Discord ID and link account</div>
             </div>
             <div class="step">
                 <div class="step-number">2</div>
-                <div class="step-text">Запустите League of Legends и присоединяйтесь к играм</div>
+                <div class="step-text">Launch League of Legends and join games</div>
             </div>
             <div class="step">
                 <div class="step-number">3</div>
-                <div class="step-text">После начала матча обновите статус</div>
+                <div class="step-text">After match starts, refresh status</div>
             </div>
             <div class="step">
                 <div class="step-number">4</div>
-                <div class="step-text">Присоединяйтесь к голосовому каналу вашей команды!</div>
+                <div class="step-text">Join your team's voice channel!</div>
             </div>
         </div>
     </div>
 
     <script>
-        // Элементы DOM
+        // DOM elements
         const form = document.getElementById('discordLinkForm');
         const discordIdInput = document.getElementById('discordId');
         const submitBtn = document.getElementById('submitBtn');
@@ -786,35 +786,35 @@
         const matchStatusText = document.getElementById('matchStatusText');
         const refreshMatchBtn = document.getElementById('refreshMatchBtn');
 
-        // Пытаемся получить информацию о текущем пользователе
+        // Try to get current user information
         async function loadCurrentUser() {
             try {
                 const response = await fetch('/api/auth/auto-auth');
                 if (response.ok) {
                     const data = await response.json();
                     if (data.summoner_name) {
-                        userDetails.textContent = `Игрок: ${data.summoner_name} (ID: ${data.summoner_id})`;
+                        userDetails.textContent = `Player: ${data.summoner_name} (ID: ${data.summoner_id})`;
                         currentUserInfo.style.display = 'block';
                         
-                        // Сохраняем токен для последующих запросов
+                        // Save token for subsequent requests
                         localStorage.setItem('authToken', data.access_token);
                         
-                        // Проверяем статус матча и голосовые каналы
+                        // Check match status and voice channels
                         checkMatchStatus(data.summoner_id);
                     }
                 }
             } catch (error) {
-                console.log('Не удалось получить информацию о пользователе автоматически');
+                console.log('Could not get user information automatically');
             }
         }
 
-        // Проверяем статус матча и голосовые каналы
+        // Check match status and voice channels
         async function checkMatchStatus(summonerId) {
             try {
                 const token = localStorage.getItem('authToken');
                 if (!token) return;
                 
-                // Пробуем новый эндпоинт
+                // Try new endpoint
                 const matchInfoResponse = await fetch(`/api/discord/match-status/${summonerId}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -825,7 +825,7 @@
                     const matchInfo = await matchInfoResponse.json();
                     updateMatchStatusUI(matchInfo);
                 } else if (matchInfoResponse.status === 404) {
-                    // Если эндпоинт не найден, пробуем старый эндпоинт
+                    // If endpoint not found, try old endpoint
                     console.log('match-status endpoint not found, trying user-match-info...');
                     const fallbackResponse = await fetch(`/api/discord/user-match-info/${summonerId}`, {
                         headers: {
@@ -843,44 +843,44 @@
                     showMatchStatusError();
                 }
             } catch (error) {
-                console.log('Не удалось проверить статус матча:', error);
+                console.log('Could not check match status:', error);
                 showMatchStatusError();
             }
         }
 
         function showMatchStatusError() {
             matchStatus.style.display = 'block';
-            matchStatusText.textContent = 'Не удалось проверить статус матча. Убедитесь, что League of Legends запущен.';
+            matchStatusText.textContent = 'Could not check match status. Make sure League of Legends is running.';
         }
 
-        // Обновляем UI в зависимости от статуса матча
+        // Update UI based on match status
         function updateMatchStatusUI(matchInfo) {
             matchStatus.style.display = 'block';
             
             if (matchInfo.in_progress && matchInfo.voice_channel) {
-                // Матч НАЧАЛСЯ (InProgress) и есть голосовой канал
-                matchStatusText.textContent = '✅ Матч начался! Ваш голосовой канал готов.';
+                // Match STARTED (InProgress) and voice channel is available
+                matchStatusText.textContent = '✅ Match started! Your voice channel is ready.';
                 displayVoiceChannelInfo(matchInfo);
             } else if (matchInfo.in_loading_screen) {
-                // Экран загрузки - не показываем ссылку
-                matchStatusText.textContent = '🔄 Идет загрузка матча... Голосовой канал будет доступен после начала матча.';
+                // Loading screen - don't show link
+                matchStatusText.textContent = '🔄 Match is loading... Voice channel will be available after match starts.';
                 voiceChannelInfo.style.display = 'none';
             } else if (matchInfo.in_champ_select) {
-                // Идет выбор чемпионов
-                matchStatusText.textContent = '🎯 Идет выбор чемпионов... Голосовой канал будет создан после начала матча.';
+                // Champion selection in progress
+                matchStatusText.textContent = '🎯 Champion selection... Voice channel will be created after match starts.';
                 voiceChannelInfo.style.display = 'none';
             } else if (matchInfo.match_id && !matchInfo.in_progress) {
-                // Матч найден, но еще не начался
-                matchStatusText.textContent = '⏳ Матч найден, но еще не начался. Голосовой канал будет доступен после начала матча.';
+                // Match found but not started yet
+                matchStatusText.textContent = '⏳ Match found, but not started yet. Voice channel will be available after match starts.';
                 voiceChannelInfo.style.display = 'none';
             } else {
-                // Нет активного матча
-                matchStatusText.textContent = '❌ Активный матч не найден. Запустите League of Legends и присоединитесь к игре.';
+                // No active match
+                matchStatusText.textContent = '❌ No active match found. Launch League of Legends and join a game.';
                 voiceChannelInfo.style.display = 'none';
             }
         }
 
-        // Отображаем информацию о голосовом канале (только после старта матча)
+        // Display voice channel information (only after match starts)
         function displayVoiceChannelInfo(matchInfo) {
             if (matchInfo.voice_channel && matchInfo.voice_channel.invite_url) {
                 voiceInviteLink.href = matchInfo.voice_channel.invite_url;
@@ -889,12 +889,12 @@
                 matchIdElement.textContent = matchInfo.match_id;
                 voiceChannelInfo.style.display = 'block';
                 
-                // Показываем уведомление о успешном создании канала
-                showMessage('🎉 Матч начался! Голосовой канал вашей команды готов. Присоединяйтесь!', 'success');
+                // Show notification about successful channel creation
+                showMessage('🎉 Match started! Your team\'s voice channel is ready. Join now!', 'success');
             }
         }
 
-        // Проверяем, есть ли уже привязанный Discord
+        // Check if Discord is already linked
         async function checkExistingLink() {
             try {
                 const token = localStorage.getItem('authToken');
@@ -909,46 +909,46 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data.discord_user_id) {
-                        showMessage(`✅ Discord аккаунт уже привязан: ${data.discord_user_id}`, 'success');
+                        showMessage(`✅ Discord account already linked: ${data.discord_user_id}`, 'success');
                         lockForm(data.discord_user_id);
-                        // Проверяем статус на сервере
+                        // Check server status
                         checkServerStatus(data.discord_user_id);
                     }
                 }
             } catch (error) {
-                console.log('Не удалось проверить привязанный аккаунт');
+                console.log('Could not check linked account');
             }
         }
 
-        // Функция для блокировки формы при привязанном аккаунте
+        // Function to lock form when account is linked
         function lockForm(discordId) {
             discordIdInput.value = discordId;
             discordIdInput.disabled = true;
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Аккаунт привязан';
+            submitBtn.textContent = 'Account linked';
             changeDiscordContainer.style.display = 'block';
         }
 
-        // Функция для разблокировки формы для изменения
+        // Function to unlock form for changes
         function unlockForm() {
             discordIdInput.disabled = false;
             discordIdInput.value = '';
             discordIdInput.focus();
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Привязать Discord аккаунт';
+            submitBtn.textContent = 'Link Discord Account';
             changeDiscordContainer.style.display = 'none';
             messageDiv.style.display = 'none';
             serverStatus.style.display = 'none';
             voiceChannelInfo.style.display = 'none';
         }
 
-        // Показ сообщений
+        // Show messages
         function showMessage(text, type) {
             messageDiv.textContent = text;
             messageDiv.className = `message ${type}`;
             messageDiv.style.display = 'block';
             
-            // Автоскрытие успешных сообщений
+            // Auto-hide success messages
             if (type === 'success') {
                 setTimeout(() => {
                     messageDiv.style.display = 'none';
@@ -956,12 +956,12 @@
             }
         }
 
-        // Валидация Discord ID
+        // Discord ID validation
         function isValidDiscordId(id) {
             return /^\d+$/.test(id) && id.length >= 17 && id.length <= 20;
         }
 
-        // Проверка статуса пользователя на сервере
+        // Check user status on server
         async function checkServerStatus(discordId) {
             if (!discordId || !isValidDiscordId(discordId)) return;
             
@@ -980,47 +980,47 @@
                     updateServerStatusUI(status);
                 }
             } catch (error) {
-                console.log('Не удалось проверить статус сервера');
+                console.log('Could not check server status');
             }
         }
 
-        // Обновление UI со статусом
+        // Update UI with status
         function updateServerStatusUI(status) {
             if (!status) return;
             
             serverStatus.style.display = 'block';
             
             if (status.on_server === true) {
-                serverStatus.innerHTML = '✅ Пользователь найден на сервере';
+                serverStatus.innerHTML = '✅ User found on server';
                 serverStatus.className = 'server-status success';
             } else if (status.on_server === false) {
-                let message = '❌ Пользователь не найден на сервере';
+                let message = '❌ User not found on server';
                 if (status.server_invite_available) {
-                    message += `<br><a href="${status.server_invite}" target="_blank" style="color: var(--primary); text-decoration: underline;">Присоединиться к серверу</a>`;
+                    message += `<br><a href="${status.server_invite}" target="_blank" style="color: var(--primary); text-decoration: underline;">Join server</a>`;
                 } else {
-                    message += '<br>Пожалуйста, присоединитесь к Discord серверу бота.';
+                    message += '<br>Please join the bot\'s Discord server.';
                 }
                 serverStatus.innerHTML = message;
                 serverStatus.className = 'server-status error';
             } else {
-                serverStatus.innerHTML = '⚠️ Не удалось проверить статус';
+                serverStatus.innerHTML = '⚠️ Could not check status';
                 serverStatus.className = 'server-status warning';
             }
         }
 
-        // Обработчик отправки формы
+        // Form submit handler
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const discordId = discordIdInput.value.trim();
             
-            // Валидация
+            // Validation
             if (!isValidDiscordId(discordId)) {
-                showMessage('❌ Пожалуйста, введите корректный Discord ID (только цифры, 17-20 символов)', 'error');
+                showMessage('❌ Please enter a valid Discord ID (numbers only, 17-20 characters)', 'error');
                 return;
             }
             
-            // Показываем загрузку
+            // Show loading
             loadingDiv.style.display = 'block';
             submitBtn.disabled = true;
             messageDiv.style.display = 'none';
@@ -1038,10 +1038,10 @@
                 }
                 
                 if (!token) {
-                    throw new Error('Не удалось аутентифицироваться. Запустите League of Legends и попробуйте снова.');
+                    throw new Error('Could not authenticate. Launch League of Legends and try again.');
                 }
 
-                // Отправляем как строку
+                // Send as string
                 const requestBody = {
                     discord_user_id: discordId
                 };
@@ -1058,15 +1058,15 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showMessage(`✅ ${data.message} (Сохранено: ${data.saved_value})`, 'success');
+                    showMessage(`✅ ${data.message} (Saved: ${data.saved_value})`, 'success');
                     
-                    // Блокируем форму после успешной привязки
+                    // Lock form after successful linking
                     lockForm(discordId);
                     
-                    // Проверяем статус на сервере
+                    // Check server status
                     checkServerStatus(discordId);
                     
-                    // Проверяем статус матча
+                    // Check match status
                     const userResponse = await fetch('/api/auth/auto-auth');
                     if (userResponse.ok) {
                         const userData = await userResponse.json();
@@ -1076,17 +1076,17 @@
                     }
                     
                 } else {
-                    // Обработка ошибок валидации
+                    // Handle validation errors
                     if (response.status === 422) {
-                        const errorDetail = data.detail || 'Ошибка валидации';
-                        throw new Error(`Ошибка валидации: ${errorDetail}`);
+                        const errorDetail = data.detail || 'Validation error';
+                        throw new Error(`Validation error: ${errorDetail}`);
                     } else {
                         throw new Error(data.detail || `HTTP error! status: ${response.status}`);
                     }
                 }
                 
             } catch (error) {
-                console.error('❌ Ошибка при привязке:', error);
+                console.error('❌ Linking error:', error);
                 showMessage(`❌ ${error.message}`, 'error');
                 submitBtn.disabled = false;
             } finally {
@@ -1094,13 +1094,13 @@
             }
         });
 
-        // Обработчик для кнопки изменения Discord ID
+        // Handler for change Discord ID button
         changeDiscordBtn.addEventListener('click', function() {
             unlockForm();
-            showMessage('✏️ Введите новый Discord ID', 'success');
+            showMessage('✏️ Enter new Discord ID', 'success');
         });
 
-        // Обработчик для кнопки обновления статуса матча
+        // Handler for refresh match status button
         refreshMatchBtn.addEventListener('click', function() {
             const token = localStorage.getItem('authToken');
             if (!token) return;
@@ -1110,43 +1110,43 @@
                 .then(data => {
                     if (data.summoner_id) {
                         checkMatchStatus(data.summoner_id);
-                        showMessage('🔄 Статус матча обновлен', 'success');
+                        showMessage('🔄 Match status updated', 'success');
                     }
                 })
                 .catch(error => {
-                    console.log('Ошибка при обновлении статуса матча');
+                    console.log('Error updating match status');
                 });
         });
 
-        // Обработчик для кнопки копирования ссылки
+        // Handler for copy link button
         copyInviteBtn.addEventListener('click', function() {
             const inviteUrl = voiceInviteLink.href;
             navigator.clipboard.writeText(inviteUrl).then(() => {
                 const originalText = copyInviteBtn.textContent;
-                copyInviteBtn.innerHTML = '<i class="fas fa-check"></i> Скопировано!';
+                copyInviteBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
                 setTimeout(() => {
-                    copyInviteBtn.innerHTML = '<i class="far fa-copy"></i> Копировать ссылку';
+                    copyInviteBtn.innerHTML = '<i class="far fa-copy"></i> Copy Link';
                 }, 2000);
             }).catch(err => {
-                console.error('Ошибка копирования: ', err);
+                console.error('Copy error: ', err);
             });
         });
 
-        // Валидация в реальном времени
+        // Real-time validation
         discordIdInput.addEventListener('input', function() {
             const value = this.value.trim();
             if (value && !isValidDiscordId(value)) {
                 this.style.borderColor = 'var(--danger)';
             } else {
                 this.style.borderColor = '#e1e5e9';
-                // Проверяем статус при валидном ID
+                // Check status when ID is valid
                 if (isValidDiscordId(value) && !this.disabled) {
                     checkServerStatus(value);
                 }
             }
         });
 
-        // Загружаем информацию при загрузке страницы
+        // Load information when page loads
         document.addEventListener('DOMContentLoaded', () => {
             loadCurrentUser();
             setTimeout(() => checkExistingLink(), 1000);
