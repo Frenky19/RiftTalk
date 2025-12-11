@@ -1,302 +1,292 @@
 # LoL Voice Chat Desktop App
 
-## 📋 Описание проекта
+## 📋 Project Overview
 
-Десктопное приложение для Windows, предоставляющее ингейм оверлей войсчат для League of Legends. После этапа выбора персонажей приложение автоматически помещает всех игроков из одной команды, установивших приложение, в отдельный войс-канал Discord, где они могут общаться на протяжении матча. По окончании матча все игроки автоматически покидают канал.
+A Windows desktop application that provides an in‑game voice chat overlay for League of Legends. After the champion-select phase, the app automatically places all players from the same team (who also have the app installed) into a dedicated Discord voice channel where they can communicate during the match. When the game ends, all players are removed from the channel automatically.
 
-## ✨ Особенности
+## ✨ Features
 
-- ✅ **Автоматическое создание войс-каналов** в Discord для команд
-- ✅ **Ингейм оверлей** с интуитивным интерфейсом
-- ✅ **Автоматическое подключение** к каналу после старта матча
-- ✅ **Автоматический выход** из канала после завершения матча
-- ✅ **Привязка аккаунтов** Discord и League of Legends
-- ✅ **Компактный интерфейс** без лишних элементов
-- ✅ **Готовый билд** для Windows (.exe)
+- ✅ **Automatic creation of Discord voice channels** for teams
+- ✅ **In-game overlay** with an intuitive interface
+- ✅ **Automatic connection** to the voice channel when the match starts
+- ✅ **Automatic disconnection** from the voice channel when the match ends
+- ✅ **Account linking** for Discord and League of Legends
+- ✅ **Compact interface** without unnecessary elements
+- ✅ **Ready-to-run Windows build** (.exe)
 
-## 🛠 Технологии
+## 🛠 Technologies
 
-| Категория | Технологии |
-|-----------|------------|
+| Category | Technologies |
+|----------|--------------|
 | **Backend** | Python, FastAPI, Uvicorn |
 | **Frontend** | HTML5, CSS3, JavaScript (ES6+) |
 | **Desktop** | PyWebView, PyInstaller |
-| **Интеграции** | Discord API, League of Legends LCU API |
-| **База данных** | In-Memory хранилище, Redis (опционально) |
-| **Аутентификация** | JWT, Passlib |
-| **Валидация** | Pydantic |
+| **Integrations** | Discord API, League of Legends LCU API |
+| **Database** | In-memory storage, Redis (optional) |
+| **Authentication** | JWT, Passlib |
+| **Validation** | Pydantic |
 
-## 📦 Установка и сборка
+## 📦 Installation & Build
 
-### Требования
+### Requirements
 
-- **ОС:** Windows 10/11 (64-bit)
-- **Python:** 3.8 или выше
-- **Discord:** Установленный и запущенный клиент
-- **League of Legends:** Установленная игра
+- **OS:** Windows 10/11 (64-bit)
+- **Python:** 3.8 or newer
+- **Discord:** Installed and running client
+- **League of Legends:** Installed game
 
-### Установка зависимостей
+### Clone repository
 
-```
-# Клонирование репозитория
+```bash
+# Clone repository
 git clone <repository-url>
 cd GameOverlay-voicechat
 ```
 
-### Установка зависимостей
+### Install dependencies
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
-### Настройка окружения
+### Configure environment
 
-1. Скопируйте файл .env.example в .env:
+1. Copy the example env file to `.env`:
 
-```
+```bash
 copy .env.example .env
 ```
 
-2. Отредактируйте файл .env:
+2. Edit the `.env` file with your values.
 
-### Сборка приложения
+### Build the application
 
-```
-# Сборка EXE файла
+```bash
+# Build EXE
 python build.py
 ```
 
-После успешной сборки в папке dist/ будут созданы:
+After a successful build the `dist/` folder will contain:
 
 ```
 dist/
-├── LoLVoiceChat.exe              # Исполняемый файл
-├── LoLVoiceChat/                 # Полный пакет приложения
-│   ├── LoLVoiceChat.exe          # Копия EXE файла
-│   ├── Start.bat                 # Скрипт запуска
-│   └── INFO.txt                  # Информация о приложении
-└── LoLVoiceChat_v1.0_YYYYMMDD_HHMM.zip  # ZIP архив для распространения
+├── LoLVoiceChat.exe              # Executable
+├── LoLVoiceChat/                 # Full application package
+│   ├── LoLVoiceChat.exe          # Copy of the EXE
+│   ├── Start.bat                 # Launch script
+│   └── INFO.txt                  # Application information
+└── LoLVoiceChat_v1.0_YYYYMMDD_HHMM.zip  # Distribution ZIP archive
 ```
 
-## Использование
+## 🚀 Usage
 
-### Запуск приложения
+### Running the application
 
-Способ 1: Через EXE файл
-Перейдите в папку dist/LoLVoiceChat/
+**Option 1: Using the EXE**  
+Go to `dist/LoLVoiceChat/` and run `LoLVoiceChat.exe`.
 
-Запустите LoLVoiceChat.exe
+**Option 2: Using the start script**  
+Go to `dist/LoLVoiceChat/` and run `Start.bat`.
 
-Способ 2: Через скрипт запуска
-Перейдите в папку dist/LoLVoiceChat/
+**Option 3: Development mode**
 
-Запустите Start.bat
-
-Способ 3: Для разработки
-
-```
-# Запуск сервера разработки
+```bash
+# Run development server
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-```
-# Запуск WebView приложения
+```bash
+# Run WebView app
 python webview_app.py
 ```
 
-### Процесс использования
+### How to use
 
-Шаг 1: Подготовка Discord
-Убедитесь, что Discord запущен
+#### Step 1: Prepare Discord
 
-Присоединитесь к серверу бота: https://discord.gg/UcfX74R4
+- Make sure Discord is running.
+- Join the bot server: https://discord.gg/UcfX74R4
+- Enable Developer Mode in Discord:
+  Settings → Advanced → Developer Mode → Enable
+- Get your Discord ID:
+  Right-click your avatar → Copy ID
 
-Включите режим разработчика в Discord:
+#### Step 2: Start the app
 
-Настройки → Дополнительно → Режим разработчика → Включить
+- Launch League of Legends.
+- Start LoL Voice Chat.
+- Enter your Discord ID in the input field.
+- Click **Link Discord Account**.
 
-Получите свой Discord ID:
+#### Step 3: Play
 
-Правый клик на вашем аватаре → Копировать ID пользователя
+- Join a game (Normal, Ranked, ARAM).
+- After the match starts, a connect button will appear in the app.
+- Click **Join Voice Channel**.
+- Communicate with your team during the match.
 
-Шаг 2: Запуск приложения
-Запустите League of Legends
+#### Step 4: After the match
 
-Запустите LoL Voice Chat
+- You will be automatically disconnected from the channel when the match ends.
+- The voice channel will be deleted automatically.
 
-Введите ваш Discord ID в поле ввода
-
-Нажмите "Привязать Discord аккаунт"
-
-Шаг 3: Игра
-Запустите LoL Voice Chat
-
-Введите ваш Discord ID в поле ввода
-
-Нажмите "Привязать Discord аккаунт"
-
-Присоединитесь к игре (нормальный матч, ранкед, ARAM)
-
-После начала матча в приложении появится кнопка подключения
-
-Нажмите "Присоединиться к голосовому каналу"
-
-Общайтесь с командой на протяжении матча
-
-Шаг 4: После матча
-По окончании матча вы автоматически покинете канал
-
-Канал будет автоматически удален
-
-## Структура проекта
+## 📁 Project Structure
 
 ```
 GameOverlay-voicechat/
-├── app/                          # Основное приложение FastAPI
+├── app/                          # FastAPI main application
 │   ├── __init__.py
-│   ├── main.py                   # Точка входа FastAPI
-│   ├── config.py                 # Конфигурация приложения
-│   ├── database.py               # Работа с базой данных
-│   ├── models.py                 # Модели данных Pydantic
-│   ├── schemas.py                # Схемы запросов/ответов
-│   ├── services/                 # Бизнес-логика
+│   ├── main.py                   # FastAPI entry point
+│   ├── config.py                 # Application configuration
+│   ├── database.py               # Database access
+│   ├── models.py                 # Pydantic data models
+│   ├── schemas.py                # Request/response schemas
+│   ├── services/                 # Business logic
 │   │   ├── __init__.py
-│   │   ├── discord_service.py    # Сервис работы с Discord
-│   │   ├── lol_service.py        # Сервис работы с LoL API
-│   │   └── voice_service.py      # Сервис голосовых каналов
-│   ├── endpoints/                # API эндпоинты
+│   │   ├── discord_service.py    # Discord integration service
+│   │   ├── lol_service.py        # League of Legends service
+│   │   └── voice_service.py      # Voice channel management
+│   ├── endpoints/                # API endpoints
 │   │   ├── __init__.py
-│   │   ├── auth.py               # Аутентификация
-│   │   ├── discord.py            # Discord интеграция
-│   │   ├── lol.py                # LoL интеграция
-│   │   └── voice.py              # Голосовые каналы
+│   │   ├── auth.py               # Authentication endpoints
+│   │   ├── discord.py            # Discord endpoints
+│   │   ├── lol.py                # LoL endpoints
+│   │   └── voice.py              # Voice endpoints
 │   └── middleware/               # Middleware
 │       ├── __init__.py
-│       └── demo_auth.py          # Middleware аутентификации
-├── static/                       # Статические файлы
-│   ├── logo/                     # Логотипы и иконки
-│   │   ├── PNG_LOL.png           # Основной логотип
-│   │   └── icon_L.ico            # Иконка приложения
-│   └── link_discord.html         # Основной HTML файл
-├── webview_app.py               # WebView десктопное приложение
-├── build.py                     # Скрипт сборки PyInstaller
-├── requirements.txt             # Зависимости Python
-├── .env.example                 # Пример файла окружения
-├── .env                         # Файл окружения (создается)
-├── lol_voice_chat.log           # Лог-файл (создается)
-└── README.md                    # Эта документация
+│       └── demo_auth.py          # Demo auth middleware
+├── static/                       # Static files
+│   ├── logo/                     # Logos and icons
+│   │   ├── PNG_LOL.png
+│   │   └── icon_L.ico
+│   └── link_discord.html         # Main HTML file
+├── webview_app.py                # WebView desktop app
+├── build.py                      # PyInstaller build script
+├── requirements.txt              # Python dependencies
+├── .env.example                  # Example env file
+├── .env                          # Env file (created)
+├── lol_voice_chat.log            # Log file (created)
+└── README.md                     # This documentation
 ```
 
-## 🎨 Интерфейс
+## 🎨 Interface
 
-### Основные элементы интерфейса:
+### Main interface elements
 
-#### 1. **Заголовок и логотип**
-- Логотип LoL Voice Chat
-- Статус подключения
+#### 1. Header and logo
+- LoL Voice Chat logo
+- Connection status
 
-#### 2. **Привязка Discord аккаунта**
-- Поле для ввода Discord ID (17-20 цифр)
-- Кнопка "Привязать Discord аккаунт"
-- Кнопка "Изменить Discord ID" (если уже привязан)
+#### 2. Discord account linking
+- Input field for Discord ID (17–20 digits)
+- **Link Discord Account** button
+- **Change Discord ID** button (if already linked)
 
-#### 3. **Статус матча**
-- Индикатор состояния игры:
-  - 🔄 Загрузка матча
-  - 🎯 Выбор чемпионов
-  - ⏳ Ожидание начала
-  - ✅ Матч начался
-- Кнопка "Обновить статус"
+#### 3. Match status
+- Game state indicator:
+  - 🔄 Loading match
+  - 🎯 Champion select
+  - ⏳ Waiting to start
+  - ✅ Match started
+- **Refresh status** button
 
-#### 4. **Голосовой канал**
-- Ссылка для подключения к каналу
-- Кнопка "Копировать ссылку"
-- Информация о канале:
-  - Название канала
-  - Название команды
-  - ID матча
+#### 4. Voice channel
+- Join link
+- **Copy link** button
+- Channel information:
+  - Channel name
+  - Team name
+  - Match ID
 
-#### 5. **Панель помощи**
-- Инструкция по получению Discord ID
-- Ссылка на Discord сервер
-- Важные заметки
+#### 5. Help panel
+- Instructions for obtaining Discord ID
+- Link to the Discord server
+- Important notes
 
-### Особенности интерфейса:
-- **Адаптивный дизайн** - подстраивается под размер окна
-- **Минималистичный стиль** - только необходимые элементы
-- **Без скролла** - весь контент виден сразу
-- **Белый фон** - чистый и профессиональный вид
-- **Анимации** - плавные переходы и индикаторы загрузки
+### UI characteristics
 
-## 🔒 Безопасность
+- **Responsive design** — adapts to window size
+- **Minimalistic style** — only necessary elements
+- **No scrolling** — all content visible at once
+- **White background** — clean, professional look
+- **Animations** — smooth transitions and loading indicators
 
-### Меры безопасности:
-1. **Токены аутентификации** хранятся только локально
-2. **Discord ID** проходит валидацию перед использованием
-3. **LCU API** используется в режиме "только чтение"
-4. **Нет хранения паролей** - используются OAuth2 токены
-5. **Локальный сервер** - API работает только на localhost
+## 🔒 Security
 
-### Защита данных:
-- Все данные пользователя хранятся локально
-- Discord токены не сохраняются в логах
-- Нет передачи данных на внешние серверы
-- Автоматическое удаление голосовых каналов после матча
+### Security measures
 
-## 🐛 Устранение неполадок
+1. **Auth tokens** are stored locally only.
+2. **Discord ID** is validated before use.
+3. **LCU API** is used in read-only mode.
+4. **No password storage** — OAuth2 tokens are used.
+5. **Local server** — the API runs on localhost only.
 
-### Частые проблемы и решения:
+### Data protection
 
-| Проблема | Решение |
-|----------|---------|
-| **Приложение не запускается** | 1. Проверьте наличие файла `.env`<br>2. Проверьте установку Python 3.8+<br>3. Проверьте лог-файл `lol_voice_chat.log` |
-| **Discord аккаунт не привязывается** | 1. Проверьте правильность Discord ID<br>2. Убедитесь, что вы на сервере бота<br>3. Перезапустите Discord |
-| **Не находится активный матч** | 1. Убедитесь, что League of Legends запущена<br>2. Проверьте, что вы в игре<br>3. Обновите статус в приложении |
-| **Нет кнопки подключения к каналу** | 1. Дождитесь начала матча (после загрузки)<br>2. Обновите статус<br>3. Проверьте лог на ошибки |
-| **Ошибка "uvicorn.protocols.http.auto"** | 1. Пересоберите приложение: `python build.py`<br>2. Переустановите uvicorn: `pip install uvicorn[standard]` |
+- All user data is stored locally by default.
+- Discord tokens are not saved in logs.
+- No data is sent to external servers.
+- Voice channels are removed automatically after the match.
 
-### Логирование:
-- **Основной лог:** `lol_voice_chat.log` (в папке приложения)
-- **Уровень логирования:** INFO (можно изменить на DEBUG в `.env`)
-- **Формат логов:** Время - Модуль - Уровень - Сообщение
+## 🐛 Troubleshooting
 
-## 🤝 Разработка
+### Common issues & solutions:
 
-### Участие в проекте:
+| Problem | Solution |
+|---------|----------|
+| **App does not start** | 1. Check the presence of `.env`<br>2. Ensure Python 3.10+ is installed<br>3. Check `lol_voice_chat.log` |
+| **Discord account not linking** | 1. Verify the Discord ID<br>2. Ensure you are on the bot server<br>3. Restart Discord |
+| **Active match not detected** | 1. Make sure League of Legends is running<br>2. Ensure you are in a game<br>3. Refresh status in the app |
+| **No join button available** | 1. Wait for the match to start (after loading)<br>2. Refresh status<br>3. Check logs for errors |
+| **Error `uvicorn.protocols.http.auto`** | 1. Rebuild the application: `python build.py`<br>2. Reinstall uvicorn: `pip install uvicorn[standard]` |
 
-1. **Форкните репозиторий** на GitHub
-2. **Создайте ветку** для новой фичи:
+### Logging:
 
-```
+- **Main log:** `lol_voice_chat.log` (in the app folder)
+- **Log level:** INFO (set DEBUG in `.env` to increase verbosity)
+- **Log format:** Time - Module - Level - Message
+
+## 🤝 Development
+
+### How to contribute:
+
+1. **Fork the repository** on GitHub
+2. **Create a branch** for your feature:
+
+```bash
 git checkout -b feature/amazing-feature
-git checkout -b feature/amazing-feature
 ```
-3. **Добавьте изменения** и коммитьте их:
 
-```
+3. **Add changes** and commit them:
+
+```bash
 git commit -m 'Add amazing feature'
 ```
-4. **Запустите тесты** и убедитесь, что все работает корректно:
 
-```
+4. **Run tests** and make sure everything works:
+
+```bash
 pytest tests/
 ```
-5. **Проверьте стиль кода** и документацию:
 
-```
+5. **Check code style** and documentation:
+
+```bash
 black . --check
 flake8 .
 ```
-6. **Создайте Pull Request** на основной репозиторий:
 
-```
+6. **Create a Pull Request** to the main repository:
+
+```bash
 git push origin feature/amazing-feature
 ```
-7. **Откройте Pull Request** в GitHub
 
+7. **Open the Pull Request** on GitHub
 
-## 📄 Лицензия
-Этот проект распространяется под лицензией MIT. См. файл LICENSE для подробной информации.
+## 📄 License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ```
 MIT License
@@ -322,36 +312,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## 👨‍💻 Автор - [Andrey Golovushkin](https://github.com/Frenky19)
+## 👨‍💻 Author - [Andrey Golovushkin](https://github.com/Frenky19)
 
-Разработано для автоматизации голосового общения в **League of Legends**.
+Developed to automate team voice communication in **League of Legends**.
 
-**Основные цели проекта:**
+**Project goals:**
 
-- **Упростить коммуникацию** в команде
-- **Увеличить шансы на победу** через координацию
-- **Создать удобный инструмент** для игроков
-- **Интегрировать существующие платформы** (Discord + LoL)
+- **Simplify team communication**
+- **Increase win chances** through better coordination
+- **Provide a convenient tool** for players
+- **Integrate existing platforms** (Discord + LoL)
 
-## 📞 Контакты и поддержка
+## 📞 Contact & Support
 
-### Discord сервер:
-- **Ссылка для подключения:** https://discord.gg/UcfX74R4
-- **Категории:** Поддержка, Предложения, Баг-репорты
+### Discord server:
+- **Invite link:** https://discord.gg/e8ptcwB6c4
+- **Channels:** Support, Suggestions, Bug reports
 
-### Сообщение об ошибках:
-1. Используйте **Issues** в репозитории
-2. Опишите проблему подробно:
-   - **Шаги для воспроизведения**
-   - **Ожидаемое поведение**
-   - **Фактическое поведение**
-   - **Скриншоты/логи**
+### Reporting bugs:
+1. Use **Issues** in the repository
+2. Describe the problem in detail:
+   - **Steps to reproduce**
+   - **Expected behavior**
+   - **Actual behavior**
+   - **Screenshots/logs**
 
-### Предложения по улучшению:
-- Создайте Issue с тегом **`enhancement`**
-- Опишите предлагаемую функциональность
-- Объясните, как это улучшит приложение
+### Feature requests:
+- Create an Issue with the **`enhancement`** tag
+- Describe the proposed feature
+- Explain how it improves the app
 
-### Вопросы:
-- **Issues:** Для технических вопросов
-- **Email:** Лучший способ получить быстрый ответ
+### Questions:
+- **Issues:** For technical questions
+- **Email:** Best way to get a quick answer
