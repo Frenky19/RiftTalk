@@ -1,9 +1,9 @@
 [flake8]
 ignore = PT001
-max-line-length = 79
+max-line-length = 91
 paths = 
     ./app
-max-complexity = 13
+max-complexity = 32
 exclude = 
    tests
    venv

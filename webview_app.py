@@ -7,7 +7,7 @@ from pathlib import Path
 
 if getattr(sys, 'frozen', False):
     try:
-        from app.encrypted_env import decrypt_env
+        from app.encrypted_env import decrypt_env  # type: ignore
         decrypt_env()
     except ImportError:
         try:

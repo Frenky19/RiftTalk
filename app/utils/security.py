@@ -2,36 +2,37 @@
 Security utilities for LoL Voice Chat - Simplified version for PyInstaller
 """
 
-from datetime import datetime, timezone, timedelta
-from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from app.config import settings
 import hashlib
 import hmac
-import secrets
+from datetime import datetime, timedelta, timezone
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 
-# Упрощенная замена CryptContext для PyInstaller
+from app.config import settings
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
+
+
 class SimplePasswordHasher:
-    """Упрощенный хешер паролей для демо-режима"""
-    
+    """Simplified password hasher for demo mode."""
+
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """Упрощенная проверка пароля для демо-режима"""
+        """Simplified password verification for demo mode."""
         try:
-            # Для демо-режима используем простую HMAC проверку
             expected_hash = SimplePasswordHasher.get_password_hash(plain_password)
             return hmac.compare_digest(expected_hash, hashed_password)
         except Exception:
             return False
-    
+
     @staticmethod
     def get_password_hash(password: str) -> str:
-        """Упрощенное хеширование пароля для демо-режима"""
-        # Используем HMAC-SHA256 для демо-целей
-        salt = "lol_voice_chat_demo_salt"  # В реальном приложении используйте уникальную соль
+        """Simplified password hashing for demo mode."""
+        # Use HMAC-SHA256 for demo purposes
+        salt = 'lol_voice_chat_demo_salt'
         return hmac.new(
             salt.encode('utf-8'),
             password.encode('utf-8'),
@@ -39,12 +40,12 @@ class SimplePasswordHasher:
         ).hexdigest()
 
 
-# Используем упрощенный hasher
+# Use simplified hasher
 pwd_context = SimplePasswordHasher()
 
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
-    """Create JWT access token"""
+    """Create JWT access token."""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -52,18 +53,22 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
         expire = datetime.now(timezone.utc) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    to_encode.update({"exp": expire})
+    to_encode.update({'exp': expire})
     encoded_jwt = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+        to_encode,
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM
     )
     return encoded_jwt
 
 
 def verify_token(token: str):
-    """Verify JWT token"""
+    """Verify JWT token."""
     try:
         payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
         )
         return payload
     except JWTError:
@@ -71,11 +76,11 @@ def verify_token(token: str):
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    """Get current user from token"""
+    """Get current user from token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
+        detail='Could not validate credentials',
+        headers={'WWW-Authenticate': 'Bearer'},
     )
     payload = verify_token(token)
     if not payload:
@@ -83,12 +88,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return payload
 
 
-# Сохраняем совместимость со старым кодом
+# Maintain compatibility with old code
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password (compatibility function)"""
+    """Verify password (compatibility function)."""
     return pwd_context.verify_password(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    """Get password hash (compatibility function)"""
+    """Get password hash (compatibility function)."""
     return pwd_context.get_password_hash(password)
