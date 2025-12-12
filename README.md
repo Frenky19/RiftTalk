@@ -2,7 +2,7 @@
 
 ## 📋 Project Overview
 
-A Windows desktop application that provides an in‑game voice chat overlay for League of Legends. After the champion-select phase, the app automatically places all players from the same team (who also have the app installed) into a dedicated Discord voice channel where they can communicate during the match. When the game ends, all players are removed from the channel automatically.
+A Windows desktop application that provides an in‑game voice chat for League of Legends with Discord integration. After the champion-select phase, the app automatically places all players from the same team (who also have the app installed) into a dedicated Discord voice channel where they can communicate during the match. When the game ends, all players are removed from the channel automatically.
 
 ## ✨ Features
 
