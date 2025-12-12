@@ -9,3 +9,6 @@ exclude =
    venv
    env
    alembic/versions/*.py
+   build.py
+   sign_exe_manual.py
+   encrypted_env.py
