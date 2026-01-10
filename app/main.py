@@ -162,6 +162,10 @@ async def initialize_services():
                 handle_game_event
             )
             lcu_service.register_event_handler(
+                'phase_none',
+                handle_game_event
+            )
+            lcu_service.register_event_handler(
                 'champ_select',
                 handle_champ_select
             )
@@ -268,6 +272,8 @@ async def handle_game_event(event_data: dict):
             await handle_match_start()
         elif event_type == 'EndOfGame':
             await handle_match_end(event_data)
+        elif event_type in ('None', 'Lobby'):
+            await handle_match_leave(event_data)
     except Exception as e:
         logger.error(f'Error handling game event: {e}')
 
@@ -363,6 +369,16 @@ async def auto_assign_player_to_existing_room(
                             3600,
                             team_channel['invite_url']
                         )
+                        # If the user is already in a voice channel (e.g. Waiting Room),
+                        # move them to their team channel immediately (no need to re-join).
+                        try:
+                            await discord_service.move_member_to_team_channel_if_in_voice(
+                                int(discord_user_id),
+                                match_id,
+                                team_name
+                            )
+                        except Exception as e:
+                            logger.warning(f'Auto-move to team channel failed: {e}')
                     else:
                         logger.warning('No Discord channel invite URL available')
                 else:
@@ -421,6 +437,13 @@ async def handle_match_start():
         if not match_id:
             logger.error('No match_id found, cannot create room')
             return
+        # Save current match for this summoner (needed for early-exit cleanup)
+        try:
+            user_key = f'user:{summoner_id}'
+            redis_manager.redis.hset(user_key, 'current_match', match_id)
+        except Exception as e:
+            logger.warning(f'Failed to save current_match to user key: {e}')
+
         # Check: If room already exists, don't create new one
         existing_room = voice_service.redis.get_voice_room_by_match(match_id)
         if existing_room:
@@ -585,6 +608,91 @@ async def handle_match_end(event_data: dict):
         logger.error(f'Error handling match end: {e}')
 
 
+
+
+async def handle_match_leave(event_data: dict):
+    """Handle leaving match (e.g., InProgress -> None/Lobby) without full cleanup."""
+    try:
+        previous_phase = event_data.get('previous_phase')
+        new_phase = event_data.get('phase')
+        # Only treat as "player left match" when leaving from an active game
+        if previous_phase != 'InProgress':
+            return
+        if new_phase not in ('None', 'Lobby'):
+            return
+
+        logger.info(
+            f'Player appears to have left the match early (phase {previous_phase} -> {new_phase})'
+        )
+
+        # Identify current summoner
+        summoner_id = None
+        try:
+            current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+            if current_summoner and current_summoner.get('summonerId'):
+                summoner_id = str(current_summoner.get('summonerId'))
+        except Exception as e:
+            logger.error(f'Failed to get current summoner for leave handling: {e}')
+
+        if not summoner_id:
+            logger.warning('Cannot handle leave: summoner_id is unknown')
+            return
+
+        user_key = f'user:{summoner_id}'
+
+        # Try to get match_id saved during match start
+        match_id = None
+        try:
+            match_id = redis_manager.redis.hget(user_key, 'current_match')
+        except Exception as e:
+            logger.error(f'Error reading current_match from user key: {e}')
+
+        # Fallback: find match by scanning active rooms
+        if not match_id:
+            try:
+                active_rooms = voice_service.redis.get_all_active_rooms()
+                for room in active_rooms:
+                    blue = safe_json_parse(room.get('blue_team'), []) or []
+                    red = safe_json_parse(room.get('red_team'), []) or []
+                    if summoner_id in blue or summoner_id in red:
+                        match_id = room.get('match_id')
+                        break
+            except Exception as e:
+                logger.error(f'Failed to locate match by scanning rooms: {e}')
+
+        if not match_id:
+            logger.warning('Cannot handle leave: match_id is unknown')
+            return
+
+        # Get Discord user ID
+        discord_user_id = None
+        try:
+            discord_user_id = redis_manager.redis.hget(user_key, 'discord_user_id')
+        except Exception as e:
+            logger.error(f'Error getting Discord ID: {e}')
+
+        if not discord_user_id:
+            logger.warning('Cannot handle leave: discord_user_id not linked')
+            return
+
+        await voice_service.handle_player_left_match(
+            match_id=match_id,
+            summoner_id=summoner_id,
+            discord_user_id=int(discord_user_id),
+        )
+
+        # Clear current_match on user key (best-effort)
+        try:
+            redis_manager.redis.hdel(user_key, 'current_match')
+        except Exception:
+            # If hdel not supported, overwrite with empty string
+            try:
+                redis_manager.redis.hset(user_key, 'current_match', '')
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.error(f'Error handling match leave: {e}')
 async def handle_ready_check(event_data: dict):
     """Handle ready check phase."""
     try:

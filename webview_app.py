@@ -40,6 +40,20 @@ else:
     BASE_DIR = Path(__file__).parent
 
 
+
+class WebViewAPI:
+    """Exposes small helpers to JS inside pywebview."""
+
+    def open_browser(self, url: str) -> bool:
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return True
+        except Exception:
+            return False
+
+
+
 class SafeFileHandler(logging.FileHandler):
     def __init__(self, filename, mode='a', encoding='utf-8', delay=False):
         super().__init__(filename, mode, encoding, delay)
@@ -55,6 +69,19 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+def _get_server_config():
+    """Return (bind_host, port, ui_base_url).
+    bind_host may be 0.0.0.0, but UI should use a loopback host."""
+    try:
+        from app.config import settings
+        bind_host = getattr(settings, 'SERVER_HOST', '127.0.0.1') or '127.0.0.1'
+        port = int(getattr(settings, 'SERVER_PORT', 8000) or 8000)
+    except Exception:
+        bind_host, port = '127.0.0.1', 8000
+    ui_host = '127.0.0.1' if bind_host in ('0.0.0.0', '::') else bind_host
+    base_url = f'http://{ui_host}:{port}'
+    return bind_host, port, base_url
 
 logging.getLogger('discord').setLevel(logging.WARNING)
 logging.getLogger('uvicorn').setLevel(logging.WARNING)
@@ -106,10 +133,11 @@ def start_fastapi_server():
         logger.info('Starting FastAPI server...')
         import uvicorn
         from app.main import app
+        bind_host, port, _ = _get_server_config()
         uvicorn.run(
             app,
-            host='0.0.0.0',
-            port=8000,
+            host=bind_host,
+            port=port,
             log_level='warning',
             access_log=False,
             log_config=None
@@ -128,7 +156,7 @@ def check_server_ready(timeout=30):
     for i in range(timeout):
         try:
             response = requests.get(
-                'http://localhost:8000/health',
+                f"{_get_server_config()[2]}/health",
                 timeout=2
             )
             if response.status_code == 200:
@@ -148,7 +176,8 @@ def run_webview():
         logger.info('Creating WebView window...')
         _ = webview.create_window(
             'LoL Voice Chat',
-            'http://localhost:8000/link-discord',
+            f"{_get_server_config()[2]}/link-discord",
+            js_api=WebViewAPI(),
             width=1200,
             height=800,
             resizable=True,
@@ -185,7 +214,7 @@ def main():
     if not run_webview():
         logger.info('Starting in browser as fallback...')
         import webbrowser
-        webbrowser.open('http://localhost:8000/link-discord')
+        webbrowser.open(f"{_get_server_config()[2]}/link-discord")
         try:
             while True:
                 time.sleep(1)

@@ -63,6 +63,10 @@ class LCUService:
                 # Check connection and reconnect if needed
                 if not self.lcu_connector.is_connected():
                     await self.lcu_connector.connect()
+                    # If still not connected, wait for next tick
+                    if not self.lcu_connector.is_connected():
+                        await asyncio.sleep(settings.LCU_UPDATE_INTERVAL)
+                        continue
                 # Get current phase
                 current_phase = await self.lcu_connector.get_game_flow_phase()
                 # Handle phase changes
@@ -84,6 +88,7 @@ class LCUService:
             'ChampSelect': 'champ_select',
             'InProgress': 'match_start',
             'EndOfGame': 'match_end',
+            'None': 'phase_none',
         }
         event_type = phase_events.get(new_phase)
         if event_type and event_type in self._event_handlers:

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import ssl
@@ -22,7 +23,16 @@ class LCUConnector:
         self.is_connected_flag = False
         self._initialized = False
         self._connection_attempts = 0
-        self.max_attempts = 5
+        # Connection retry/backoff
+        self._base_retry_delay = 1.0
+        self._retry_delay = self._base_retry_delay
+        self._max_retry_delay = 30.0
+        self._next_retry_time = 0.0  # loop.time()
+        self._last_error: Optional[str] = None
+        self._last_connected_at: Optional[float] = None
+        self._lockfile_signature: Optional[str] = None
+        # Legacy field kept for compatibility (no longer enforced)
+        self.max_attempts = 0
 
     def _get_lockfile_path(self) -> Optional[str]:
         """Get the path to League of Legends lockfile for Windows."""
@@ -111,31 +121,60 @@ class LCUConnector:
 
     async def connect(self) -> bool:
         """Connect to League Client UX API with comprehensive error handling."""
-        if self._connection_attempts >= self.max_attempts:
-            logger.warning('Max connection attempts reached')
+        if self.is_connected():
+            return True
+
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+
+        # Respect the backoff window (prevents hammering when LoL/LCU is down)
+        if now < self._next_retry_time:
             return False
 
-        self._connection_attempts += 1
-        logger.info(
-            f'LCU connection attempt {self._connection_attempts}/{self.max_attempts}'
+        # Get lockfile path (do not treat missing lockfile as a failed attempt)
+        self.lockfile_path = self._get_lockfile_path()
+        if not self.lockfile_path:
+            self.lockfile_data = None
+            self._last_error = 'lockfile_not_found'
+            # Keep retries gentle while the client is not running
+            self._retry_delay = self._base_retry_delay
+            self._next_retry_time = now + self._base_retry_delay
+            return False
+
+        # Read lockfile
+        if not self._read_lockfile():
+            self._last_error = 'lockfile_read_failed'
+            self._retry_delay = self._base_retry_delay
+            self._next_retry_time = now + self._base_retry_delay
+            return False
+
+        # If the lockfile changed (client restart), drop the old session
+        signature = (
+            f"{self.lockfile_data.get('protocol')}://"
+            f"127.0.0.1:{self.lockfile_data.get('port')}@{self.lockfile_data.get('password')}"
         )
+        if self._lockfile_signature and self._lockfile_signature != signature:
+            await self._cleanup()
+        self._lockfile_signature = signature
+
+        self._connection_attempts += 1
+        logger.info(f'LCU connection attempt {self._connection_attempts}')
+
         try:
-            # Get lockfile path
-            self.lockfile_path = self._get_lockfile_path()
-            if not self.lockfile_path:
-                logger.info('League client not running')
-                return False
-            # Read lockfile
-            if not self._read_lockfile():
-                return False
             logger.info(
                 f'Attempting connection to port {self.lockfile_data["port"]} '
                 f'with protocol {self.lockfile_data["protocol"]}'
             )
+
             # Create SSL context
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
+
+            # Cleanup old session if any (defensive)
+            if self.session:
+                await self._cleanup()
+
             # Create session
             self.session = aiohttp.ClientSession(
                 auth=aiohttp.BasicAuth('riot', self.lockfile_data['password']),
@@ -146,12 +185,14 @@ class LCUConnector:
                 },
                 timeout=aiohttp.ClientTimeout(total=10)
             )
+
             # Test connection
             test_url = (
                 f'{self.lockfile_data["protocol"]}://127.0.0.1:'
                 f'{self.lockfile_data["port"]}/lol-summoner/v1/current-summoner'
             )
             logger.info(f'Testing URL: {test_url}')
+
             async with self.session.get(test_url) as response:
                 logger.info(f'Response status: {response.status}')
 
@@ -159,30 +200,54 @@ class LCUConnector:
                     self.is_connected_flag = True
                     self._initialized = True
                     self._connection_attempts = 0
+                    self._retry_delay = self._base_retry_delay
+                    self._next_retry_time = 0.0
+                    self._last_error = None
+                    self._last_connected_at = now
+
                     summoner_data = await response.json()
                     logger.info(
                         f'Successfully connected to LCU as: '
                         f'{summoner_data.get("displayName", "Unknown")}'
                     )
                     return True
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f'LCU returned status {response.status}: {error_text}'
-                    )
-                    return False
-        except aiohttp.ClientConnectorError as e:
+
+                error_text = await response.text()
+                logger.error(f'LCU returned status {response.status}: {error_text}')
+                self._last_error = f'status_{response.status}'
+                await self._cleanup()
+
+                # Exponential backoff on real connection failures
+                self._retry_delay = min(
+                    self._max_retry_delay,
+                    max(self._base_retry_delay, self._retry_delay * 2)
+                )
+                self._next_retry_time = now + self._retry_delay
+                return False
+
+        except aiohttp.ClientError as e:
             logger.error(f'Connection error: {e}')
+            self._last_error = f'client_error:{type(e).__name__}'
             await self._cleanup()
-            return False
-        except aiohttp.ClientResponseError as e:
-            logger.error(f'HTTP error: {e}')
-            await self._cleanup()
+
+            self._retry_delay = min(
+                self._max_retry_delay,
+                max(self._base_retry_delay, self._retry_delay * 2)
+            )
+            self._next_retry_time = now + self._retry_delay
             return False
         except Exception as e:
             logger.error(f'Unexpected error: {e}')
+            self._last_error = f'unexpected:{type(e).__name__}'
             await self._cleanup()
+
+            self._retry_delay = min(
+                self._max_retry_delay,
+                max(self._base_retry_delay, self._retry_delay * 2)
+            )
+            self._next_retry_time = now + self._retry_delay
             return False
+
 
     async def _cleanup(self):
         """Cleanup resources."""
@@ -227,7 +292,15 @@ class LCUConnector:
                     return None
         except aiohttp.ClientError as e:
             logger.error(f'Network error: {e}')
-            self.is_connected_flag = False
+            self._last_error = f'request_error:{type(e).__name__}'
+            await self._cleanup()
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+            self._retry_delay = min(
+                self._max_retry_delay,
+                max(self._base_retry_delay, self._retry_delay * 2)
+            )
+            self._next_retry_time = now + self._retry_delay
             return None
         except Exception as e:
             logger.error(f'LCU request error: {e}')
@@ -326,6 +399,12 @@ class LCUConnector:
                 )
             } if self.lockfile_data else None,
             'connection_attempts': self._connection_attempts,
+            'retry_in_seconds': (
+                max(0.0, self._next_retry_time - asyncio.get_running_loop().time())
+                if self._next_retry_time else 0.0
+            ),
+            'last_error': self._last_error,
+            'last_connected_at': self._last_connected_at,
             'initialized': self._initialized
         }
 

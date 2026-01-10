@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     # Server Configuration
-    SERVER_HOST: str = Field(default='0.0.0.0')
+    SERVER_HOST: str = Field(default='127.0.0.1')
     SERVER_PORT: int = Field(default=8000)
     # Redis Configuration
     REDIS_URL: str = Field(default='redis://localhost:6379')
@@ -55,6 +55,23 @@ class Settings(BaseSettings):
     DISCORD_BOT_TOKEN: Optional[str] = Field(default=None)
     DISCORD_GUILD_ID: Optional[str] = Field(default=None)
     DISCORD_AUTO_CREATE_CHANNELS: bool = Field(default=True)
+
+    # Discord OAuth2 (to link Discord account without manual ID)
+    DISCORD_OAUTH_CLIENT_ID: Optional[str] = Field(default=None)
+    DISCORD_OAUTH_CLIENT_SECRET: Optional[str] = Field(default=None)
+    # If not set, defaults to: http://{SERVER_HOST}:{SERVER_PORT}/api/auth/discord/callback (with 127.0.0.1 for 0.0.0.0)
+    DISCORD_OAUTH_REDIRECT_URI: Optional[str] = Field(default=None)
+    DISCORD_OAUTH_SCOPES: str = Field(default='identify')
+    DISCORD_OAUTH_STATE_TTL_SECONDS: int = Field(default=600)
+    # Cleanup / Garbage Collection
+    CLEANUP_INTERVAL_SECONDS: int = Field(default=60)
+    CLEANUP_INACTIVE_GRACE_SECONDS: int = Field(default=120)  # grace before deleting empty match resources
+    CLEANUP_STALE_EMPTY_ROOM_HOURS: int = Field(default=6)  # safety: delete empty rooms older than this
+
+    # Discord orphan cleanup (helps when using memory:// and app restarts)
+    DISCORD_GC_ON_STARTUP: bool = Field(default=True)
+    DISCORD_GC_STALE_HOURS: int = Field(default=6)
+    DISCORD_GC_MIN_AGE_MINUTES: int = Field(default=10)
     # Demo Page Authentication
     DEMO_USERNAME: str = Field(default='admin')
     DEMO_PASSWORD: str = Field(default='password')

@@ -25,8 +25,26 @@ class MemoryStorage:
         """Always return True for Redis compatibility"""
         return True
 
-    def hset(self, key: str, mapping: Dict[str, Any]) -> bool:
-        """Set hash value"""
+    def hset(self, key: str, *args, **kwargs) -> bool:
+        """Set hash value.
+
+        Compatible with redis-py:
+        - hset(name, mapping={...})
+        - hset(name, field, value)
+
+        Also accepts a dict as the 2nd positional argument for legacy calls.
+        """
+        mapping = kwargs.get('mapping')
+        # Legacy / convenience: hset(name, { ... })
+        if mapping is None and len(args) == 1 and isinstance(args[0], dict):
+            mapping = args[0]
+        # redis-py style: hset(name, field, value)
+        if mapping is None and len(args) == 2:
+            field, value = args
+            mapping = {str(field): value}
+        if mapping is None:
+            raise TypeError("hset() expected either mapping={...}, a dict positional, or (field, value)")
+
         with self._lock:
             if key not in self._data:
                 self._data[key] = {}
@@ -41,6 +59,19 @@ class MemoryStorage:
             if key in self._data and isinstance(self._data[key], dict):
                 return self._data[key].get(field)
             return None
+
+
+    def hdel(self, name: str, *keys) -> int:
+        """Delete one or more hash fields."""
+        if name not in self._data or not isinstance(self._data[name], dict):
+            return 0
+        deleted = 0
+        for k in keys:
+            if k in self._data[name]:
+                del self._data[name][k]
+                deleted += 1
+        return deleted
+
 
     def hgetall(self, key: str) -> Dict[str, Any]:
         """Get all fields from hash"""
@@ -157,8 +188,16 @@ class MemoryPipeline:
         self.storage = storage
         self.commands = []
 
-    def hset(self, key: str, mapping: Dict[str, Any]):
-        """Add hset command to pipeline"""
+    def hset(self, key: str, *args, **kwargs):
+        """Add hset command to pipeline (redis-py compatible)."""
+        mapping = kwargs.get('mapping')
+        if mapping is None and len(args) == 1 and isinstance(args[0], dict):
+            mapping = args[0]
+        if mapping is None and len(args) == 2:
+            field, value = args
+            mapping = {str(field): value}
+        if mapping is None:
+            raise TypeError("hset() expected either mapping={...}, a dict positional, or (field, value)")
         self.commands.append(('hset', key, mapping))
         return self
 
@@ -176,6 +215,12 @@ class MemoryPipeline:
         """Add delete command to pipeline"""
         self.commands.append(('delete', key))
         return self
+
+    def hdel(self, name: str, *keys):
+        """Add hdel command to pipeline"""
+        self.commands.append(('hdel', name, keys))
+        return self
+
 
     def execute(self):
         """Execute all commands in pipeline"""
@@ -195,6 +240,8 @@ class MemoryPipeline:
                     result = self.storage.delete(command[1])
                 elif command[0] == 'expire':
                     result = self.storage.expire(command[1], command[2])
+                elif command[0] == 'hdel':
+                    result = self.storage.hdel(command[1], *command[2])
                 else:
                     logger.error(f'Unknown command: {command[0]}')
                     result = False
@@ -365,3 +412,4 @@ class DatabaseManager:
 
 redis_manager = DatabaseManager()
 logger.info('Using In-Memory database storage (Redis not available)')
+

@@ -39,6 +39,11 @@ class VoiceService:
         self.redis = redis_manager
         self.discord_enabled = bool(settings.DISCORD_BOT_TOKEN)
 
+    @staticmethod
+    def safe_json_parse(data, default=None):
+        """Backward-compatible helper used by endpoints."""
+        return safe_json_parse(data, default)
+
     def get_active_match_id_for_summoner(self, summoner_id: str) -> str:
         """Get active match ID for a summoner."""
         try:
@@ -360,75 +365,177 @@ class VoiceService:
             logger.error(f'Failed to get discord channels: {e}')
             return {}
 
-    async def add_player_to_existing_room(
+    
+    async def handle_player_left_match(
         self,
-        summoner_id: str,
         match_id: str,
-        team_name: str
+        summoner_id: str,
+        discord_user_id: int
     ) -> bool:
-        """Add a player to an existing voice room and assign to team."""
+        """Handle a single player leaving the match early.
+
+        - Removes the player's team role and disconnects them from match voice.
+        - Does NOT delete channels/roles unless no members remain in match roles.
+        """
         try:
             logger.info(
-                f'Adding player {summoner_id} to existing room for match '
-                f'{match_id}, team: {team_name}'
+                f'Handling player leave: summoner={summoner_id}, match={match_id}'
             )
-            # Get room data
             room_data = self.redis.get_voice_room_by_match(match_id)
             if not room_data:
-                logger.error(f'Room not found for match {match_id}')
+                logger.warning(f'No room found for match {match_id}')
                 return False
+
             room_id = room_data.get('room_id')
-            if not room_id:
-                logger.error(f'Room ID not found for match {match_id}')
-                return False
-            # Add player to players list
-            players = safe_json_parse(room_data.get('players'), [])
-            if summoner_id not in players:
-                players.append(summoner_id)
-                self.redis.redis.hset(
-                    f'room:{room_id}',
-                    mapping={'players': json.dumps(players)}
+            # Mark room as a cleanup candidate (handles early leave / crashes)
+            try:
+                if room_id:
+                    now = datetime.now(timezone.utc)
+                    update = {'closing_requested_at': now.isoformat(), 'closing_reason': 'early_leave'}
+                    # Shorten expires_at to avoid accumulating channels/roles when nobody remains.
+                    try:
+                        old_exp = room_data.get('expires_at')
+                        if old_exp:
+                            old_dt = datetime.fromisoformat(old_exp.replace('Z', '+00:00'))
+                            new_dt = min(old_dt, now + timedelta(minutes=15))
+                        else:
+                            new_dt = now + timedelta(minutes=15)
+                        update['expires_at'] = new_dt.isoformat()
+                    except Exception:
+                        update['expires_at'] = (now + timedelta(minutes=15)).isoformat()
+                    self.redis.redis.hset(f'room:{room_id}', mapping=update)
+            except Exception as e:
+                logger.debug(f'Failed to mark room for cleanup: {e}')
+
+            # Determine team from stored room data
+            blue_team = self.safe_json_parse(room_data.get('blue_team'), []) or []
+            red_team = self.safe_json_parse(room_data.get('red_team'), []) or []
+            team_name = None
+            if summoner_id in blue_team:
+                team_name = 'Blue Team'
+            elif summoner_id in red_team:
+                team_name = 'Red Team'
+
+            # Prevent auto-move back: clear match tracking keys for this user
+            try:
+                self.redis.redis.delete(f'user_discord:{discord_user_id}')
+            except Exception:
+                pass
+            try:
+                self.redis.redis.delete(f'user_match:{summoner_id}')
+            except Exception:
+                pass
+            try:
+                self.redis.redis.hdel(f'user:{summoner_id}', 'current_match')
+            except Exception:
+                pass
+
+            if self.discord_enabled:
+                await discord_service.remove_player_from_match(
+                    discord_user_id=discord_user_id,
+                    match_id=match_id,
+                    team_name=team_name,
                 )
-                logger.info(
-                    f'Added player {summoner_id} to room {room_id}'
-                )
-            # Update team data if needed
-            blue_team = safe_json_parse(room_data.get('blue_team'), [])
-            red_team = safe_json_parse(room_data.get('red_team'), [])
-            if team_name == 'Blue Team' and summoner_id not in blue_team:
-                blue_team.append(summoner_id)
-                self.redis.redis.hset(
-                    f'room:{room_id}',
-                    'blue_team',
-                    json.dumps(blue_team)
-                )
-                logger.info(
-                    f'Added player {summoner_id} to Blue Team'
-                )
-            elif team_name == 'Red Team' and summoner_id not in red_team:
-                red_team.append(summoner_id)
-                self.redis.redis.hset(
-                    f'room:{room_id}',
-                    'red_team',
-                    json.dumps(red_team)
-                )
-                logger.info(
-                    f'Added player {summoner_id} to Red Team'
-                )
-            # Save match info for player
-            user_match_key = f'user_match:{summoner_id}'
-            match_info = {
-                'match_id': match_id,
-                'room_id': room_id,
-                'team_name': team_name,
-                'joined_at': datetime.now(timezone.utc).isoformat()
-            }
-            self.redis.redis.hset(user_match_key, mapping=match_info)
-            self.redis.redis.expire(user_match_key, 3600)
+
+            # Update players list in room (best-effort)
+            try:
+                room_id = room_data.get('room_id')
+                if room_id:
+                    players = self.safe_json_parse(room_data.get('players'), []) or []
+                    players = [p for p in players if str(p) != str(summoner_id)]
+                    self.redis.redis.hset(
+                        f'room:{room_id}',
+                        mapping={'players': json.dumps(players)}
+                    )
+            except Exception as e:
+                logger.warning(f'Failed to update room players list: {e}')
+
+            # If nobody left with roles, cleanup everything
+            if self.discord_enabled:
+                try:
+                    has_active = await discord_service.match_has_active_players(match_id)
+                    if not has_active:
+                        logger.info(
+                            f'No active players remain for match {match_id}; closing room'
+                        )
+                        await self.close_voice_room(match_id)
+                except Exception as e:
+                    logger.error(f'Active player check failed: {e}')
+
             return True
         except Exception as e:
-            logger.error(f'Failed to add player to existing room: {e}')
+            logger.error(f'handle_player_left_match error: {e}')
             return False
+
+    async def add_player_to_existing_room(
+            self,
+            summoner_id: str,
+            match_id: str,
+            team_name: str
+        ) -> bool:
+            """Add a player to an existing voice room and assign to team."""
+            try:
+                logger.info(
+                    f'Adding player {summoner_id} to existing room for match '
+                    f'{match_id}, team: {team_name}'
+                )
+                # Get room data
+                room_data = self.redis.get_voice_room_by_match(match_id)
+                if not room_data:
+                    logger.error(f'Room not found for match {match_id}')
+                    return False
+                room_id = room_data.get('room_id')
+                if not room_id:
+                    logger.error(f'Room ID not found for match {match_id}')
+                    return False
+                # Add player to players list
+                players = safe_json_parse(room_data.get('players'), [])
+                if summoner_id not in players:
+                    players.append(summoner_id)
+                    self.redis.redis.hset(
+                        f'room:{room_id}',
+                        mapping={'players': json.dumps(players)}
+                    )
+                    logger.info(
+                        f'Added player {summoner_id} to room {room_id}'
+                    )
+                # Update team data if needed
+                blue_team = safe_json_parse(room_data.get('blue_team'), [])
+                red_team = safe_json_parse(room_data.get('red_team'), [])
+                if team_name == 'Blue Team' and summoner_id not in blue_team:
+                    blue_team.append(summoner_id)
+                    self.redis.redis.hset(
+                        f'room:{room_id}',
+                        'blue_team',
+                        json.dumps(blue_team)
+                    )
+                    logger.info(
+                        f'Added player {summoner_id} to Blue Team'
+                    )
+                elif team_name == 'Red Team' and summoner_id not in red_team:
+                    red_team.append(summoner_id)
+                    self.redis.redis.hset(
+                        f'room:{room_id}',
+                        'red_team',
+                        json.dumps(red_team)
+                    )
+                    logger.info(
+                        f'Added player {summoner_id} to Red Team'
+                    )
+                # Save match info for player
+                user_match_key = f'user_match:{summoner_id}'
+                match_info = {
+                    'match_id': match_id,
+                    'room_id': room_id,
+                    'team_name': team_name,
+                    'joined_at': datetime.now(timezone.utc).isoformat()
+                }
+                self.redis.redis.hset(user_match_key, mapping=match_info)
+                self.redis.redis.expire(user_match_key, 3600)
+                return True
+            except Exception as e:
+                logger.error(f'Failed to add player to existing room: {e}')
+                return False
 
 
 voice_service = VoiceService()

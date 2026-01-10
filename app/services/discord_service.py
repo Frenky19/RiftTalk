@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -126,6 +126,10 @@ class DiscordService:
                         match_id = match_info.get('match_id')
                         team_name = match_info.get('team_name')
                         if match_id and team_name:
+                            # If user no longer has a match role, do not auto-move
+                            role_prefix = f'LoL {match_id} -'
+                            if not any(getattr(r, 'name', '').startswith(role_prefix) for r in member.roles):
+                                return
                             # Find team voice channel
                             target_channel = await self.find_team_channel(
                                 match_id,
@@ -276,6 +280,15 @@ class DiscordService:
                 return
             # Initialize cache of existing channels
             await self._initialize_channel_cache()
+            # Optional: clean up orphaned channels/roles (useful when REDIS_URL=memory://)
+            if getattr(settings, 'DISCORD_GC_ON_STARTUP', True):
+                try:
+                    await self.garbage_collect_orphaned_matches(
+                        max_age_hours=int(getattr(settings, 'DISCORD_GC_STALE_HOURS', 6)),
+                        min_age_minutes=int(getattr(settings, 'DISCORD_GC_MIN_AGE_MINUTES', 10)),
+                    )
+                except Exception as e:
+                    logger.debug(f'Orphan GC on startup skipped: {e}')
             logger.info('Discord service fully initialized')
         except Exception as e:
             logger.error(f'Error initializing Discord: {e}')
@@ -776,6 +789,320 @@ class DiscordService:
         except Exception as e:
             logger.error(f'Failed to assign player to team: {e}')
             return False
+
+
+
+    async def move_member_to_team_channel_if_in_voice(
+        self,
+        discord_user_id: int,
+        match_id: str,
+        team_name: str
+    ) -> bool:
+        """If the user is currently in *any* voice channel (e.g. Waiting Room),
+        move them into their team voice channel for the given match.
+
+        This fixes the UX where a user sits in Waiting Room, starts a match,
+        gets the role assigned, but doesn't get moved unless they re-join.
+        """
+        if self.mock_mode:
+            logger.info(
+                f'MOCK: Moving user {discord_user_id} to {team_name} channel for match {match_id}'
+            )
+            return True
+
+        if not self.connected or not self.guild:
+            logger.warning('Discord not connected - cannot move user')
+            return False
+
+        try:
+            member = self.guild.get_member(discord_user_id)
+            if not member:
+                try:
+                    member = await self.guild.fetch_member(discord_user_id)
+                except Exception:
+                    member = None
+
+            if not member:
+                logger.warning(f'Could not find member {discord_user_id} to move')
+                return False
+
+            # Must be connected to voice to move
+            if not member.voice or not member.voice.channel:
+                logger.info(f'User {member.display_name} is not in a voice channel; nothing to move')
+                return False
+
+            # Find target channel by name
+            target_name = f'LoL Match {match_id} - {team_name}'
+            target_channel = None
+
+            # Prefer category voice channels if available
+            search_channels = []
+            if self.category:
+                search_channels = list(getattr(self.category, 'voice_channels', []) or [])
+            if not search_channels:
+                search_channels = [c for c in self.guild.channels if isinstance(c, VoiceChannel)]
+
+            for ch in search_channels:
+                try:
+                    if isinstance(ch, VoiceChannel) and ch.name == target_name:
+                        target_channel = ch
+                        break
+                except Exception:
+                    continue
+
+            if not target_channel:
+                logger.warning(f'Target team voice channel not found: {target_name}')
+                return False
+
+            if member.voice.channel.id == target_channel.id:
+                logger.info(f'User {member.display_name} already in target channel')
+                return True
+
+            try:
+                await member.move_to(target_channel)
+                logger.info(f'Automatically moved {member.display_name} to {team_name} channel')
+                return True
+            except discord.Forbidden:
+                logger.error('Bot lacks permission to move members (Move Members)')
+                return False
+            except discord.HTTPException as e:
+                logger.error(f'Failed to move member: {e}')
+                return False
+        except Exception as e:
+            logger.error(f'Error auto-moving member: {e}')
+            return False
+
+
+
+    async def _get_team_role(
+        self,
+        match_id: str,
+        team_name: str
+    ) -> Optional[Role]:
+        """Get existing team role for match/team without creating it."""
+        if not self.guild:
+            return None
+        role_name = f'LoL {match_id} - {team_name}'
+        for role in self.guild.roles:
+            if role.name == role_name:
+                return role
+        return None
+
+    async def remove_player_from_match(
+        self,
+        discord_user_id: int,
+        match_id: str,
+        team_name: Optional[str] = None
+    ) -> bool:
+        """Remove a single player from match roles/channels (early leave, crash, etc.)."""
+        if self.mock_mode:
+            logger.info(
+                f'MOCK: Removing user {discord_user_id} from match {match_id} ({team_name})'
+            )
+            return True
+
+        if not self.connected or not self.guild:
+            logger.warning('Discord not connected; cannot remove player')
+            return False
+
+        try:
+            member = self.guild.get_member(discord_user_id)
+            if not member:
+                try:
+                    member = await self.guild.fetch_member(discord_user_id)
+                except Exception:
+                    member = None
+
+            if not member:
+                logger.warning(f'Could not find member {discord_user_id} in guild')
+                return False
+
+            # Remove role(s)
+            roles_to_remove: List[Role] = []
+            if team_name:
+                role = await self._get_team_role(match_id, team_name)
+                if role:
+                    roles_to_remove.append(role)
+            else:
+                # If team unknown, try remove both team roles
+                for tn in ('Blue Team', 'Red Team'):
+                    role = await self._get_team_role(match_id, tn)
+                    if role:
+                        roles_to_remove.append(role)
+
+            if roles_to_remove:
+                try:
+                    await member.remove_roles(
+                        *roles_to_remove,
+                        reason=f'LoL match {match_id}: player left early'
+                    )
+                    logger.info(
+                        f'Removed {len(roles_to_remove)} match roles from {member.display_name}'
+                    )
+                except Exception as e:
+                    logger.warning(f'Failed to remove roles: {e}')
+
+            # Disconnect from match channels if currently in one
+            try:
+                if member.voice and member.voice.channel:
+                    ch = member.voice.channel
+                    if f'LoL Match {match_id}' in ch.name:
+                        # Prefer moving to Waiting Room if exists
+                        waiting = None
+                        if self.category:
+                            for vc in self.category.voice_channels:
+                                if isinstance(vc, VoiceChannel) and vc.name.lower() == 'waiting room':
+                                    waiting = vc
+                                    break
+                        try:
+                            await member.move_to(waiting)
+                        except Exception:
+                            await member.move_to(None)
+                        logger.info(
+                            f'Disconnected {member.display_name} from match voice channel'
+                        )
+            except Exception as e:
+                logger.warning(f'Failed to disconnect member from voice: {e}')
+
+            return True
+        except Exception as e:
+            logger.error(f'Error removing player from match: {e}')
+            return False
+
+
+    async def match_has_active_players(self, match_id: str) -> bool:
+        """Return True if any app users still appear active for this match.
+
+        We consider a match "active" if:
+        - Any member still has one of the match team roles, OR
+        - Any member is currently inside one of the match voice channels.
+
+        Conservative behavior:
+        - If we cannot reliably determine state (e.g., roles/channels not found),
+          we return True to avoid accidental deletion.
+        """
+        if self.mock_mode:
+            return False
+        if not self.connected or not self.guild:
+            return True
+        try:
+            roles = []
+            for tn in ('Blue Team', 'Red Team'):
+                role = await self._get_team_role(match_id, tn)
+                if role:
+                    roles.append(role)
+
+            role_members_total = None
+            if roles:
+                try:
+                    role_members_total = sum(len(r.members) for r in roles)
+                except Exception:
+                    role_members_total = None
+
+            # Also check current members in match voice channels (usually reliable)
+            voice_members_total = None
+            try:
+                if self.category:
+                    match_channels = [
+                        ch for ch in self.category.voice_channels
+                        if isinstance(ch, VoiceChannel) and f'LoL Match {match_id}' in ch.name
+                    ]
+                    if match_channels:
+                        voice_members_total = sum(len(ch.members) for ch in match_channels)
+            except Exception:
+                voice_members_total = None
+
+            # If we have at least one reliable signal:
+            active_counts = [c for c in (role_members_total, voice_members_total) if c is not None]
+            if active_counts:
+                return sum(active_counts) > 0
+
+            # No reliable signal -> don't risk deletion
+            return True
+        except Exception as e:
+            logger.warning(f'Active player check error: {e}')
+            return True
+
+
+    async def garbage_collect_orphaned_matches(
+        self,
+        max_age_hours: int = 6,
+        min_age_minutes: int = 10
+    ) -> None:
+        """Delete stale/empty match channels & roles left behind (e.g., app restart with memory://).
+
+        Safe rules (won't delete active matches):
+        - Match voice channels are EMPTY (no members in them)
+        - Both team roles have 0 members (or roles don't exist)
+        - Channels are older than min_age_minutes and max_age_hours threshold
+        """
+        if self.mock_mode or not self.connected or not self.guild or not self.category:
+            return
+        try:
+            now = datetime.now(timezone.utc)
+            match_to_channels: Dict[str, List[VoiceChannel]] = {}
+
+            for ch in list(self.category.voice_channels):
+                if not isinstance(ch, VoiceChannel):
+                    continue
+                name = getattr(ch, 'name', '') or ''
+                if not name.startswith('LoL Match '):
+                    continue
+                # Format: 'LoL Match {match_id} - {Team}'
+                parts = name.split(' - ')
+                if not parts:
+                    continue
+                match_id = parts[0].replace('LoL Match ', '').strip()
+                if not match_id:
+                    continue
+                match_to_channels.setdefault(match_id, []).append(ch)
+
+            if not match_to_channels:
+                return
+
+            for match_id, channels in match_to_channels.items():
+                try:
+                    # Age gate
+                    created_ats = [getattr(ch, 'created_at', None) for ch in channels]
+                    created_ats = [dt for dt in created_ats if dt is not None]
+                    if created_ats:
+                        age = now - min(created_ats)
+                    else:
+                        # If Discord didn't provide created_at (rare), skip to be safe
+                        continue
+
+                    if age < timedelta(minutes=min_age_minutes):
+                        continue
+                    if age < timedelta(hours=max_age_hours):
+                        continue
+
+                    # Must be empty channels
+                    if any(len(ch.members) > 0 for ch in channels):
+                        continue
+
+                    # Must have no members in match roles
+                    roles = []
+                    for tn in ('Blue Team', 'Red Team'):
+                        role = await self._get_team_role(match_id, tn)
+                        if role:
+                            roles.append(role)
+
+                    if any(len(r.members) > 0 for r in roles):
+                        continue
+
+                    logger.info(
+                        f'Orphan GC: deleting stale match resources for {match_id} '
+                        f'(age={age}, channels={len(channels)})'
+                    )
+                    await self.cleanup_match_channels({'match_id': match_id})
+
+                except Exception as e:
+                    logger.debug(f'Orphan GC skipped for {match_id}: {e}')
+                    continue
+        except Exception as e:
+            logger.debug(f'Orphan GC failed: {e}')
+
+
 
     async def _create_server_invite_for_user(
         self,
