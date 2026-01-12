@@ -1051,8 +1051,8 @@
                 btn_oauth_link: "Link via Discord (recommended)",
                 
                 btn_donate: "Support the project",
-                oauth_info: "No need to enter your Discord ID manually. This will securely link your account.",
-                manual_discord_id_advanced: "Manual Discord ID (advanced)",
+                oauth_info: "This will securely link your account.",
+                manual_discord_id_advanced: " Enter manual Discord ID (advanced)",
                 manual_discord_id_link: "Manual Discord ID Link",
                 label_discord_id: "Your Discord ID:",
                 ph_discord_user_id: "Enter your Discord User ID (numbers only)",
@@ -1115,7 +1115,7 @@
                 note_change_id: "If you need to change Discord ID — click the \"Change\" button",
                 note_channels_created: "Voice channels are created automatically after the match starts",
                 note_auto_connected: "You will be automatically connected to your team's channel",
-                step_1: "Enter Discord ID and link account",
+                step_1: "Link account",
                 step_2: "Launch League of Legends and join games",
                 step_3: "After the match starts, refresh status",
                 step_4: "Join your team's voice channel!",
@@ -1159,8 +1159,8 @@
                 btn_oauth_link: "Привязать через Discord (рекомендуется)",
                 
                 btn_donate: "Поддержать проект",
-                oauth_info: "Не нужно вводить Discord ID вручную — аккаунт будет безопасно привязан через авторизацию.",
-                manual_discord_id_advanced: "Discord ID вручную (для продвинутых)",
+                oauth_info: "Аккаунт будет безопасно привязан через авторизацию.",
+                manual_discord_id_advanced: "Ввести Discord ID вручную",
                 manual_discord_id_link: "Привязка по Discord ID вручную",
                 label_discord_id: "Ваш Discord ID:",
                 ph_discord_user_id: "Введите User ID Discord (только цифры)",
@@ -1223,7 +1223,7 @@
                 note_change_id: "Если нужно изменить Discord ID — нажмите кнопку «Изменить»",
                 note_channels_created: "Голосовые каналы создаются автоматически после старта матча",
                 note_auto_connected: "Вы будете автоматически подключены к каналу вашей команды",
-                step_1: "Введите Discord ID и привяжите аккаунт",
+                step_1: "Привяжите аккаунт",
                 step_2: "Запустите League of Legends и начните матч",
                 step_3: "После старта матча обновите статус",
                 step_4: "Зайдите в голосовой канал команды!",
@@ -1818,11 +1818,33 @@ if (oauthLinkBtn) {
                 }
             }
         });
+        // Show the "manual link" button only when the advanced Discord ID section is opened
+        function setupManualLinkVisibility() {
+            const submitBtn = document.getElementById('submitBtn');
+            const discordIdInput = document.getElementById('discordId');
+            if (!submitBtn || !discordIdInput) return;
+
+            const manualDetails = discordIdInput.closest('details');
+            if (!manualDetails) return;
+
+            const sync = () => {
+                const shouldShow = !!manualDetails.open;
+                submitBtn.style.display = shouldShow ? '' : 'none';
+                submitBtn.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+            };
+
+            manualDetails.addEventListener('toggle', sync);
+            sync();
+        }
+
+
 
         // Load information when page loads
         document.addEventListener('DOMContentLoaded', () => {
             
-            initPreferencesUI();
+            
+            setupManualLinkVisibility();
+initPreferencesUI();
             loadCurrentUser();
             setTimeout(() => checkExistingLink(), 1000);
         });
