@@ -1,4 +1,4 @@
-# LoL Voice Chat Desktop (Discord-integrated team voice)
+# RiftTalk (Discord-integrated team voice)
 
 [English](README.md) | [Русский](README.ru.md)
 

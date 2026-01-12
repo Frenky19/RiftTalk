@@ -1,4 +1,4 @@
-# LoL Voice Chat Desktop (командный голосовой чат через Discord)
+# RiftTalk (командный голосовой чат через Discord)
 
 [English](README.md) | [Русский](README.ru.md)
 

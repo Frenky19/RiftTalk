@@ -1,4 +1,4 @@
-"""Desktop launcher for LoL Voice Chat (FastAPI + pywebview).
+"""Desktop launcher for RiftTalk (FastAPI + pywebview).
 
 This script:
 - Loads environment variables (supports frozen builds).
@@ -240,7 +240,7 @@ def run_webview():
         import webview
         logger.info('Creating WebView window...')
         _ = webview.create_window(
-            'LoL Voice Chat',
+            'RiftTalk',
             f'{_get_server_config()[2]}/link-discord',
             js_api=WebViewAPI(),
             width=1400,
@@ -271,7 +271,7 @@ def main():
         4) Open the UI in pywebview (or in a browser as fallback)."""
 
     logger.info('=' * 50)
-    logger.info('LoL Voice Chat Desktop (WebView version)')
+    logger.info('RiftTalk (WebView version)')
     logger.info('=' * 50)
     if not setup_environment():
         logger.error('Failed to set up environment')
