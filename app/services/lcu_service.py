@@ -111,7 +111,6 @@ class LCUService:
                         logger.warning(
                             'No champ select data available for event'
                         )
-
                 await self._event_handlers[event_type](event_data)
             except Exception as e:
                 logger.error(f'Error handling {event_type}: {e}')
@@ -241,7 +240,7 @@ class LCUService:
             # In champ select, we might not have enemy team data yet
             # But we can create rooms with just our team for now
             if blue_team:
-                match_id = f"champ_select_{int(datetime.now(timezone.utc).timestamp())}"
+                match_id = f'champ_select_{int(datetime.now(timezone.utc).timestamp())}'
                 logger.info(
                     f'Parsed champ select data: {len(blue_team)} '
                     f'players in blue team'
@@ -374,10 +373,10 @@ class LCUService:
             if 'chatRoomName' in session:
                 return f"chat_{session['chatRoomName']}"
             # Fallback to timestamp-based ID
-            return f"match_{int(datetime.now(timezone.utc).timestamp())}"
+            return f'match_{int(datetime.now(timezone.utc).timestamp())}'
         except Exception as e:
             logger.error(f'Error generating match ID: {e}')
-            return f"match_{int(datetime.now(timezone.utc).timestamp())}"
+            return f'match_{int(datetime.now(timezone.utc).timestamp())}'
 
     async def get_detailed_champ_select_info(self) -> Dict[str, Any]:
         """Get comprehensive champ select information for debugging."""

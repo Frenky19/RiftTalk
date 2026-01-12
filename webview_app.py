@@ -304,7 +304,7 @@ def main():
     if not run_webview():
         logger.info('Starting in browser as fallback...')
         import webbrowser
-        webbrowser.open(f"{_get_server_config()[2]}/link-discord")
+        webbrowser.open(f'{_get_server_config()[2]}/link-discord')
         try:
             while True:
                 time.sleep(1)

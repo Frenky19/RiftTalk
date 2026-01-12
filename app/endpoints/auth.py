@@ -194,9 +194,7 @@ async def auto_authenticate():
         )
 
 
-# -------------------------
 # Discord OAuth2 linking
-# -------------------------
 
 def _discord_redirect_uri() -> str:
     if getattr(settings, 'DISCORD_OAUTH_REDIRECT_URI', None):
@@ -232,7 +230,6 @@ async def discord_oauth_login_url(
     }
     ttl = int(getattr(settings, 'DISCORD_OAUTH_STATE_TTL_SECONDS', 600) or 600)
     redis_manager.redis.setex(state_key, ttl, json.dumps(payload))
-
     params = {
         'client_id': settings.DISCORD_OAUTH_CLIENT_ID,
         'redirect_uri': _discord_redirect_uri(),
@@ -267,29 +264,23 @@ async def discord_oauth_callback(
     """Discord OAuth2 callback. Links discord_user_id to summoner_id stored in state."""
     if not _discord_oauth_enabled():
         return HTMLResponse('<h3>Discord OAuth is not configured on this app.</h3>', status_code=400)
-
     state_key = f'oauth_state:{state}'
     raw = redis_manager.redis.get(state_key)
     if not raw:
         return HTMLResponse('<h3>Invalid or expired OAuth state. Please try linking again.</h3>', status_code=400)
-
     try:
         payload = json.loads(raw)
     except Exception:
         payload = {'summoner_id': None}
-
     summoner_id = payload.get('summoner_id')
     if not summoner_id:
         return HTMLResponse('<h3>Could not resolve summoner context. Please retry.</h3>', status_code=400)
-
     # One-time use
     try:
         redis_manager.redis.delete(state_key)
     except Exception:
         pass
-
     redirect_uri = _discord_redirect_uri()
-
     # Exchange code -> token
     try:
         token_resp = requests.post(
@@ -313,7 +304,6 @@ async def discord_oauth_callback(
         access_token = token_data.get('access_token')
         if not access_token:
             return HTMLResponse('<h3>No access token returned by Discord.</h3>', status_code=400)
-
         me_resp = requests.get(
             'https://discord.com/api/users/@me',
             headers={'Authorization': f'Bearer {access_token}'},
@@ -329,7 +319,6 @@ async def discord_oauth_callback(
         username = me.get('username') or me.get('global_name') or 'DiscordUser'
         if not discord_user_id:
             return HTMLResponse('<h3>Discord did not return a user id.</h3>', status_code=400)
-
         # Persist link (hash format)
         user_key = f'user:{summoner_id}'
         from datetime import datetime, timezone
@@ -344,7 +333,6 @@ async def discord_oauth_callback(
         })
         # Keep for 30 days (refreshable)
         redis_manager.redis.expire(user_key, 30 * 24 * 3600)
-
         html = f"""
 <!doctype html>
 <html>

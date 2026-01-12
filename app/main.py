@@ -130,7 +130,8 @@ async def initialize_services():
     # Discord service (STRICT)
     if not settings.discord_enabled:
         raise RuntimeError(
-            'Discord is required but not configured. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
+            'Discord is required but not configured. '
+            'Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
         )
     try:
         await discord_service.connect()

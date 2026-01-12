@@ -23,21 +23,17 @@ router = APIRouter(prefix='/discord', tags=['discord-integration'])
 def determine_player_team(summoner_id: str, blue_team: list, red_team: list) -> str:
     """Determine which team the player belongs to."""
     logger.info(f'Determining team for summoner_id: {summoner_id}')
-
     summoner_id_str = str(summoner_id)
     blue_team_str = [str(player_id) for player_id in (blue_team or [])]
     red_team_str = [str(player_id) for player_id in (red_team or [])]
-
     for i, player_id in enumerate(blue_team_str):
         if player_id == summoner_id_str:
             logger.info(f'Player {summoner_id} found in Blue Team at position {i}')
             return 'Blue Team'
-
     for i, player_id in enumerate(red_team_str):
         if player_id == summoner_id_str:
             logger.info(f'Player {summoner_id} found in Red Team at position {i}')
             return 'Red Team'
-
     raise HTTPException(
         status_code=400,
         detail=(
@@ -194,7 +190,6 @@ async def auto_assign_team(
         # Validate that team data exists
         if not blue_team and not red_team:
             raise HTTPException(status_code=400, detail='Team data is empty for this match')
-
         # Determine user's actual team
         try:
             user_actual_team = determine_player_team(
@@ -335,7 +330,6 @@ async def debug_team_assignment(
         # Parse teams with detailed logging
         blue_team = safe_json_parse(room_data.get('blue_team'), [])
         red_team = safe_json_parse(room_data.get('red_team'), [])
-
         logger.info(f'PARSED BLUE TEAM: {blue_team} '
                     f'(type: {type(blue_team)})')
         logger.info(f'PARSED RED TEAM: {red_team} '

@@ -68,26 +68,23 @@ class DiscordService:
 
         if not getattr(settings, 'discord_enabled', False):
             raise RuntimeError(
-                'Discord is required but not configured. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID.'
+                'Discord is required but not configured. '
+                'Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID.'
             )
 
         if self.connected:
             return True
-
         # Reset state
         self._connect_error = None
         self._ready_event.clear()
         self._initialized_event.clear()
-
         logger.info('Attempting to connect to Discord (STRICT mode)...')
-
         # Create client with required intents
         intents = discord.Intents.default()
         intents.members = True
         intents.voice_states = True
         intents.guilds = True
         self.client = discord.Client(intents=intents)
-
         # Setup event handlers
         self.setup_event_handlers()
 
@@ -111,34 +108,28 @@ class DiscordService:
 
         # Start connection in background
         self.connection_task = asyncio.create_task(self._connect_internal())
-
         # Wait for ready
         try:
             await asyncio.wait_for(self._ready_event.wait(), timeout=20)
         except asyncio.TimeoutError as e:
             await self.disconnect()
             raise RuntimeError('Discord connection timeout (20s)') from e
-
         # If login failed, _connect_internal will set _connect_error and exit
         if self._connect_error is not None:
             await self.disconnect()
             raise RuntimeError(f'Discord connection failed: {self._connect_error}')
-
         # Wait for guild/category initialization
         try:
             await asyncio.wait_for(self._initialized_event.wait(), timeout=20)
         except asyncio.TimeoutError as e:
             await self.disconnect()
             raise RuntimeError('Discord initialization timeout (20s)') from e
-
         if self._connect_error is not None:
             await self.disconnect()
             raise RuntimeError(f'Discord initialization failed: {self._connect_error}')
-
         if not self.connected:
             await self.disconnect()
             raise RuntimeError('Discord connection failed (not connected after startup)')
-
         return True
 
     def setup_event_handlers(self):
@@ -250,7 +241,7 @@ class DiscordService:
                     else:
                         logger.warning(
                             f'Guild with ID {settings.DISCORD_GUILD_ID} '
-                            f'not found in bot\'s guilds'
+                            f"not found in bot's guilds"
                         )
                         # List available guilds for debugging
                         available_guilds = [
@@ -595,7 +586,6 @@ class DiscordService:
             'unique_channels': True,
             'note': 'Channels secured: players only have access to their team channels',
         }
-
         logger.info(f'Team channels for match {match_id}:')
         logger.info(
             f'Blue channel: {blue_channel.get("channel_name")} '
@@ -656,11 +646,11 @@ class DiscordService:
                     return False
                 except discord.Forbidden:
                     logger.error(
-                        f'Bot doesn\'t have permission to fetch member '
+                        f"Bot doesn't have permission to fetch member "
                         f'{discord_user_id}'
                     )
                     logger.error(
-                        'Check if bot has \'Server Members Intent\' '
+                        "Check if bot has 'Server Members Intent' "
                         'enabled in Discord Developer Portal'
                     )
                     return False
@@ -715,15 +705,15 @@ class DiscordService:
                     return False
             # Check if bot has permission to manage roles
             if not self.guild.me.guild_permissions.manage_roles:
-                logger.error('Bot doesn\'t have \'Manage Roles\' permission')
+                logger.error("Bot doesn't have 'Manage Roles' permission")
                 return False
             # Check if bot's role is high enough to assign this role
             if self.guild.me.top_role <= team_role:
                 logger.error(
-                    f'Bot\'s role ({self.guild.me.top_role.name}) '
+                    f"Bot's role ({self.guild.me.top_role.name}) "
                     f'is not high enough to assign role {role_name}'
                 )
-                logger.error('Move bot\'s role higher in role hierarchy')
+                logger.error("Move bot's role higher in role hierarchy")
                 return False
             # Check if member already has the role
             if team_role in member.roles:
@@ -779,8 +769,6 @@ class DiscordService:
             logger.error(f'Failed to assign player to team: {e}')
             return False
 
-
-
     async def move_member_to_team_channel_if_in_voice(
         self,
         discord_user_id: int,
@@ -793,11 +781,9 @@ class DiscordService:
         This fixes the UX where a user sits in Waiting Room, starts a match,
         gets the role assigned, but doesn't get moved unless they re-join.
         """
-
         if not self.connected or not self.guild:
             logger.warning('Discord not connected - cannot move user')
             return False
-
         try:
             member = self.guild.get_member(discord_user_id)
             if not member:
@@ -809,23 +795,19 @@ class DiscordService:
             if not member:
                 logger.warning(f'Could not find member {discord_user_id} to move')
                 return False
-
             # Must be connected to voice to move
             if not member.voice or not member.voice.channel:
                 logger.info(f'User {member.display_name} is not in a voice channel; nothing to move')
                 return False
-
             # Find target channel by name
             target_name = f'LoL Match {match_id} - {team_name}'
             target_channel = None
-
             # Prefer category voice channels if available
             search_channels = []
             if self.category:
                 search_channels = list(getattr(self.category, 'voice_channels', []) or [])
             if not search_channels:
                 search_channels = [c for c in self.guild.channels if isinstance(c, VoiceChannel)]
-
             for ch in search_channels:
                 try:
                     if isinstance(ch, VoiceChannel) and ch.name == target_name:
@@ -833,15 +815,12 @@ class DiscordService:
                         break
                 except Exception:
                     continue
-
             if not target_channel:
                 logger.warning(f'Target team voice channel not found: {target_name}')
                 return False
-
             if member.voice.channel.id == target_channel.id:
                 logger.info(f'User {member.display_name} already in target channel')
                 return True
-
             try:
                 await member.move_to(target_channel)
                 logger.info(f'Automatically moved {member.display_name} to {team_name} channel')
@@ -855,8 +834,6 @@ class DiscordService:
         except Exception as e:
             logger.error(f'Error auto-moving member: {e}')
             return False
-
-
 
     async def _get_team_role(
         self,
@@ -879,11 +856,9 @@ class DiscordService:
         team_name: Optional[str] = None
     ) -> bool:
         """Remove a single player from match roles/channels (early leave, crash, etc.)."""
-
         if not self.connected or not self.guild:
             logger.warning('Discord not connected; cannot remove player')
             return False
-
         try:
             member = self.guild.get_member(discord_user_id)
             if not member:
@@ -891,11 +866,9 @@ class DiscordService:
                     member = await self.guild.fetch_member(discord_user_id)
                 except Exception:
                     member = None
-
             if not member:
                 logger.warning(f'Could not find member {discord_user_id} in guild')
                 return False
-
             # Remove role(s)
             roles_to_remove: List[Role] = []
             if team_name:
@@ -908,7 +881,6 @@ class DiscordService:
                     role = await self._get_team_role(match_id, tn)
                     if role:
                         roles_to_remove.append(role)
-
             if roles_to_remove:
                 try:
                     await member.remove_roles(
@@ -920,7 +892,6 @@ class DiscordService:
                     )
                 except Exception as e:
                     logger.warning(f'Failed to remove roles: {e}')
-
             # Disconnect from match channels if currently in one
             try:
                 if member.voice and member.voice.channel:
@@ -942,12 +913,10 @@ class DiscordService:
                         )
             except Exception as e:
                 logger.warning(f'Failed to disconnect member from voice: {e}')
-
             return True
         except Exception as e:
             logger.error(f'Error removing player from match: {e}')
             return False
-
 
     async def match_has_active_players(self, match_id: str) -> bool:
         """Return True if any app users still appear active for this match.
@@ -968,14 +937,12 @@ class DiscordService:
                 role = await self._get_team_role(match_id, tn)
                 if role:
                     roles.append(role)
-
             role_members_total = None
             if roles:
                 try:
                     role_members_total = sum(len(r.members) for r in roles)
                 except Exception:
                     role_members_total = None
-
             # Also check current members in match voice channels (usually reliable)
             voice_members_total = None
             try:
@@ -988,18 +955,15 @@ class DiscordService:
                         voice_members_total = sum(len(ch.members) for ch in match_channels)
             except Exception:
                 voice_members_total = None
-
             # If we have at least one reliable signal:
             active_counts = [c for c in (role_members_total, voice_members_total) if c is not None]
             if active_counts:
                 return sum(active_counts) > 0
-
             # No reliable signal -> don't risk deletion
             return True
         except Exception as e:
             logger.warning(f'Active player check error: {e}')
             return True
-
 
     async def garbage_collect_orphaned_matches(
         self,
@@ -1013,12 +977,11 @@ class DiscordService:
         - Both team roles have 0 members (or roles don't exist)
         - Channels are older than min_age_minutes and max_age_hours threshold
         """
-        if  not self.connected or not self.guild or not self.category:
+        if not self.connected or not self.guild or not self.category:
             return
         try:
             now = datetime.now(timezone.utc)
             match_to_channels: Dict[str, List[VoiceChannel]] = {}
-
             for ch in list(self.category.voice_channels):
                 if not isinstance(ch, VoiceChannel):
                     continue
@@ -1033,10 +996,8 @@ class DiscordService:
                 if not match_id:
                     continue
                 match_to_channels.setdefault(match_id, []).append(ch)
-
             if not match_to_channels:
                 return
-
             for match_id, channels in match_to_channels.items():
                 try:
                     # Age gate
@@ -1047,39 +1008,31 @@ class DiscordService:
                     else:
                         # If Discord didn't provide created_at (rare), skip to be safe
                         continue
-
                     if age < timedelta(minutes=min_age_minutes):
                         continue
                     if age < timedelta(hours=max_age_hours):
                         continue
-
                     # Must be empty channels
                     if any(len(ch.members) > 0 for ch in channels):
                         continue
-
                     # Must have no members in match roles
                     roles = []
                     for tn in ('Blue Team', 'Red Team'):
                         role = await self._get_team_role(match_id, tn)
                         if role:
                             roles.append(role)
-
                     if any(len(r.members) > 0 for r in roles):
                         continue
-
                     logger.info(
                         f'Orphan GC: deleting stale match resources for {match_id} '
                         f'(age={age}, channels={len(channels)})'
                     )
                     await self.cleanup_match_channels({'match_id': match_id})
-
                 except Exception as e:
                     logger.debug(f'Orphan GC skipped for {match_id}: {e}')
                     continue
         except Exception as e:
             logger.debug(f'Orphan GC failed: {e}')
-
-
 
     async def _create_server_invite_for_user(
         self,
@@ -1264,7 +1217,7 @@ class DiscordService:
 
     async def disconnect_all_members(self, channel_id: int):
         """Disconnect all members from a voice channel."""
-        if  not self.client:
+        if not self.client:
             return
         try:
             channel = self.client.get_channel(channel_id)
@@ -1302,7 +1255,7 @@ class DiscordService:
 
     async def delete_voice_channel(self, channel_id: int):
         """Delete a voice channel by ID, first disconnecting all members."""
-        if  not self.client:
+        if not self.client:
             return
         try:
             channel = self.client.get_channel(channel_id)
@@ -1324,15 +1277,12 @@ class DiscordService:
 
     async def force_disconnect_all_matches(self):
         """Force disconnect all members from all LoL voice channels."""
-        if (not self.guild or not self.category
-        ):
+        if not self.guild or not self.category:
             logger.info('STRICT: Force disconnect all matches')
             return {'disconnected_members': 0, 'channels_processed': 0}
-
         try:
             disconnected_count = 0
             channel_count = 0
-
             for channel in self.category.voice_channels:
                 if (
                     'LoL Match' in channel.name and isinstance(channel, VoiceChannel)
@@ -1353,7 +1303,6 @@ class DiscordService:
                                     f'Failed to force disconnect '
                                     f'{member.display_name}: {e}'
                                 )
-
             logger.info(
                 f'Force disconnected {disconnected_count} members '
                 f'from {channel_count} LoL channels'
@@ -1378,7 +1327,7 @@ class DiscordService:
             if self.client:
                 await self.client.close()
             self.connected = False
-            self._match_channels_cache = {}  # Clear cache
+            self._match_channels_cache = {}
             logger.info('Discord service disconnected')
         except Exception as e:
             logger.error(f'Error during Discord disconnect: {e}')
@@ -1387,7 +1336,6 @@ class DiscordService:
         """Get Discord service status."""
         return {
             'connected': self.connected,
-            
             'guild_available': self.guild is not None,
             'category_available': self.category is not None,
             'cached_matches': len(self._match_channels_cache),

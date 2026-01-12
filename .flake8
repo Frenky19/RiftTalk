@@ -1,6 +1,6 @@
 [flake8]
 ignore = PT001
-max-line-length = 91
+max-line-length = 128
 paths = 
     ./app
 max-complexity = 32
@@ -12,3 +12,7 @@ exclude =
    build.py
    sign_exe_manual.py
    encrypted_env.py
+
+inline-quotes = '
+multiline-quotes = """
+docstring-quotes = """

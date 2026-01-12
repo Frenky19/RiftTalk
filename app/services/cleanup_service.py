@@ -56,7 +56,6 @@ class CleanupService:
         """Cleanup rooms based on age and activity."""
         try:
             current_time = datetime.now(timezone.utc)
-
             # Iterate over all room:* keys (works for both real Redis and memory://)
             room_keys = []
             try:
@@ -68,53 +67,43 @@ class CleanupService:
             except Exception:
                 # Fallback: DatabaseManager helper
                 room_keys = [f"room:{r.get('room_id')}" for r in voice_service.redis.get_all_active_rooms() if r.get('room_id')]
-
             logger.info(f'Cleanup service checking {len(room_keys)} rooms')
-
             for key in room_keys:
                 try:
                     room_id = key.split('room:', 1)[-1]
                     room_data = voice_service.redis.get_voice_room(room_id)
                     if not room_data:
                         continue
-
                     match_id = room_data.get('match_id')
                     if not match_id:
                         continue
-
                     created_at_str = room_data.get('created_at')
                     if not created_at_str:
                         continue
-
                     try:
                         created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
                     except Exception:
                         continue
-
                     room_age = current_time - created_at
-
                     # 1) Hard safety timeout
                     if room_age > timedelta(hours=2):
                         logger.info(f'Cleaning up room for match {match_id} (hard timeout, age={room_age})')
                         await voice_service.close_voice_room(match_id)
                         continue
-
                     # 2) Early-leave / crash path: room explicitly marked as closing candidate
                     closing_at_str = room_data.get('closing_requested_at')
                     grace = int(getattr(settings, 'CLEANUP_INACTIVE_GRACE_SECONDS', 120))
                     stale_hours = int(getattr(settings, 'CLEANUP_STALE_EMPTY_ROOM_HOURS', 6))
 
                     async def _is_inactive() -> bool:
-                        if not voice_service.discord_enabled :
+                        if not voice_service.discord_enabled:
                             return True
                         return not await discord_service.match_has_active_players(match_id)
-
                     if closing_at_str:
                         try:
                             closing_at = datetime.fromisoformat(closing_at_str.replace('Z', '+00:00'))
                         except Exception:
                             closing_at = created_at
-
                         if (current_time - closing_at).total_seconds() >= grace:
                             if await _is_inactive():
                                 logger.info(
@@ -123,7 +112,6 @@ class CleanupService:
                                 )
                                 await voice_service.close_voice_room(match_id)
                                 continue
-
                     # 3) Orphan safety: if room is old AND nobody is active, delete
                     if room_age >= timedelta(hours=stale_hours):
                         if await _is_inactive():
@@ -132,7 +120,6 @@ class CleanupService:
                                 f'(stale+inactive, age={room_age})'
                             )
                             await voice_service.close_voice_room(match_id)
-
                 except Exception as e:
                     logger.error(f'Error checking room {key}: {e}')
                     continue
@@ -146,13 +133,11 @@ class CleanupService:
                 return
             if not discord_service.connected:
                 return
-
             now = datetime.now(timezone.utc)
             # run at most every 30 minutes
             if (now - self._last_discord_gc) < timedelta(minutes=30):
                 return
             self._last_discord_gc = now
-
             await discord_service.garbage_collect_orphaned_matches(
                 max_age_hours=int(getattr(settings, 'DISCORD_GC_STALE_HOURS', 6)),
                 min_age_minutes=int(getattr(settings, 'DISCORD_GC_MIN_AGE_MINUTES', 10)),

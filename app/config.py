@@ -59,14 +59,14 @@ class Settings(BaseSettings):
     # Discord OAuth2 (to link Discord account without manual ID)
     DISCORD_OAUTH_CLIENT_ID: Optional[str] = Field(default=None)
     DISCORD_OAUTH_CLIENT_SECRET: Optional[str] = Field(default=None)
-    # If not set, defaults to: http://{SERVER_HOST}:{SERVER_PORT}/api/auth/discord/callback (with 127.0.0.1 for 0.0.0.0)
+    # If not set, defaults to: http://{SERVER_HOST}:{SERVER_PORT}/api/auth/discord/callback
     DISCORD_OAUTH_REDIRECT_URI: Optional[str] = Field(default=None)
     DISCORD_OAUTH_SCOPES: str = Field(default='identify')
     DISCORD_OAUTH_STATE_TTL_SECONDS: int = Field(default=600)
     # Cleanup / Garbage Collection
     CLEANUP_INTERVAL_SECONDS: int = Field(default=60)
-    CLEANUP_INACTIVE_GRACE_SECONDS: int = Field(default=120)  # grace before deleting empty match resources
-    CLEANUP_STALE_EMPTY_ROOM_HOURS: int = Field(default=6)  # safety: delete empty rooms older than this
+    CLEANUP_INACTIVE_GRACE_SECONDS: int = Field(default=120)
+    CLEANUP_STALE_EMPTY_ROOM_HOURS: int = Field(default=6)
 
     # Discord orphan cleanup (helps when using memory:// and app restarts)
     DISCORD_GC_ON_STARTUP: bool = Field(default=True)
@@ -88,7 +88,8 @@ class Settings(BaseSettings):
         # Discord is required for this application (strict mode)
         if not self.DISCORD_BOT_TOKEN or not self.DISCORD_GUILD_ID:
             raise ValueError(
-                'Discord is required. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in your .env file.'
+                'Discord is required. Set DISCORD_BOT_TOKEN '
+                'and DISCORD_GUILD_ID in your .env file.'
             )
         try:
             int(self.DISCORD_GUILD_ID)
