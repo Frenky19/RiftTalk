@@ -257,6 +257,12 @@
             color: var(--danger-dark);
             border: 1px solid rgba(240, 71, 71, 0.2);
         }
+
+        .message.warning {
+            background: rgba(250, 166, 26, 0.1);
+            color: var(--warning-dark);
+            border: 1px solid rgba(250, 166, 26, 0.2);
+        }
         
         .loading {
             display: none;
@@ -314,6 +320,12 @@
             background: rgba(240, 71, 71, 0.1);
             color: var(--danger-dark);
             border: 1px solid rgba(240, 71, 71, 0.2);
+        }
+
+        .server-status.warning {
+            background: rgba(250, 166, 26, 0.1);
+            color: var(--warning-dark);
+            border: 1px solid rgba(250, 166, 26, 0.2);
         }
         
         .voice-channel-info {
@@ -710,16 +722,101 @@
             color: rgba(231, 233, 238, 0.85);
         }
 
+        /* ==========================================================
+           Extra UI: Donate button + Footer
+           ========================================================== */
+        .donate-link {
+            background: transparent !important;
+            box-shadow: none !important;
+            text-decoration: none;
+            font-size: 13px;
+            padding: 8px 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            color: var(--dark);
+            transition: var(--transition);
+        }
+
+        .donate-link:hover {
+            transform: translateY(-1px);
+            background: rgba(0,0,0,0.03) !important;
+        }
+
+        html[data-theme="dark"] .donate-link:hover {
+            background: rgba(255,255,255,0.06) !important;
+        }
+
+        .site-footer {
+            margin-top: 18px;
+            padding-top: 16px;
+            padding-left: 10px;
+            padding-right: 10px;
+            border-top: 1px solid rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            flex-wrap: wrap;
+            color: var(--gray-dark);
+            font-size: 0.95rem;
+        }
+
+        html[data-theme="dark"] .site-footer {
+            border-top: 1px solid rgba(255,255,255,0.10);
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .footer-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 999px;
+            border: 1px solid rgba(0,0,0,0.12);
+            color: var(--dark);
+            text-decoration: none;
+            transition: var(--transition);
+            background: transparent;
+        }
+
+        html[data-theme="dark"] .footer-link {
+            color: var(--dark);
+            border: 1px solid rgba(255,255,255,0.16);
+        }
+
+        .footer-link:hover {
+            transform: translateY(-1px);
+            border-color: rgba(0,0,0,0.28);
+            background: rgba(0,0,0,0.03);
+        }
+
+        html[data-theme="dark"] .footer-link:hover {
+            border-color: rgba(255,255,255,0.28);
+            background: rgba(255,255,255,0.06);
+        }
+
+        .footer-copy {
+            opacity: 0.95;
+            text-align: left;
+        }
+
 </style>
 </head>
 <body>
     <div class="container">    <div class="header">
         <div class="logo">
-            <i class="fab fa-discord"></i>
+            <i class=""></i>
         </div>
         <h1 data-i18n="page_title">Discord Account Linking</h1>
         <p class="subtitle" data-i18n="page_subtitle">Link your Discord account with League of Legends for automatic voice channel connection during matches</p>
-        <div class="top-controls" aria-label="Preferences">
+<div class="top-controls" aria-label="Preferences">
             <div class="control-group">
                 <label class="sr-only" for="langSelect" data-i18n="label_language">Language</label>
                 <select id="langSelect" class="lang-select" aria-label="Language">
@@ -733,6 +830,13 @@
                     <span class="control-text" data-i18n="toggle_theme">Theme</span>
                 </button>
             </div>
+
+            <div class="control-group">
+                <a id="donateBtn" class="control-btn donate-link" href="https://pay.cloudtips.ru/p/f7493568" target="_blank" rel="noopener noreferrer" role="button">
+                    <span data-i18n="btn_donate">Support the project</span>
+                </a>
+            </div>
+
         </div>
     </div>
 <div class="user-info" id="currentUserInfo" style="display: none;">
@@ -745,17 +849,16 @@
             <div class="main-content">
                 <!-- Discord linking card -->
                 <div class="card">
-                    <h3><i class="fas fa-link"></i> Discord Account Linking</h3>
+                    <h3><i class="fas fa-link"></i> <span data-i18n="card_discord_linking">Discord Account Linking</span></h3>
                     <form id="discordLinkForm">
                         <div class="form-group">
                             <label for="discordId"><i class="fas fa-id-card"></i> <span data-i18n="label_discord_id">Your Discord ID:</span></label>
                             <div style="margin-top: 10px;">
                                 <button type="button" class="btn" id="oauthLinkBtn">
-                                    <i class="fab fa-discord"></i> Link via Discord (recommended)
+                                    <i class=""></i> <span data-i18n="btn_oauth_link">Link via Discord (recommended)</span>
                                 </button>
                                 <p style="margin-top: 10px; color: var(--gray-dark); font-size: 0.95rem;">
-                                    No need to enter your Discord ID. A browser window will open for authorization.
-                                </p>
+                                    <span data-i18n="oauth_info">No need to enter your Discord ID. A browser window will open for authorization.</span></p>
                             </div>
                             <div style="margin-top: 16px;">
                                 <details>
@@ -767,7 +870,7 @@
                             <input 
                                 type="text" 
                                 id="discordId" 
-                                placeholder="Enter your Discord ID (numbers only)"
+                                placeholder="Enter your Discord User ID (numbers only)" data-i18n-placeholder="ph_discord_user_id"
                                                             >
                                     </div>
                                 </details>
@@ -775,7 +878,7 @@
 
                             <div id="changeDiscordContainer" style="display: none; margin-top: 10px;">
                                 <button type="button" id="changeDiscordBtn" class="btn change-btn">
-                                    <i class="fas fa-edit"></i> Change Discord ID
+                                    <i class="fas fa-edit"></i> <span data-i18n="btn_change_discord_id">Change Discord ID</span>
                                 </button>
                             </div>
                             <div id="serverStatus" class="server-status" style="display: none;"></div>
@@ -783,11 +886,11 @@
                         
                         <div class="loading" id="loading">
                             <div class="spinner"></div>
-                            <p style="text-align: center; margin-top: 10px; color: var(--gray-dark);">Linking account...</p>
+                            <p style="text-align: center; margin-top: 10px; color: var(--gray-dark);"><span data-i18n="loading_linking">Linking account...</span></p>
                         </div>
                         
                         <button type="submit" class="btn" id="submitBtn">
-                            <i class="fas fa-link"></i> Link Discord Account (manual)
+                            <i class="fas fa-link"></i> <span data-i18n="btn_link_manual">Link Discord Account (manual)</span>
                         </button>
                     </form>
                     <div class="message" id="message"></div>
@@ -795,38 +898,38 @@
                 
                 <!-- Match status card -->
                 <div class="match-status" id="matchStatus">
-                    <h3><i class="fas fa-gamepad"></i> Match Status</h3>
+                    <h3><i class="fas fa-gamepad"></i> <span data-i18n="match_status">Match Status</span></h3>
                     <p id="matchStatusText"></p>
                     <button class="refresh-btn" id="refreshMatchBtn">
-                        <i class="fas fa-sync-alt"></i> Refresh Status
+                        <i class="fas fa-sync-alt"></i> <span data-i18n="btn_refresh_status">Refresh Status</span>
                     </button>
                 </div>
 
                 <!-- Voice channel card -->
                 <div class="voice-channel-info" id="voiceChannelInfo">
-                    <h3><i class="fas fa-microphone-alt"></i> Your Team's Voice Channel</h3>
-                    <p>The match has started! Join your team's voice channel:</p>
+                    <h3><i class="fas fa-microphone-alt"></i> <span data-i18n="your_team_voice_channel">Your Team\'s Voice Channel</span></h3>
+                    <p><span data-i18n="voice_channel_prompt">The match has started! Join your team\'s voice channel:</span></p>
                     
                     <div class="action-buttons">
                         <a href="#" id="voiceInviteLink" class="voice-invite-link" target="_blank">
-                            <i class="fas fa-headset"></i> Join Voice Channel
+                            <i class="fas fa-headset"></i> <span data-i18n="btn_join_voice">Join Voice Channel</span>
                         </a>
                         <button class="copy-btn" id="copyInviteBtn">
-                            <i class="far fa-copy"></i> Copy Link
+                            <i class="far fa-copy"></i> <span data-i18n="btn_copy_link">Copy Link</span>
                         </button>
                     </div>
                     
                     <div class="channel-details">
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label"><i class="fas fa-hashtag"></i> Channel:</span>
+                            <span class="channel-detail-label"><i class="fas fa-hashtag"></i> <span data-i18n="lbl_channel">Channel:</span></span>
                             <span id="channelName"></span>
                         </div>
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label"><i class="fas fa-users"></i> Team:</span>
+                            <span class="channel-detail-label"><i class="fas fa-users"></i> <span data-i18n="lbl_team_label">Team:</span></span>
                             <span id="teamName"></span>
                         </div>
                         <div class="channel-detail-item">
-                            <span class="channel-detail-label"><i class="fas fa-flag"></i> Match:</span>
+                            <span class="channel-detail-label"><i class="fas fa-flag"></i> <span data-i18n="lbl_match">Match:</span></span>
                             <span id="matchId"></span>
                         </div>
                     </div>
@@ -837,35 +940,35 @@
             <div class="sidebar">
                 <!-- Help card -->
                 <div class="help-section">
-                    <h3><i class="fas fa-question-circle"></i> Help & Instructions</h3>
+                    <h3><i class="fas fa-question-circle"></i> <span data-i18n="help_instructions">Help & Instructions</span></h3>
                     
                     <div class="instruction-steps">
                         <div class="instruction-step">
                             <div class="instruction-number">1</div>
                             <div class="instruction-text">
-                                <strong>How to find Discord ID?</strong><br>
-                                Open Discord → Settings → Advanced → Enable "Developer Mode" → Right-click on your avatar → "Copy User ID"
+                                <strong><span data-i18n="how_to_find_discord_id">How to find Discord ID?</span></strong><br>
+                                <span data-i18n="find_discord_id_steps">Open Discord → Settings → Advanced → Enable "Developer Mode" → Right-click on your avatar → "Copy User ID"</span>
                             </div>
                         </div>
                         
                         <div class="instruction-step">
                             <div class="instruction-number">2</div>
                             <div class="instruction-text">
-                                <strong>Join our server</strong><br>
-                                Make sure you're in 
+                                <strong><span data-i18n="join_our_server">Join our server</span></strong><br>
+                                <span data-i18n="make_sure_in_server">Make sure you\'re in</span>
                                 <a href="https://discord.gg/UcfX74R4" target="_blank" class="discord-link">
-                                    <i class="fab fa-discord"></i> Our Discord server
+                                    <i class=""></i> <span data-i18n="our_discord_server">Our Discord server</span>
                                 </a>
                             </div>
                         </div>
                     </div>
                     
                     <div class="important-note">
-                        <h4><i class="fas fa-lightbulb"></i> Important to know:</h4>
+                        <h4><i class="fas fa-lightbulb"></i> <span data-i18n="important_to_know">Important to know:</span></h4>
                         <ul style="margin-left: 20px; color: var(--gray-dark);">
-                            <li>If you need to change Discord ID - click "Change" button</li>
-                            <li>Voice channels are created automatically after match starts</li>
-                            <li>You will be automatically connected to your team's channel</li>
+                            <li data-i18n="note_change_id">If you need to change Discord ID - click "Change" button</li>
+                            <li data-i18n="note_channels_created">Voice channels are created automatically after match starts</li>
+                            <li data-i18n="note_auto_connected">You will be automatically connected to your team\'s channel</li>
                         </ul>
                     </div>
                 </div>
@@ -876,21 +979,32 @@
         <div class="steps">
             <div class="step">
                 <div class="step-number">1</div>
-                <div class="step-text">Enter Discord ID and link account</div>
+                <div class="step-text"><span data-i18n="step_1">Enter Discord ID and link account</span></div>
             </div>
             <div class="step">
                 <div class="step-number">2</div>
-                <div class="step-text">Launch League of Legends and join games</div>
+                <div class="step-text"><span data-i18n="step_2">Launch League of Legends and join games</span></div>
             </div>
             <div class="step">
                 <div class="step-number">3</div>
-                <div class="step-text">After match starts, refresh status</div>
+                <div class="step-text"><span data-i18n="step_3">After match starts, refresh status</span></div>
             </div>
             <div class="step">
                 <div class="step-number">4</div>
-                <div class="step-text">Join your team's voice channel!</div>
+                <div class="step-text"><span data-i18n="step_4">Join your team\'s voice channel!</span></div>
             </div>
         </div>
+    
+
+        <footer class="site-footer" aria-label="Contacts">
+            <div class="footer-copy">© 2026 Frenky19</div>
+            <div class="footer-links">
+                <a class="footer-link" href="https://t.me/Frenky_19" target="_blank" rel="noopener noreferrer" aria-label="Telegram">
+                    <i class="fab fa-telegram"></i>
+                </a>
+            </div>
+        </footer>
+
     </div>
 
     <script>
@@ -907,6 +1021,8 @@
                 toggle_theme: "Theme",
 
                 btn_oauth_link: "Link via Discord (recommended)",
+                
+                btn_donate: "Support the project",
                 oauth_info: "No need to enter your Discord ID manually. This will securely link your account.",
                 manual_discord_id_advanced: "Manual Discord ID (advanced)",
                 manual_discord_id_link: "Manual Discord ID Link",
@@ -945,13 +1061,64 @@
                 keep_open_note: "Keep this page open while playing League of Legends. The app will automatically update when match starts.",
 
                 // Dynamic UI messages
-                msg_copied: t('msg_copied'),
-                msg_copy_failed: t('msg_copy_failed'),
-                msg_opening_discord: t('msg_opening_discord'),
-                msg_oauth_open: t('msg_oauth_open'),
-                msg_invalid_id: t('msg_invalid_id'),
-                msg_saved: t('msg_saved'),
-                msg_save_failed: t('msg_save_failed'),
+                msg_copied: "Invite link copied to clipboard!",
+                msg_copy_failed: "Couldn't copy the link. Please copy it manually.",
+                msg_opening_discord: "Opening Discord invite...",
+                msg_oauth_open: "Opening Discord authorization...",
+                msg_invalid_id: "Enter a valid Discord User ID (digits only).",
+                msg_saved: "Discord ID saved.",
+                                msg_save_failed: "Couldn't save Discord ID. Please try again.",
+
+                // Additional UI text used on this page
+                doc_title: "Link Discord Account - LoL Voice Chat",
+                card_discord_linking: "Discord Account Linking",
+                btn_change_discord_id: "Change Discord ID",
+                loading_linking: "Linking account...",
+                btn_link_manual: "Link Discord Account (manual)",
+                btn_refresh_status: "Refresh Status",
+                voice_channel_prompt: "The match has started! Join your team's voice channel:",
+                help_instructions: "Help & Instructions",
+                how_to_find_discord_id: "How to find Discord ID?",
+                find_discord_id_steps: "Open Discord → Settings → Advanced → Enable \"Developer Mode\" → Right-click on your avatar → \"Copy User ID\"",
+                join_our_server: "Join our server",
+                make_sure_in_server: "Make sure you're in",
+                our_discord_server: "Our Discord server",
+                important_to_know: "Important to know:",
+                note_change_id: "If you need to change Discord ID — click the \"Change\" button",
+                note_channels_created: "Voice channels are created automatically after the match starts",
+                note_auto_connected: "You will be automatically connected to your team's channel",
+                step_1: "Enter Discord ID and link account",
+                step_2: "Launch League of Legends and join games",
+                step_3: "After the match starts, refresh status",
+                step_4: "Join your team's voice channel!",
+                lbl_channel: "Channel:",
+                lbl_team_label: "Team:",
+                lbl_match: "Match:",
+                lbl_player: "Player",
+                lbl_id: "ID",
+                lbl_saved: "Saved",
+                btn_account_linked: "Account linked",
+                msg_enter_new_id: "Enter new Discord ID",
+                msg_match_status_error: "Could not check match status. Make sure League of Legends is running.",
+                msg_match_started_ready: "✅ Match started! Your voice channel is ready.",
+                msg_match_loading: "🔄 Match is loading... Voice channel will be available after match starts.",
+                msg_champ_select: "🎯 Champion selection... Voice channel will be created after match starts.",
+                msg_match_found_not_started: "⏳ Match found, but not started yet. Voice channel will be available after match starts.",
+                msg_no_active_match: "❌ No active match found. Launch League of Legends and join a game.",
+                msg_voice_ready: "🎉 Match started! Your team's voice channel is ready. Join now!",
+                msg_already_linked: "✅ Discord account already linked: {id}",
+                msg_oauth_linked: "✅ Discord linked via OAuth: {id}",
+                server_user_found: "✅ User found on server",
+                server_user_not_found: "❌ User not found on server",
+                server_join_server: "Join server",
+                server_join_bot_server: "Please join the bot's Discord server.",
+                server_status_unknown: "⚠️ Could not check status",
+                msg_auth_failed: "Could not authenticate. Launch League of Legends and try again.",
+                msg_oauth_timeout: "⏳ OAuth window was opened, but linking was not detected yet. If you finished authorization, click \"Refresh Status\".",
+                msg_oauth_start_failed: "Failed to start Discord OAuth.",
+                msg_oauth_no_url: "No authorization URL returned.",
+                msg_match_status_updated: "🔄 Match status updated",
+                msg_copied_short: "Copied!"
             },
             ru: {
                 page_title: "Привязка Discord",
@@ -962,6 +1129,8 @@
                 toggle_theme: "Тема",
 
                 btn_oauth_link: "Привязать через Discord (рекомендуется)",
+                
+                btn_donate: "Поддержать проект",
                 oauth_info: "Не нужно вводить Discord ID вручную — аккаунт будет безопасно привязан через авторизацию.",
                 manual_discord_id_advanced: "Discord ID вручную (для продвинутых)",
                 manual_discord_id_link: "Привязка по Discord ID вручную",
@@ -1006,15 +1175,78 @@
                 msg_oauth_open: "Открываю авторизацию Discord...",
                 msg_invalid_id: "Введите корректный Discord User ID (только цифры).",
                 msg_saved: "Discord ID успешно сохранён.",
-                msg_save_failed: "Не удалось сохранить Discord ID. Попробуйте ещё раз.",
+                                msg_save_failed: "Не удалось сохранить Discord ID. Попробуйте ещё раз.",
+
+                // Дополнительные строки интерфейса для этой страницы
+                doc_title: "Привязка Discord — LoL Voice Chat",
+                card_discord_linking: "Привязка Discord",
+                btn_change_discord_id: "Изменить Discord ID",
+                loading_linking: "Привязываю аккаунт...",
+                btn_link_manual: "Привязать Discord (вручную)",
+                btn_refresh_status: "Обновить статус",
+                voice_channel_prompt: "Матч начался! Подключайтесь к голосовому каналу вашей команды:",
+                help_instructions: "Помощь и инструкции",
+                how_to_find_discord_id: "Как найти Discord ID?",
+                find_discord_id_steps: "Откройте Discord → Настройки → Расширенные → включите «Режим разработчика» → ПКМ по аватару → «Скопировать ID пользователя»",
+                join_our_server: "Присоединяйтесь к серверу",
+                make_sure_in_server: "Убедитесь, что вы на",
+                our_discord_server: "нашем Discord-сервере",
+                important_to_know: "Важно знать:",
+                note_change_id: "Если нужно изменить Discord ID — нажмите кнопку «Изменить»",
+                note_channels_created: "Голосовые каналы создаются автоматически после старта матча",
+                note_auto_connected: "Вы будете автоматически подключены к каналу вашей команды",
+                step_1: "Введите Discord ID и привяжите аккаунт",
+                step_2: "Запустите League of Legends и начните матч",
+                step_3: "После старта матча обновите статус",
+                step_4: "Зайдите в голосовой канал команды!",
+                lbl_channel: "Канал:",
+                lbl_team_label: "Команда:",
+                lbl_match: "Матч:",
+                lbl_player: "Игрок",
+                lbl_id: "ID",
+                lbl_saved: "Сохранено",
+                btn_account_linked: "Аккаунт привязан",
+                msg_enter_new_id: "Введите новый Discord ID",
+                msg_match_status_error: "Не удалось проверить статус матча. Убедитесь, что League of Legends запущена.",
+                msg_match_started_ready: "✅ Матч начался! Голосовой канал готов.",
+                msg_match_loading: "🔄 Идёт загрузка... Голосовой канал появится после старта матча.",
+                msg_champ_select: "🎯 Выбор чемпионов... Голосовой канал будет создан после старта матча.",
+                msg_match_found_not_started: "⏳ Матч найден, но ещё не начался. Голосовой канал появится после старта матча.",
+                msg_no_active_match: "❌ Активный матч не найден. Запустите League of Legends и начните игру.",
+                msg_voice_ready: "🎉 Матч начался! Голосовой канал вашей команды готов. Подключайтесь!",
+                msg_already_linked: "✅ Discord уже привязан: {id}",
+                msg_oauth_linked: "✅ Discord привязан через OAuth: {id}",
+                server_user_found: "✅ Пользователь найден на сервере",
+                server_user_not_found: "❌ Пользователь не найден на сервере",
+                server_join_server: "Вступить на сервер",
+                server_join_bot_server: "Пожалуйста, вступите на Discord-сервер бота.",
+                server_status_unknown: "⚠️ Не удалось проверить статус",
+                msg_auth_failed: "Не удалось авторизоваться. Запустите League of Legends и попробуйте ещё раз.",
+                msg_oauth_timeout: "⏳ Окно авторизации открыто, но привязка ещё не обнаружена. Если вы завершили авторизацию, нажмите «Обновить статус».",
+                msg_oauth_start_failed: "Не удалось запустить OAuth Discord.",
+                msg_oauth_no_url: "Сервер не вернул ссылку на авторизацию.",
+                msg_match_status_updated: "🔄 Статус матча обновлён",
+                msg_copied_short: "Скопировано!"
             }
         };
+
 
         let currentLang = "en";
 
         function t(key) {
             const pack = I18N[currentLang] || I18N.en;
             return (pack && pack[key]) || I18N.en[key] || key;
+        }
+
+        function tFmt(key, vars) {
+            let s = t(key);
+            if (!vars) return s;
+            for (const k in vars) {
+                if (Object.prototype.hasOwnProperty.call(vars, k)) {
+                    s = s.split(`{${k}}`).join(String(vars[k]));
+                }
+            }
+            return s;
         }
 
         function applyTranslations() {
@@ -1040,6 +1272,8 @@
             localStorage.setItem("lang", currentLang);
             document.documentElement.setAttribute("lang", currentLang);
             applyTranslations();
+            // Update the browser/window title
+            document.title = t('doc_title');
         }
 
         function getInitialTheme() {
@@ -1077,8 +1311,6 @@
             }
         }
 
-        }
-
 // DOM elements
         const form = document.getElementById('discordLinkForm');
         const discordIdInput = document.getElementById('discordId');
@@ -1108,7 +1340,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data.summoner_name) {
-                        userDetails.textContent = `Player: ${data.summoner_name} (ID: ${data.summoner_id})`;
+                        userDetails.textContent = `${t('lbl_player')}: ${data.summoner_name} (${t('lbl_id')}: ${data.summoner_id})`;
                         currentUserInfo.style.display = 'block';
                         
                         // Save token for subsequent requests
@@ -1165,7 +1397,7 @@
 
         function showMatchStatusError() {
             matchStatus.style.display = 'block';
-            matchStatusText.textContent = 'Could not check match status. Make sure League of Legends is running.';
+            matchStatusText.textContent = t('msg_match_status_error');
         }
 
         // Update UI based on match status
@@ -1174,23 +1406,23 @@
             
             if (matchInfo.in_progress && matchInfo.voice_channel) {
                 // Match STARTED (InProgress) and voice channel is available
-                matchStatusText.textContent = '✅ Match started! Your voice channel is ready.';
+                matchStatusText.textContent = t('msg_match_started_ready');
                 displayVoiceChannelInfo(matchInfo);
             } else if (matchInfo.in_loading_screen) {
                 // Loading screen - don't show link
-                matchStatusText.textContent = '🔄 Match is loading... Voice channel will be available after match starts.';
+                matchStatusText.textContent = t('msg_match_loading');
                 voiceChannelInfo.style.display = 'none';
             } else if (matchInfo.in_champ_select) {
                 // Champion selection in progress
-                matchStatusText.textContent = '🎯 Champion selection... Voice channel will be created after match starts.';
+                matchStatusText.textContent = t('msg_champ_select');
                 voiceChannelInfo.style.display = 'none';
             } else if (matchInfo.match_id && !matchInfo.in_progress) {
                 // Match found but not started yet
-                matchStatusText.textContent = '⏳ Match found, but not started yet. Voice channel will be available after match starts.';
+                matchStatusText.textContent = t('msg_match_found_not_started');
                 voiceChannelInfo.style.display = 'none';
             } else {
                 // No active match
-                matchStatusText.textContent = '❌ No active match found. Launch League of Legends and join a game.';
+                matchStatusText.textContent = t('msg_no_active_match');
                 voiceChannelInfo.style.display = 'none';
             }
         }
@@ -1205,7 +1437,7 @@
                 voiceChannelInfo.style.display = 'block';
                 
                 // Show notification about successful channel creation
-                showMessage('🎉 Match started! Your team\'s voice channel is ready. Join now!', 'success');
+                showMessage(t('msg_voice_ready'), 'success');
             }
         }
 
@@ -1224,7 +1456,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data.discord_user_id) {
-                        showMessage(`✅ Discord account already linked: ${data.discord_user_id}`, 'success');
+                        showMessage(tFmt('msg_already_linked', { id: data.discord_user_id }), 'success');
                         lockForm(data.discord_user_id);
                         // Check server status
                         checkServerStatus(data.discord_user_id);
@@ -1240,7 +1472,7 @@
             discordIdInput.value = discordId;
             discordIdInput.disabled = true;
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Account linked';
+            submitBtn.innerHTML = `<i class="fas fa-check"></i> ${t('btn_account_linked')}`;
             if (oauthLinkBtn) { oauthLinkBtn.disabled = true; }
             changeDiscordContainer.style.display = 'block';
         }
@@ -1251,7 +1483,7 @@
             discordIdInput.value = '';
             discordIdInput.focus();
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Link Discord Account (manual)';
+            submitBtn.innerHTML = `<i class="fas fa-link"></i> ${t('btn_link_manual')}`;
             if (oauthLinkBtn) { oauthLinkBtn.disabled = false; }
             changeDiscordContainer.style.display = 'none';
             messageDiv.style.display = 'none';
@@ -1308,23 +1540,22 @@
             serverStatus.style.display = 'block';
             
             if (status.on_server === true) {
-                serverStatus.innerHTML = '✅ User found on server';
+                serverStatus.innerHTML = t('server_user_found');
                 serverStatus.className = 'server-status success';
             } else if (status.on_server === false) {
-                let message = '❌ User not found on server';
+                let message = t('server_user_not_found');
                 if (status.server_invite_available) {
-                    message += `<br><a href="${status.server_invite}" target="_blank" style="color: var(--primary); text-decoration: underline;">Join server</a>`;
+                    message += `<br><a href="${status.server_invite}" target="_blank" style="color: var(--primary); text-decoration: underline;">${t("server_join_server")}</a>`;
                 } else {
-                    message += '<br>Please join the bot\'s Discord server.';
+                    message += '<br>' + t('server_join_bot_server');
                 }
                 serverStatus.innerHTML = message;
                 serverStatus.className = 'server-status error';
             } else {
-                serverStatus.innerHTML = '⚠️ Could not check status';
+                serverStatus.innerHTML = t('server_status_unknown');
                 serverStatus.className = 'server-status warning';
             }
         }
-
 
 
 async function ensureAuthToken() {
@@ -1343,7 +1574,7 @@ async function startDiscordOAuthLink() {
     try {
         const token = await ensureAuthToken();
         if (!token) {
-            showMessage('❌ Could not authenticate. Launch League of Legends and try again.', 'error');
+            showMessage('❌ ' + t('msg_auth_failed'), 'error');
             return;
         }
 
@@ -1356,12 +1587,12 @@ async function startDiscordOAuthLink() {
 
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-            const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : 'Failed to start Discord OAuth.';
+            const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : t('msg_oauth_start_failed');
             throw new Error(msg);
         }
 
         const url = data.url;
-        if (!url) throw new Error('No authorization URL returned.');
+        if (!url) throw new Error(t('msg_oauth_no_url'));
 
         // Open externally (best UX). Falls back to window.open.
         try {
@@ -1390,7 +1621,7 @@ async function startDiscordOAuthLink() {
                     const info = await check.json();
                     if (info.discord_user_id) {
                         clearInterval(interval);
-                        showMessage(`✅ Discord linked via OAuth: ${info.discord_user_id}`, 'success');
+                        showMessage(tFmt('msg_oauth_linked', { id: info.discord_user_id }), 'success');
                         lockForm(info.discord_user_id);
                         checkServerStatus(info.discord_user_id);
                     }
@@ -1399,7 +1630,7 @@ async function startDiscordOAuthLink() {
                 if (Date.now() - startedAt > timeoutMs) {
                     clearInterval(interval);
                     if (oauthLinkBtn) oauthLinkBtn.disabled = false;
-                    showMessage('⏳ OAuth window was opened, but linking was not detected yet. If you finished authorization, click "Refresh Status".', 'warning');
+                    showMessage(t('msg_oauth_timeout'), 'warning');
                 }
             } catch (e) {
                 // ignore
@@ -1443,7 +1674,7 @@ async function startDiscordOAuthLink() {
                 }
                 
                 if (!token) {
-                    throw new Error('Could not authenticate. Launch League of Legends and try again.');
+                    throw new Error(t('msg_auth_failed'));
                 }
 
                 // Send as string
@@ -1463,7 +1694,7 @@ async function startDiscordOAuthLink() {
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showMessage(`✅ ${data.message} (Saved: ${data.saved_value})`, 'success');
+                    showMessage(`✅ ${data.message} (${t('lbl_saved')}: ${data.saved_value})`, 'success');
                     
                     // Lock form after successful linking
                     lockForm(discordId);
@@ -1510,7 +1741,7 @@ if (oauthLinkBtn) {
         // Handler for change Discord ID button
         changeDiscordBtn.addEventListener('click', function() {
             unlockForm();
-            showMessage('✏️ Enter new Discord ID', 'success');
+            showMessage('✏️ ' + t('msg_enter_new_id'), 'success');
         });
 
         // Handler for refresh match status button
@@ -1523,7 +1754,7 @@ if (oauthLinkBtn) {
                 .then(data => {
                     if (data.summoner_id) {
                         checkMatchStatus(data.summoner_id);
-                        showMessage('🔄 Match status updated', 'success');
+                        showMessage(t('msg_match_status_updated'), 'success');
                     }
                 })
                 .catch(error => {
@@ -1536,12 +1767,13 @@ if (oauthLinkBtn) {
             const inviteUrl = voiceInviteLink.href;
             navigator.clipboard.writeText(inviteUrl).then(() => {
                 const originalText = copyInviteBtn.textContent;
-                copyInviteBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                copyInviteBtn.innerHTML = '<i class="fas fa-check"></i> ' + t('msg_copied_short');
                 setTimeout(() => {
-                    copyInviteBtn.innerHTML = '<i class="far fa-copy"></i> Copy Link';
+                    copyInviteBtn.innerHTML = '<i class="far fa-copy"></i> ' + t('btn_copy_link');
                 }, 2000);
             }).catch(err => {
                 console.error('Copy error: ', err);
+                showMessage('❌ ' + t('msg_copy_failed'), 'error');
             });
         });
 

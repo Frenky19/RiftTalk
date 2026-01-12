@@ -338,13 +338,11 @@ async def auto_assign_player_to_existing_room(
                         f'Successfully assigned {summoner_id} to {team_name} '
                         f'in existing room'
                     )
-                    # Save info about joining existing room
                     await voice_service.add_player_to_existing_room(
                         summoner_id,
                         match_id,
                         team_name
                     )
-                    # Get channel info for logging
                     discord_channels = (
                         voice_service.get_voice_room_discord_channels(match_id)
                     )
@@ -443,8 +441,6 @@ async def handle_match_start():
             redis_manager.redis.hset(user_key, 'current_match', match_id)
         except Exception as e:
             logger.warning(f'Failed to save current_match to user key: {e}')
-
-        # Check: If room already exists, don't create new one
         existing_room = voice_service.redis.get_voice_room_by_match(match_id)
         if existing_room:
             logger.info(
@@ -608,8 +604,6 @@ async def handle_match_end(event_data: dict):
         logger.error(f'Error handling match end: {e}')
 
 
-
-
 async def handle_match_leave(event_data: dict):
     """Handle leaving match (e.g., InProgress -> None/Lobby) without full cleanup."""
     try:
@@ -620,11 +614,10 @@ async def handle_match_leave(event_data: dict):
             return
         if new_phase not in ('None', 'Lobby'):
             return
-
         logger.info(
-            f'Player appears to have left the match early (phase {previous_phase} -> {new_phase})'
+            'Player appears to have left the match '
+            f'early (phase {previous_phase} -> {new_phase})'
         )
-
         # Identify current summoner
         summoner_id = None
         try:
@@ -637,16 +630,13 @@ async def handle_match_leave(event_data: dict):
         if not summoner_id:
             logger.warning('Cannot handle leave: summoner_id is unknown')
             return
-
         user_key = f'user:{summoner_id}'
-
         # Try to get match_id saved during match start
         match_id = None
         try:
             match_id = redis_manager.redis.hget(user_key, 'current_match')
         except Exception as e:
             logger.error(f'Error reading current_match from user key: {e}')
-
         # Fallback: find match by scanning active rooms
         if not match_id:
             try:
@@ -659,28 +649,23 @@ async def handle_match_leave(event_data: dict):
                         break
             except Exception as e:
                 logger.error(f'Failed to locate match by scanning rooms: {e}')
-
         if not match_id:
             logger.warning('Cannot handle leave: match_id is unknown')
             return
-
         # Get Discord user ID
         discord_user_id = None
         try:
             discord_user_id = redis_manager.redis.hget(user_key, 'discord_user_id')
         except Exception as e:
             logger.error(f'Error getting Discord ID: {e}')
-
         if not discord_user_id:
             logger.warning('Cannot handle leave: discord_user_id not linked')
             return
-
         await voice_service.handle_player_left_match(
             match_id=match_id,
             summoner_id=summoner_id,
             discord_user_id=int(discord_user_id),
         )
-
         # Clear current_match on user key (best-effort)
         try:
             redis_manager.redis.hdel(user_key, 'current_match')
@@ -690,9 +675,10 @@ async def handle_match_leave(event_data: dict):
                 redis_manager.redis.hset(user_key, 'current_match', '')
             except Exception:
                 pass
-
     except Exception as e:
         logger.error(f'Error handling match leave: {e}')
+
+
 async def handle_ready_check(event_data: dict):
     """Handle ready check phase."""
     try:
@@ -742,7 +728,6 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-# Serve static files - FIXED CODE FOR .EXE
 if os.path.exists(static_dir):
     app.mount('/static', StaticFiles(directory=static_dir), name='static')
     logger.info(f'Static files served from: {static_dir}')
@@ -862,7 +847,6 @@ async def health_check():
         message += ' LCU connected to game client.'
     elif services['lcu'] == 'waiting_for_game':
         message += ' LCU waiting for League of Legends launch.'
-
     return JSONResponse(content={
         'status': 'healthy',
         'services': services,

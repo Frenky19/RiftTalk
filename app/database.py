@@ -35,16 +35,15 @@ class MemoryStorage:
         Also accepts a dict as the 2nd positional argument for legacy calls.
         """
         mapping = kwargs.get('mapping')
-        # Legacy / convenience: hset(name, { ... })
         if mapping is None and len(args) == 1 and isinstance(args[0], dict):
             mapping = args[0]
-        # redis-py style: hset(name, field, value)
         if mapping is None and len(args) == 2:
             field, value = args
             mapping = {str(field): value}
         if mapping is None:
-            raise TypeError("hset() expected either mapping={...}, a dict positional, or (field, value)")
-
+            raise TypeError(
+                'hset expected either mapping={...}, a dict positional, or (field, value)'
+            )
         with self._lock:
             if key not in self._data:
                 self._data[key] = {}
@@ -60,7 +59,6 @@ class MemoryStorage:
                 return self._data[key].get(field)
             return None
 
-
     def hdel(self, name: str, *keys) -> int:
         """Delete one or more hash fields."""
         if name not in self._data or not isinstance(self._data[name], dict):
@@ -71,7 +69,6 @@ class MemoryStorage:
                 del self._data[name][k]
                 deleted += 1
         return deleted
-
 
     def hgetall(self, key: str) -> Dict[str, Any]:
         """Get all fields from hash"""
@@ -197,7 +194,9 @@ class MemoryPipeline:
             field, value = args
             mapping = {str(field): value}
         if mapping is None:
-            raise TypeError("hset() expected either mapping={...}, a dict positional, or (field, value)")
+            raise TypeError(
+                'hset expected either mapping={...}, a dict positional, or (field, value)'
+            )
         self.commands.append(('hset', key, mapping))
         return self
 
@@ -220,7 +219,6 @@ class MemoryPipeline:
         """Add hdel command to pipeline"""
         self.commands.append(('hdel', name, keys))
         return self
-
 
     def execute(self):
         """Execute all commands in pipeline"""
@@ -412,4 +410,3 @@ class DatabaseManager:
 
 redis_manager = DatabaseManager()
 logger.info('Using In-Memory database storage (Redis not available)')
-
