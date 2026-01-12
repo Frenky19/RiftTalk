@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Link Discord Account - LoL Voice Chat</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="icon" type="image/x-icon" href="static/logo/icon_L.ico">
+    <link rel="icon" type="image/x-icon" href="/static/logo/icon_L.ico">
     <style>
         :root {
             --primary: #7289da;
@@ -807,12 +807,35 @@
             text-align: left;
         }
 
+
+        .logo-img {
+            width: 120px;
+            height: auto;
+            display: block;
+            margin: 0 auto 12px;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            object-fit: contain;
+        }
+
+        
+        /* Disable "jumping" hover transforms */
+        .btn:hover,
+        .control-btn:hover,
+        .footer-link:hover,
+        .donate-link:hover {
+            transform: none !important;
+        }
+
 </style>
+    <link rel="apple-touch-icon" href="/static/logo/icon_L.ico">
 </head>
 <body>
     <div class="container">    <div class="header">
-        <div class="logo">
-            <i class=""></i>
+        <div class="logo" aria-hidden="true">
+            <img class="logo-img" src="/static/logo/PNG_LOL.png" alt="LoL Voice Chat">
         </div>
         <h1 data-i18n="page_title">Discord Account Linking</h1>
         <p class="subtitle" data-i18n="page_subtitle">Link your Discord account with League of Legends for automatic voice channel connection during matches</p>
@@ -855,7 +878,7 @@
                             <label for="discordId"><i class="fas fa-id-card"></i> <span data-i18n="label_discord_id">Your Discord ID:</span></label>
                             <div style="margin-top: 10px;">
                                 <button type="button" class="btn" id="oauthLinkBtn">
-                                    <i class=""></i> <span data-i18n="btn_oauth_link">Link via Discord (recommended)</span>
+                                    <i class="fab fa-discord"></i> <span data-i18n="btn_oauth_link">Link via Discord (recommended)</span>
                                 </button>
                                 <p style="margin-top: 10px; color: var(--gray-dark); font-size: 0.95rem;">
                                     <span data-i18n="oauth_info">No need to enter your Discord ID. A browser window will open for authorization.</span></p>
@@ -957,7 +980,7 @@
                                 <strong><span data-i18n="join_our_server">Join our server</span></strong><br>
                                 <span data-i18n="make_sure_in_server">Make sure you\'re in</span>
                                 <a href="https://discord.gg/UcfX74R4" target="_blank" class="discord-link">
-                                    <i class=""></i> <span data-i18n="our_discord_server">Our Discord server</span>
+                                    <i class="fab fa-discord"></i> <span data-i18n="our_discord_server">Our Discord server</span>
                                 </a>
                             </div>
                         </div>
@@ -1002,6 +1025,11 @@
                 <a class="footer-link" href="https://t.me/Frenky_19" target="_blank" rel="noopener noreferrer" aria-label="Telegram">
                     <i class="fab fa-telegram"></i>
                 </a>
+
+                <a class="footer-link" href="https://discord.gg/zkAXbzWRu4" target="_blank" rel="noopener noreferrer" aria-label="Discord">
+                    <i class="fab fa-discord"></i>
+                </a>
+
             </div>
         </footer>
 

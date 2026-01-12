@@ -5,6 +5,7 @@ import threading
 import time
 from pathlib import Path
 
+
 if getattr(sys, 'frozen', False):
     try:
         from app.encrypted_env import decrypt_env  # type: ignore
@@ -40,7 +41,6 @@ else:
     BASE_DIR = Path(__file__).parent
 
 
-
 class WebViewAPI:
     """Exposes small helpers to JS inside pywebview."""
 
@@ -51,7 +51,6 @@ class WebViewAPI:
             return True
         except Exception:
             return False
-
 
 
 class SafeFileHandler(logging.FileHandler):
@@ -70,6 +69,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
 def _get_server_config():
     """Return (bind_host, port, ui_base_url).
     bind_host may be 0.0.0.0, but UI should use a loopback host."""
@@ -82,6 +82,7 @@ def _get_server_config():
     ui_host = '127.0.0.1' if bind_host in ('0.0.0.0', '::') else bind_host
     base_url = f'http://{ui_host}:{port}'
     return bind_host, port, base_url
+
 
 logging.getLogger('discord').setLevel(logging.WARNING)
 logging.getLogger('uvicorn').setLevel(logging.WARNING)
@@ -156,7 +157,7 @@ def check_server_ready(timeout=30):
     for i in range(timeout):
         try:
             response = requests.get(
-                f"{_get_server_config()[2]}/health",
+                f'{_get_server_config()[2]}/health',
                 timeout=2
             )
             if response.status_code == 200:
@@ -173,18 +174,29 @@ def check_server_ready(timeout=30):
 def run_webview():
     try:
         import webview
+        import inspect
         logger.info('Creating WebView window...')
-        _ = webview.create_window(
-            'LoL Voice Chat',
-            f"{_get_server_config()[2]}/link-discord",
+        icon_path = BASE_DIR / 'static' / 'logo' / 'icon_L.ico'
+        icon_arg = str(icon_path) if icon_path.exists() else None
+        create_sig = inspect.signature(webview.create_window)
+        kwargs = dict(
+            title='LoL Voice Chat',
+            url=f'{_get_server_config()[2]}/link-discord',
             js_api=WebViewAPI(),
-            width=1200,
-            height=800,
+            width=1400,
+            height=1250,
             resizable=True,
             fullscreen=False,
             min_size=(800, 600),
             confirm_close=False,
         )
+        if icon_arg and 'icon' in create_sig.parameters:
+            kwargs['icon'] = icon_arg
+        elif icon_arg:
+            logger.warning(
+                'pywebview.create_window() has no "icon" parameter in this version'
+            )
+        _ = webview.create_window(**kwargs)
         logger.info('Window created, starting WebView...')
         webview.start(debug=False)
         return True
