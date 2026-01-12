@@ -10,6 +10,8 @@ A Windows desktop app that automatically connects League of Legends teammates (w
 
 ## Download .exe build: https://github.com/Frenky19/RiftTalk-Desktop-App
 
+---
+
 ## What it does
 
 - Detects match lifecycle via **League Client (LCU)** on Windows.
