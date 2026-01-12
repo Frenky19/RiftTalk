@@ -333,30 +333,6 @@ async def discord_oauth_callback(
         })
         # Keep for 30 days (refreshable)
         redis_manager.redis.expire(user_key, 30 * 24 * 3600)
-        html = f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Discord linked</title>
-  <style>
-    body {{ font-family: Segoe UI, Arial, sans-serif; padding: 24px; }}
-    .ok {{ color: #2d7d46; font-weight: 700; }}
-    code {{ background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }}
-  </style>
-</head>
-<body>
-  <h2 class="ok">✅ Discord account linked!</h2>
-  <p>Discord user: <code>{username}</code> (ID: <code>{discord_user_id}</code>)</p>
-  <p>You can return to the app now. This window can be closed.</p>
-  <script>
-    setTimeout(() => {{
-      try {{ window.close(); }} catch(e) {{}}
-    }}, 1200);
-  </script>
-</body>
-</html>
-"""
-        return HTMLResponse(html)
+        return RedirectResponse(url='/static/oauth_success.html', status_code=302)
     except Exception as e:
         return HTMLResponse(f'<h3>OAuth error: {str(e)}</h3>', status_code=500)
