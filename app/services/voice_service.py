@@ -37,7 +37,7 @@ def safe_json_parse(data, default=None):
 class VoiceService:
     def __init__(self):
         self.redis = redis_manager
-        self.discord_enabled = bool(settings.DISCORD_BOT_TOKEN)
+        self.discord_enabled = bool(settings.discord_enabled)
 
     @staticmethod
     def safe_json_parse(data, default=None):
@@ -159,23 +159,14 @@ class VoiceService:
                     f'Using direct team data - Blue: {blue_team_to_save}, '
                     f'Red: {red_team_to_save}'
                 )
+                if not blue_team_to_save and not red_team_to_save:
+                    logger.error('Team lists are empty. Strict mode: refusing to create a room.')
+                    return {'error': 'Team lists empty'}
             else:
-                # Fallback: create demo teams
-                blue_team_to_save = (
-                    normalized_players[:3]
-                    if len(normalized_players) >= 3
-                    else normalized_players
+                logger.error(
+                    'Team data is missing. Strict mode: cannot create a room without real blue_team/red_team.'
                 )
-                red_team_to_save = (
-                    normalized_players[3:]
-                    if len(normalized_players) > 3
-                    else []
-                )
-                raw_teams_data = None
-                logger.info(
-                    f'Using demo teams - Blue: {blue_team_to_save}, '
-                    f'Red: {red_team_to_save}'
-                )
+                return {'error': 'Team data missing from LCU'}
             # Ensure all IDs are normalized to strings
             blue_team_to_save = [
                 str(player_id) for player_id in blue_team_to_save
@@ -190,32 +181,17 @@ class VoiceService:
             room_id = f'voice_{match_id}_{uuid.uuid4().hex[:8]}'
             discord_channels = None
             # Discord integration
-            if self.discord_enabled and not discord_service.mock_mode:
+            if self.discord_enabled:
                 try:
-                    # Use normalized team data
-                    discord_result = (
-                        await discord_service.create_or_get_team_channels(
-                            match_id,
-                            blue_team_to_save,
-                            red_team_to_save
-                        )
+                    discord_channels = await discord_service.create_or_get_team_channels(
+                        match_id,
+                        blue_team_to_save,
+                        red_team_to_save,
                     )
-                    if discord_result:
-                        discord_channels = discord_result
-                        logger.info(
-                            f'Created/retrieved Discord channels for match '
-                            f'{match_id}'
-                        )
-                    else:
-                        logger.warning(
-                            f'Discord channels creation/retrieval failed for '
-                            f'match {match_id}'
-                        )
+                    logger.info(f'Created/retrieved Discord channels for match {match_id}')
                 except Exception as e:
-                    logger.error(f'Discord error: {e}')
-                    discord_channels = None
-            else:
-                logger.info('Discord disabled or in mock mode')
+                    logger.error(f'Discord error (strict): {e}')
+                    return {'error': f'Discord error: {e}'}
             # Prepare data
             now = datetime.now(timezone.utc)
             expires_at = now + timedelta(hours=1)
@@ -229,12 +205,6 @@ class VoiceService:
                 'created_at': now.isoformat(),
                 'expires_at': expires_at.isoformat(),
                 'is_active': 'true',
-                'mock_mode': (
-                    'true' if (
-                        discord_service.mock_mode
-                        if self.discord_enabled else True
-                    ) else 'false'
-                ),
                 'blue_team': json.dumps(blue_team_to_save),
                 'red_team': json.dumps(red_team_to_save),
             }

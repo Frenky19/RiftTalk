@@ -1,6 +1,5 @@
 import json
 import logging
-import random
 from datetime import datetime, timezone
 
 import discord
@@ -21,50 +20,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/discord', tags=['discord-integration'])
 
 
-def determine_player_team(summoner_id: str, blue_team: list, red_team: list,
-                          demo_mode: bool = False) -> str:
-    """Determine which team the player belongs to with improved logic."""
+def determine_player_team(summoner_id: str, blue_team: list, red_team: list) -> str:
+    """Determine which team the player belongs to."""
     logger.info(f'Determining team for summoner_id: {summoner_id}')
-    logger.info(f'Blue team: {blue_team}')
-    logger.info(f'Red team: {red_team}')
-    logger.info(f'Demo mode: {demo_mode}')
-    # Normalize data types - all IDs should be strings
+
     summoner_id_str = str(summoner_id)
-    blue_team_str = [str(player_id) for player_id in blue_team] \
-        if blue_team else []
-    red_team_str = [str(player_id) for player_id in red_team] \
-        if red_team else []
-    logger.info(f'Normalized - Player: {summoner_id_str}')
-    logger.info(f'Normalized - Blue: {blue_team_str}')
-    logger.info(f'Normalized - Red: {red_team_str}')
-    # Detailed check in blue team
+    blue_team_str = [str(player_id) for player_id in (blue_team or [])]
+    red_team_str = [str(player_id) for player_id in (red_team or [])]
+
     for i, player_id in enumerate(blue_team_str):
         if player_id == summoner_id_str:
-            logger.info(f'Player {summoner_id} found in Blue Team at '
-                        f'position {i}')
+            logger.info(f'Player {summoner_id} found in Blue Team at position {i}')
             return 'Blue Team'
-    # Detailed check in red team
+
     for i, player_id in enumerate(red_team_str):
         if player_id == summoner_id_str:
-            logger.info(f'Player {summoner_id} found in Red Team at '
-                        f'position {i}')
+            logger.info(f'Player {summoner_id} found in Red Team at position {i}')
             return 'Red Team'
-    # If player not found in any team
-    logger.warning(f'Player {summoner_id} not found in any team')
-    logger.warning(f'Blue team contains: {blue_team_str}')
-    logger.warning(f'Red team contains: {red_team_str}')
-    if demo_mode:
-        # In demo mode, assign randomly for testing
-        team = random.choice(['Blue Team', 'Red Team'])
-        logger.info(f'Randomly assigned to {team} in demo mode')
-        return team
-    else:
-        # In real mode - error
-        raise HTTPException(
-            status_code=400,
-            detail=f'Player {summoner_id} not found in match teams. '
-                   f'Available teams: Blue={blue_team}, Red={red_team}'
-        )
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f'Player {summoner_id} not found in match teams. '
+            f'Available teams: Blue={blue_team_str}, Red={red_team_str}'
+        ),
+    )
 
 
 def safe_json_parse(data, default=None):
@@ -211,25 +191,15 @@ async def auto_assign_team(
                             if player.get('summonerId')]
                 logger.info(f'Extracted from raw_teams_data - '
                             f'Blue: {blue_team}, Red: {red_team}')
-        # Determine if demo mode or not
-        demo_mode = not blue_team and not red_team
-        logger.info(f'Demo mode detected: {demo_mode}')
-        # If demo mode and no team data, create demo teams
-        if demo_mode:
-            logger.info('Creating demo teams...')
-            all_players = safe_json_parse(room_data.get('players'), [])
-            if not all_players:
-                all_players = ['test_player', 'player2', 'player3',
-                               'player4', 'player5']
-                logger.info(f'Using default demo players: {all_players}')
-            blue_team = all_players[:3]
-            red_team = all_players[3:]
-            logger.info(f'Demo blue_team: {blue_team}')
-            logger.info(f'Demo red_team: {red_team}')
+        # Validate that team data exists
+        if not blue_team and not red_team:
+            raise HTTPException(status_code=400, detail='Team data is empty for this match')
+
         # Determine user's actual team
         try:
             user_actual_team = determine_player_team(
-                summoner_id, blue_team, red_team, demo_mode)
+                summoner_id, blue_team, red_team
+            )
             logger.info(f'Determined team: {user_actual_team}')
         except HTTPException as e:
             logger.error(f'Failed to determine team: {e.detail}')
@@ -319,7 +289,6 @@ async def auto_assign_team(
                     'summoner_id': summoner_id,
                     'blue_team': blue_team,
                     'red_team': red_team,
-                    'demo_mode': demo_mode
                 }
             }
             # Add channel information if available
@@ -624,16 +593,28 @@ async def get_discord_user_info(
     discord_user_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get information about Discord user."""
+    """Check whether a Discord user exists in the configured guild."""
     try:
-        # This is a mock
-        user_exists = True  # Assume user exists for demo purposes
+        if not discord_service.connected or not discord_service.guild:
+            raise HTTPException(status_code=503, detail='Discord service not connected')
+
+        try:
+            uid = int(discord_user_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail='discord_user_id must be a numeric ID')
+
+        member = discord_service.guild.get_member(uid)
+        if not member:
+            try:
+                member = await discord_service.guild.fetch_member(uid)
+            except Exception:
+                member = None
+
         return {
             'status': 'success',
-            'discord_user_id': discord_user_id,
-            'user_exists': user_exists,
-            'note': 'This is a mock response. In production, would '
-                    'verify user exists in Discord guild.'
+            'discord_user_id': str(uid),
+            'user_exists': member is not None,
+            'display_name': getattr(member, 'display_name', None),
         }
     except Exception as e:
         logger.error(f'Failed to get Discord user info: {e}')

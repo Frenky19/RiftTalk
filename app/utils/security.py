@@ -17,11 +17,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 
 class SimplePasswordHasher:
-    """Simplified password hasher for demo mode."""
+    """Simplified password hasher."""
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """Simplified password verification for demo mode."""
+        """Simplified password verification."""
         try:
             expected_hash = SimplePasswordHasher.get_password_hash(plain_password)
             return hmac.compare_digest(expected_hash, hashed_password)
@@ -30,9 +30,9 @@ class SimplePasswordHasher:
 
     @staticmethod
     def get_password_hash(password: str) -> str:
-        """Simplified password hashing for demo mode."""
-        # Use HMAC-SHA256 for demo purposes
-        salt = 'lol_voice_chat_demo_salt'
+        """Simplified password hashing."""
+        # Use HMAC-SHA256
+        salt = 'lol_voice_chat_salt_v1'
         return hmac.new(
             salt.encode('utf-8'),
             password.encode('utf-8'),

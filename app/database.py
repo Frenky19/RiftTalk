@@ -318,7 +318,7 @@ class DatabaseManager:
                         )
                     except json.JSONDecodeError:
                         result[key] = {}
-                elif key in ['is_active', 'mock_mode']:
+                elif key in ['is_active']:
                     result[key] = str(value).lower() == 'true'
                 else:
                     result[key] = value

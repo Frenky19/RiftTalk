@@ -91,15 +91,11 @@ async def disconnect_members_from_match(
         discord_channels = voice_service.get_voice_room_discord_channels(
             match_id)
         if discord_channels:
-            if (discord_channels.get(
-                'blue_team'
-            ) and not discord_channels['blue_team'].get('mock', True)):
+            if discord_channels.get('blue_team') and discord_channels['blue_team'].get('channel_id'):
                 channel_id = int(discord_channels['blue_team']['channel_id'])
                 tasks.append(discord_service.disconnect_all_members(
                     channel_id))
-            if (discord_channels.get(
-                'red_team'
-            ) and not discord_channels['red_team'].get('mock', True)):
+            if discord_channels.get('red_team') and discord_channels['red_team'].get('channel_id'):
                 channel_id = int(discord_channels['red_team']['channel_id'])
                 tasks.append(discord_service.disconnect_all_members(
                     channel_id))

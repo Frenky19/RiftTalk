@@ -105,7 +105,7 @@ class CleanupService:
                     stale_hours = int(getattr(settings, 'CLEANUP_STALE_EMPTY_ROOM_HOURS', 6))
 
                     async def _is_inactive() -> bool:
-                        if not voice_service.discord_enabled or discord_service.mock_mode:
+                        if not voice_service.discord_enabled :
                             return True
                         return not await discord_service.match_has_active_players(match_id)
 
@@ -144,7 +144,7 @@ class CleanupService:
         try:
             if not getattr(settings, 'DISCORD_GC_ON_STARTUP', True):
                 return
-            if not discord_service.connected or discord_service.mock_mode:
+            if not discord_service.connected:
                 return
 
             now = datetime.now(timezone.utc)

@@ -51,54 +51,95 @@ class DiscordService:
         self.category: Optional[CategoryChannel] = None
         self.connected = False
         self.connection_task: Optional[asyncio.Task] = None
+        self._ready_event: asyncio.Event = asyncio.Event()
+        self._initialized_event: asyncio.Event = asyncio.Event()
+        self._connect_error: Optional[BaseException] = None
         self.category_name = 'LoL Voice Chat'
-        self.mock_mode = False
         self._match_channels_cache = {}  # Cache of channels by match_id
 
     async def connect(self) -> bool:
-        """Connect to Discord or fallback to mock mode."""
-        try:
-            if not settings.DISCORD_BOT_TOKEN:
-                logger.info(
-                    'Discord bot token not configured - running in MOCK mode'
-                )
-                self.mock_mode = True
-                return True
-            logger.info('Attempting to connect to Discord...')
-            # Create client with required intents
-            intents = discord.Intents.default()
-            intents.members = True
-            intents.voice_states = True
-            intents.guilds = True
-            self.client = discord.Client(intents=intents)
-            # Setup event handlers
-            self.setup_event_handlers()
+        """Connect to Discord (strict mode).
 
-            @self.client.event
-            async def on_ready():
-                logger.info(f'Discord bot connected as {self.client.user}')
-                self.connected = True
+        In strict mode we do NOT fall back to any mock behavior:
+        - missing env/config -> raise
+        - login/intent/guild/category errors -> raise
+        - timeout waiting for ready -> raise
+        """
+
+        if not getattr(settings, 'discord_enabled', False):
+            raise RuntimeError(
+                'Discord is required but not configured. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID.'
+            )
+
+        if self.connected:
+            return True
+
+        # Reset state
+        self._connect_error = None
+        self._ready_event.clear()
+        self._initialized_event.clear()
+
+        logger.info('Attempting to connect to Discord (STRICT mode)...')
+
+        # Create client with required intents
+        intents = discord.Intents.default()
+        intents.members = True
+        intents.voice_states = True
+        intents.guilds = True
+        self.client = discord.Client(intents=intents)
+
+        # Setup event handlers
+        self.setup_event_handlers()
+
+        @self.client.event
+        async def on_ready():
+            logger.info(f'Discord bot connected as {self.client.user}')
+            self.connected = True
+            self._ready_event.set()
+            try:
                 await self._initialize_guild_and_category()
+                self._initialized_event.set()
+            except Exception as e:
+                # Store init error and keep the service in "not ready" state
+                self._connect_error = e
+                logger.error(f'Discord initialization error: {e}')
 
-            @self.client.event
-            async def on_disconnect():
-                logger.warning('Discord bot disconnected')
-                self.connected = False
-            # Start connection in background
-            self.connection_task = asyncio.create_task(self._connect_internal())
-            # Wait for connection
-            await asyncio.sleep(5)
-            if not self.connected:
-                logger.warning(
-                    'Discord connection timeout - running in MOCK mode'
-                )
-                self.mock_mode = True
-                await self.disconnect()
-            return True
-        except Exception as e:
-            logger.error(f'Discord connection error: {e}')
-            self.mock_mode = True
-            return True
+        @self.client.event
+        async def on_disconnect():
+            logger.warning('Discord bot disconnected')
+            self.connected = False
+
+        # Start connection in background
+        self.connection_task = asyncio.create_task(self._connect_internal())
+
+        # Wait for ready
+        try:
+            await asyncio.wait_for(self._ready_event.wait(), timeout=20)
+        except asyncio.TimeoutError as e:
+            await self.disconnect()
+            raise RuntimeError('Discord connection timeout (20s)') from e
+
+        # If login failed, _connect_internal will set _connect_error and exit
+        if self._connect_error is not None:
+            await self.disconnect()
+            raise RuntimeError(f'Discord connection failed: {self._connect_error}')
+
+        # Wait for guild/category initialization
+        try:
+            await asyncio.wait_for(self._initialized_event.wait(), timeout=20)
+        except asyncio.TimeoutError as e:
+            await self.disconnect()
+            raise RuntimeError('Discord initialization timeout (20s)') from e
+
+        if self._connect_error is not None:
+            await self.disconnect()
+            raise RuntimeError(f'Discord initialization failed: {self._connect_error}')
+
+        if not self.connected:
+            await self.disconnect()
+            raise RuntimeError('Discord connection failed (not connected after startup)')
+
+        return True
 
     def setup_event_handlers(self):
         """Setup Discord event handlers for automatic voice channel management."""
@@ -176,13 +217,15 @@ class DiscordService:
         try:
             await self.client.start(settings.DISCORD_BOT_TOKEN)
         except discord.LoginFailure:
+            self._connect_error = RuntimeError('Invalid Discord bot token')
             logger.error('Invalid Discord bot token')
         except discord.PrivilegedIntentsRequired:
-            logger.error(
-                'Bot requires privileged intents - enable in '
-                'Discord Developer Portal'
+            self._connect_error = RuntimeError(
+                'Bot requires privileged intents - enable in Discord Developer Portal'
             )
+            logger.error('Bot requires privileged intents - enable in Discord Developer Portal')
         except Exception as e:
+            self._connect_error = e
             logger.error(f'Discord connection error: {e}')
 
     async def _initialize_guild_and_category(self):
@@ -216,15 +259,13 @@ class DiscordService:
                         logger.info(
                             f'Bot is in these guilds: {available_guilds}'
                         )
-                        self.mock_mode = True
-                        return
+                        raise RuntimeError('Configured DISCORD_GUILD_ID not found in bot guilds')
                 except ValueError:
                     logger.error(
                         f'Invalid DISCORD_GUILD_ID format: '
                         f'{settings.DISCORD_GUILD_ID}'
                     )
-                    self.mock_mode = True
-                    return
+                    raise RuntimeError('Invalid DISCORD_GUILD_ID format')
             else:
                 if self.client.guilds:
                     self.guild = self.client.guilds[0]
@@ -234,8 +275,7 @@ class DiscordService:
                     )
                 else:
                     logger.warning('Bot is not in any guilds')
-                    self.mock_mode = True
-                    return
+                    raise RuntimeError('Invalid DISCORD_GUILD_ID format')
             # Test member fetching capability
             try:
                 # Try to fetch the bot itself as a test
@@ -276,8 +316,7 @@ class DiscordService:
             self.category = await self._get_or_create_category()
             if not self.category:
                 logger.warning('Failed to get/create category')
-                self.mock_mode = True
-                return
+                raise RuntimeError('Failed to get/create category')
             # Initialize cache of existing channels
             await self._initialize_channel_cache()
             # Optional: clean up orphaned channels/roles (useful when REDIS_URL=memory://)
@@ -292,7 +331,7 @@ class DiscordService:
             logger.info('Discord service fully initialized')
         except Exception as e:
             logger.error(f'Error initializing Discord: {e}')
-            self.mock_mode = True
+            raise RuntimeError('Discord initialization failed')
 
     async def _initialize_channel_cache(self):
         """Initialize cache of existing match channels."""
@@ -387,13 +426,8 @@ class DiscordService:
         team_name: str
     ) -> Dict[str, Any]:
         """Create or get existing voice channel for a team in a match."""
-        if (
-            self.mock_mode or not self.connected or not self.guild or not self.category
-        ):
-            logger.info(
-                f'MOCK: Creating voice channel for {team_name} in match {match_id}'
-            )
-            return self._create_mock_channel_data(match_id, team_name)
+        if not self.connected or not self.guild or not self.category:
+            raise RuntimeError('Discord service not ready')
         try:
             channel_name = f'LoL Match {match_id} - {team_name}'
             # Check cache first
@@ -420,7 +454,6 @@ class DiscordService:
                     'match_id': match_id,
                     'team_name': team_name,
                     'role_id': str(team_role.id) if team_role else '',
-                    'mock': False,
                     'secured': True,
                     'existing': True,
                     'cached': True
@@ -473,7 +506,6 @@ class DiscordService:
                     'match_id': match_id,
                     'team_name': team_name,
                     'role_id': str(team_role.id) if team_role else '',
-                    'mock': False,
                     'secured': True,
                     'existing': True
                 }
@@ -482,8 +514,7 @@ class DiscordService:
             # Create team role
             team_role = await self._get_or_create_team_role(match_id, team_name)
             if not team_role:
-                logger.error('Failed to create team role, falling back to mock')
-                return self._create_mock_channel_data(match_id, team_name)
+                raise RuntimeError('Failed to create team role')
             # Setup permissions
             overwrites = {
                 self.guild.default_role: discord.PermissionOverwrite(
@@ -532,38 +563,12 @@ class DiscordService:
                 'match_id': match_id,
                 'team_name': team_name,
                 'role_id': str(team_role.id),
-                'mock': False,
                 'secured': True,
                 'existing': False
             }
         except Exception as e:
             logger.error(f'Failed to create/get Discord channel: {e}')
-            return self._create_mock_channel_data(match_id, team_name)
-
-    def _create_mock_channel_data(
-        self,
-        match_id: str,
-        team_name: str
-    ) -> Dict[str, Any]:
-        """Create mock channel data for development."""
-        mock_channel_id = (
-            f'mock_{match_id}_{team_name.lower().replace(" ", "_")}'
-        )
-        return {
-            'channel_id': mock_channel_id,
-            'channel_name': f'LoL Match {match_id} - {team_name}',
-            'invite_url': f'https://discord.gg/mock-invite-{mock_channel_id}',
-            'match_id': match_id,
-            'team_name': team_name,
-            'role_id': f'mock_role_{mock_channel_id}',
-            'mock': True,
-            'secured': False,
-            'existing': False,
-            'note': (
-                'This is test data. For real Discord channels, '
-                'install Discord and configure the bot.'
-            )
-        }
+            raise
 
     async def create_or_get_team_channels(
         self,
@@ -572,35 +577,25 @@ class DiscordService:
         red_team: List[str]
     ) -> Dict[str, Any]:
         """Create or get existing channels for both teams with role-based access."""
+        if not self.connected or not self.guild or not self.category:
+            raise RuntimeError('Discord service not ready')
+
         logger.info(f'Creating or getting team channels for match {match_id}')
-        # One channel per team, don't create new if already exists
-        blue_channel = await self.create_or_get_voice_channel(
-            match_id,
-            'Blue Team'
-        )
+
+        blue_channel = await self.create_or_get_voice_channel(match_id, 'Blue Team')
         await asyncio.sleep(0.5)
-        red_channel = await self.create_or_get_voice_channel(
-            match_id,
-            'Red Team'
-        )
+        red_channel = await self.create_or_get_voice_channel(match_id, 'Red Team')
+
         result = {
             'match_id': match_id,
             'blue_team': blue_channel,
             'red_team': red_channel,
             'created_at': datetime.now(timezone.utc).isoformat(),
-            'mock_mode': self.mock_mode,
-            'secured': not self.mock_mode,
-            'unique_channels': True  # Guarantee channels are unique per match
+            'secured': True,
+            'unique_channels': True,
+            'note': 'Channels secured: players only have access to their team channels',
         }
-        if self.mock_mode:
-            result['note'] = (
-                'Development mode: using Discord test data'
-            )
-        else:
-            result['note'] = (
-                'Channels secured: players only have access to their team channels'
-            )
-        # Log for debugging
+
         logger.info(f'Team channels for match {match_id}:')
         logger.info(
             f'Blue channel: {blue_channel.get("channel_name")} '
@@ -619,12 +614,6 @@ class DiscordService:
         team_name: str
     ) -> bool:
         """Assign a Discord user to a team with enhanced user discovery."""
-        if self.mock_mode:
-            logger.info(
-                f'MOCK: Assigning user {discord_user_id} '
-                f'to {team_name} in match {match_id}'
-            )
-            return True
         if not self.connected or not self.guild:
             logger.warning(
                 'Discord not connected - cannot assign user to team'
@@ -804,11 +793,6 @@ class DiscordService:
         This fixes the UX where a user sits in Waiting Room, starts a match,
         gets the role assigned, but doesn't get moved unless they re-join.
         """
-        if self.mock_mode:
-            logger.info(
-                f'MOCK: Moving user {discord_user_id} to {team_name} channel for match {match_id}'
-            )
-            return True
 
         if not self.connected or not self.guild:
             logger.warning('Discord not connected - cannot move user')
@@ -895,11 +879,6 @@ class DiscordService:
         team_name: Optional[str] = None
     ) -> bool:
         """Remove a single player from match roles/channels (early leave, crash, etc.)."""
-        if self.mock_mode:
-            logger.info(
-                f'MOCK: Removing user {discord_user_id} from match {match_id} ({team_name})'
-            )
-            return True
 
         if not self.connected or not self.guild:
             logger.warning('Discord not connected; cannot remove player')
@@ -981,8 +960,6 @@ class DiscordService:
         - If we cannot reliably determine state (e.g., roles/channels not found),
           we return True to avoid accidental deletion.
         """
-        if self.mock_mode:
-            return False
         if not self.connected or not self.guild:
             return True
         try:
@@ -1036,7 +1013,7 @@ class DiscordService:
         - Both team roles have 0 members (or roles don't exist)
         - Channels are older than min_age_minutes and max_age_hours threshold
         """
-        if self.mock_mode or not self.connected or not self.guild or not self.category:
+        if  not self.connected or not self.guild or not self.category:
             return
         try:
             now = datetime.now(timezone.utc)
@@ -1221,12 +1198,6 @@ class DiscordService:
     async def cleanup_match_channels(self, match_data: Dict[str, Any]):
         """Cleanup channels and roles after match ends with improved cleanup."""
         logger.info(f'Starting cleanup for match: {match_data}')
-        if self.mock_mode:
-            logger.info(
-                f'MOCK: Cleaning up channels for match '
-                f'{match_data.get("match_id")}'
-            )
-            return
         try:
             match_id = match_data.get('match_id')
             if not match_id:
@@ -1293,7 +1264,7 @@ class DiscordService:
 
     async def disconnect_all_members(self, channel_id: int):
         """Disconnect all members from a voice channel."""
-        if self.mock_mode or not self.client:
+        if  not self.client:
             return
         try:
             channel = self.client.get_channel(channel_id)
@@ -1331,7 +1302,7 @@ class DiscordService:
 
     async def delete_voice_channel(self, channel_id: int):
         """Delete a voice channel by ID, first disconnecting all members."""
-        if self.mock_mode or not self.client:
+        if  not self.client:
             return
         try:
             channel = self.client.get_channel(channel_id)
@@ -1353,10 +1324,9 @@ class DiscordService:
 
     async def force_disconnect_all_matches(self):
         """Force disconnect all members from all LoL voice channels."""
-        if (
-            self.mock_mode or not self.guild or not self.category
+        if (not self.guild or not self.category
         ):
-            logger.info('MOCK: Force disconnect all matches')
+            logger.info('STRICT: Force disconnect all matches')
             return {'disconnected_members': 0, 'channels_processed': 0}
 
         try:
@@ -1408,7 +1378,6 @@ class DiscordService:
             if self.client:
                 await self.client.close()
             self.connected = False
-            self.mock_mode = False
             self._match_channels_cache = {}  # Clear cache
             logger.info('Discord service disconnected')
         except Exception as e:
@@ -1418,15 +1387,11 @@ class DiscordService:
         """Get Discord service status."""
         return {
             'connected': self.connected,
-            'mock_mode': self.mock_mode,
+            
             'guild_available': self.guild is not None,
             'category_available': self.category is not None,
             'cached_matches': len(self._match_channels_cache),
-            'status': (
-                'mock' if self.mock_mode
-                else 'connected' if self.connected
-                else 'disconnected'
-            )
+            'status': ('connected' if self.connected else 'disconnected')
         }
 
 

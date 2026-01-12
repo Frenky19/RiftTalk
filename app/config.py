@@ -72,10 +72,6 @@ class Settings(BaseSettings):
     DISCORD_GC_ON_STARTUP: bool = Field(default=True)
     DISCORD_GC_STALE_HOURS: int = Field(default=6)
     DISCORD_GC_MIN_AGE_MINUTES: int = Field(default=10)
-    # Demo Page Authentication
-    DEMO_USERNAME: str = Field(default='admin')
-    DEMO_PASSWORD: str = Field(default='password')
-    DEMO_AUTH_ENABLED: bool = Field(default=True)
 
     def __init__(self, **kwargs):
         """Initialize settings with validation."""
@@ -89,10 +85,15 @@ class Settings(BaseSettings):
                 'JWT_SECRET_KEY must be set and not use default value. '
                 'Update your .env file with a secure secret key.'
             )
-        if self.DISCORD_BOT_TOKEN and not self.DISCORD_GUILD_ID:
+        # Discord is required for this application (strict mode)
+        if not self.DISCORD_BOT_TOKEN or not self.DISCORD_GUILD_ID:
             raise ValueError(
-                'DISCORD_GUILD_ID is required when DISCORD_BOT_TOKEN is set'
+                'Discord is required. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in your .env file.'
             )
+        try:
+            int(self.DISCORD_GUILD_ID)
+        except Exception:
+            raise ValueError('DISCORD_GUILD_ID must be a numeric guild ID')
 
     @property
     def is_development(self) -> bool:

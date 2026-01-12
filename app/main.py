@@ -13,8 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import redis_manager
-from app.endpoints import auth, demo, discord, lcu, voice
-from app.middleware.demo_auth import DemoAuthMiddleware
+from app.endpoints import auth, discord, lcu, voice
 from app.services.cleanup_service import cleanup_service
 from app.services.discord_service import discord_service
 from app.services.lcu_service import lcu_service
@@ -121,61 +120,48 @@ async def auto_authenticate_via_lcu():
 async def initialize_services():
     """Initialize all services optimized for Windows."""
     logger.info('Initializing services for Windows...')
+
     # Check user data integrity
     await validate_user_data_integrity()
-    # Automatic authentication via LCU
+
+    # Automatic authentication via LCU (best-effort)
     await auto_authenticate_via_lcu()
-    # Discord service
-    discord_status = 'disabled'
-    if settings.DISCORD_BOT_TOKEN:
-        try:
-            discord_initialized = await discord_service.connect()
-            if discord_initialized:
-                if discord_service.connected:
-                    discord_status = 'connected'
-                    logger.info('Discord service: CONNECTED')
-                else:
-                    discord_status = 'mock_mode'
-                    logger.info('Discord service: MOCK MODE')
-            else:
-                discord_status = 'failed'
-                logger.warning('Discord service: FAILED')
-        except Exception as e:
-            discord_status = f'error: {e}'
-            logger.error(f'Discord service: ERROR - {e}')
-    else:
-        logger.info('Discord service: DISABLED (no token)')
-    # LCU service - Windows optimized
+
+    # Discord service (STRICT)
+    if not settings.discord_enabled:
+        raise RuntimeError(
+            'Discord is required but not configured. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
+        )
+
+    try:
+        await discord_service.connect()
+        if not discord_service.connected:
+            raise RuntimeError('Discord connection failed (not connected after startup)')
+        discord_status = 'connected'
+        logger.info('Discord service: CONNECTED')
+    except Exception as e:
+        logger.error(f'Discord service failed to start: {e}')
+        raise
+
+    # LCU service - Windows optimized (best-effort)
     lcu_status = 'disconnected'
     try:
         lcu_initialized = await lcu_service.initialize()
         if lcu_initialized:
             lcu_status = 'initialized'
             logger.info('LCU service: INITIALIZED')
+
             # Register event handlers
-            lcu_service.register_event_handler(
-                'match_start',
-                handle_game_event
-            )
-            lcu_service.register_event_handler(
-                'match_end',
-                handle_game_event
-            )
-            lcu_service.register_event_handler(
-                'phase_none',
-                handle_game_event
-            )
-            lcu_service.register_event_handler(
-                'champ_select',
-                handle_champ_select
-            )
-            lcu_service.register_event_handler(
-                'ready_check',
-                handle_ready_check
-            )
+            lcu_service.register_event_handler('match_start', handle_game_event)
+            lcu_service.register_event_handler('match_end', handle_game_event)
+            lcu_service.register_event_handler('phase_none', handle_game_event)
+            lcu_service.register_event_handler('champ_select', handle_champ_select)
+            lcu_service.register_event_handler('ready_check', handle_ready_check)
+
             # Start monitoring
             await lcu_service.start_monitoring()
             logger.info('LCU service: MONITORING STARTED')
+
             # Get detailed status
             lcu_details = await lcu_service.get_detailed_status()
             if lcu_details.get('connected'):
@@ -189,6 +175,7 @@ async def initialize_services():
     except Exception as e:
         lcu_status = f'error: {e}'
         logger.warning(f'LCU service: WARNING - {e}')
+
     # Redis service
     redis_status = 'connected'
     try:
@@ -202,11 +189,11 @@ async def initialize_services():
         logger.error(f'Redis service: ERROR - {e}')
 
     logger.info('All services initialized for Windows!')
-    logger.info(
-        f'Status: Redis={redis_status}, Discord={discord_status}, LCU={lcu_status}'
-    )
+    logger.info(f'Status: Redis={redis_status}, Discord={discord_status}, LCU={lcu_status}')
+
     await cleanup_service.start_cleanup_service()
     logger.info('Cleanup service: STARTED')
+
 
 
 async def cleanup_services():
@@ -488,17 +475,11 @@ async def handle_match_start():
             logger.info(f'Blue team from LCU: {blue_team}')
             logger.info(f'Red team from LCU: {red_team}')
         else:
-            # Fallback: create teams with current player
-            all_players = [summoner_id]
-            if summoner_id in ['1', '2', '3', '4', '5']:  # demo logic
-                blue_team = [summoner_id]
-                red_team = []
-            else:
-                blue_team = [summoner_id]
-                red_team = []
-            logger.info(
-                f'Using fallback teams - Blue: {blue_team}, Red: {red_team}'
+            logger.error(
+                'LCU team data not available at match start. '
+                'Strict mode: refusing to create a voice room without real teams.'
             )
+            return
         # Create room
         room_result = await voice_service.create_or_get_voice_room(
             match_id,
@@ -715,10 +696,6 @@ async def validation_exception_handler(
         },
     )
 
-# Add demo authentication middleware
-if settings.DEMO_AUTH_ENABLED:
-    app.add_middleware(DemoAuthMiddleware)
-
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -747,13 +724,6 @@ else:
         logger.error('Static directory not found!')
 
 
-@app.get('/demo')
-async def demo_page():
-    """Serve demo page for testing."""
-    demo_file = os.path.join(static_dir, 'demo.html')
-    if os.path.exists(demo_file):
-        return FileResponse(demo_file)
-    raise HTTPException(status_code=404, detail='Demo file not found')
 
 
 @app.get('/link-discord')
@@ -770,7 +740,6 @@ app.include_router(voice.router, prefix='/api')
 app.include_router(auth.router, prefix='/api')
 app.include_router(lcu.router, prefix='/api')
 app.include_router(discord.router, prefix='/api')
-app.include_router(demo.router, prefix='/api')
 
 
 @app.get('/')
@@ -785,16 +754,6 @@ async def root():
     }
 
 
-@app.get('/auto-token')
-async def get_auto_token():
-    """Get auto-generated token for demo purposes."""
-    if 'auto_auth_token' in globals() and auto_auth_token:
-        return {'access_token': auto_auth_token, 'auto_generated': True}
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail='No auto-token available'
-        )
 
 
 @app.get('/health')
@@ -806,24 +765,17 @@ async def health_check():
         'discord': 'checking...',
         'lcu': 'checking...'
     }
+
     # Redis health
     try:
-        if redis_manager.redis.ping():
-            services['redis'] = 'healthy'
-        else:
-            services['redis'] = 'unhealthy'
+        services['redis'] = 'healthy' if redis_manager.redis.ping() else 'unhealthy'
     except Exception as e:
         services['redis'] = f'error: {str(e)}'
+
     # Discord health
     discord_status = discord_service.get_status()
-    if not settings.DISCORD_BOT_TOKEN:
-        services['discord'] = 'disabled'
-    elif discord_status['connected']:
-        services['discord'] = 'connected'
-    elif discord_status['mock_mode']:
-        services['discord'] = 'mock_mode'
-    else:
-        services['discord'] = 'disconnected'
+    services['discord'] = 'connected' if discord_status.get('connected') else 'disconnected'
+
     # LCU health
     try:
         lcu_details = await lcu_service.get_detailed_status()
@@ -835,11 +787,10 @@ async def health_check():
             services['lcu'] = 'disconnected'
     except Exception:
         services['lcu'] = 'unavailable'
+
     # Message for Windows
     if services['discord'] == 'connected':
         message = 'Application running on Windows! Discord connected.'
-    elif services['discord'] == 'mock_mode':
-        message = 'Application running on Windows! Discord in mock mode.'
     else:
         message = 'Application running on Windows! Discord not connected.'
 
@@ -847,6 +798,7 @@ async def health_check():
         message += ' LCU connected to game client.'
     elif services['lcu'] == 'waiting_for_game':
         message += ' LCU waiting for League of Legends launch.'
+
     return JSONResponse(content={
         'status': 'healthy',
         'services': services,
