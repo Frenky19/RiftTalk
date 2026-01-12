@@ -54,21 +54,9 @@ else:
 
 
 class WebViewAPI:
-    """Small bridge object exposed to JavaScript inside pywebview.
-
-    Methods of this class can be called from the embedded page via `window.pywebview.api`.
-    Keep this surface minimal: only add functions that must be called from the UI.
-    """
+    """Exposes small helpers to JS inside pywebview."""
 
     def open_browser(self, url: str) -> bool:
-        """Open the given URL in the system default browser.
-
-        Args:
-            url (str): URL to open.
-
-        Returns:
-            bool: True if the call was attempted successfully.
-        """
         try:
             import webbrowser
             webbrowser.open(url)
@@ -78,37 +66,47 @@ class WebViewAPI:
 
 
 class SafeFileHandler(logging.FileHandler):
-    """FileHandler with predictable UTF-8 defaults.
-
-    On Windows and in frozen builds, encoding issues can easily break logging.
-    This wrapper forces UTF-8 encoding unless explicitly overridden.
-    """
+    """A FileHandler that defaults to UTF-8 (helps on Windows/frozen builds)."""
 
     def __init__(self, filename, mode='a', encoding='utf-8', delay=False):
         super().__init__(filename, mode, encoding, delay)
 
 
-log_file = BASE_DIR / 'lol_voice_chat.log'
-handler = SafeFileHandler(log_file, encoding='utf-8')
+def _configure_logging() -> logging.Logger:
+    """Configure app logging.
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[handler]
-)
+    By default (release/frozen build) we do NOT write a log file next to the exe,
+    because it clutters the user's folder.
 
-logger = logging.getLogger(__name__)
+    Enable file logging explicitly by setting env var:
+        LOLVC_LOG_TO_FILE=1
+
+    In dev mode (non-frozen) file logging is enabled by default.
+    """
+    is_frozen = bool(getattr(sys, 'frozen', False))
+    want_file = os.getenv('LOLVC_LOG_TO_FILE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    enable_file_logging = want_file or (not is_frozen)
+    if enable_file_logging:
+        log_file = BASE_DIR / 'lol_voice_chat.log'
+        handler = SafeFileHandler(log_file, encoding='utf-8')
+        handlers = [handler]
+    else:
+        # No file, no console (windowed) => quiet by default
+        handlers = []
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=handlers if handlers else None,
+    )
+    return logging.getLogger(__name__)
+
+
+logger = _configure_logging()
 
 
 def _get_server_config():
-    """Return server binding and UI base URL.
-
-        Returns:
-            tuple[str, int, str]: (bind_host, port, ui_base_url)
-
-        Notes:
-            - bind_host may be 0.0.0.0 / ::, but the UI should use loopback.
-            - If settings are not available, falls back to 127.0.0.1:8000."""
+    """Return (bind_host, port, ui_base_url).
+    bind_host may be 0.0.0.0, but UI should use a loopback host."""
     try:
         from app.config import settings
         bind_host = getattr(settings, 'SERVER_HOST', '127.0.0.1') or '127.0.0.1'
@@ -136,7 +134,6 @@ def setup_environment():
 
         Returns:
             bool: True if the environment is ready, otherwise False."""
-
     logger.info('Setting up environment...')
     os.chdir(BASE_DIR)
     logger.info(f'Working directory: {BASE_DIR}')
@@ -182,7 +179,6 @@ def start_fastapi_server():
 
         Returns:
             bool: True on clean shutdown, False if an exception occurred."""
-
     try:
         logger.info('Starting FastAPI server...')
         import uvicorn
@@ -212,7 +208,6 @@ def check_server_ready(timeout=30):
 
         Returns:
             bool: True if the server answered with HTTP 200, otherwise False."""
-
     import requests
     logger.info('Waiting for server to start...')
     for i in range(timeout):
@@ -241,17 +236,12 @@ def run_webview():
 
         Returns:
             bool: True if the window was started successfully, otherwise False."""
-
     try:
         import webview
-        import inspect
         logger.info('Creating WebView window...')
-        icon_path = BASE_DIR / 'static' / 'logo' / 'icon_L.ico'
-        icon_arg = str(icon_path) if icon_path.exists() else None
-        create_sig = inspect.signature(webview.create_window)
-        kwargs = dict(
-            title='LoL Voice Chat',
-            url=f'{_get_server_config()[2]}/link-discord',
+        _ = webview.create_window(
+            'LoL Voice Chat',
+            f'{_get_server_config()[2]}/link-discord',
             js_api=WebViewAPI(),
             width=1400,
             height=1200,
@@ -260,13 +250,6 @@ def run_webview():
             min_size=(800, 600),
             confirm_close=False,
         )
-        if icon_arg and 'icon' in create_sig.parameters:
-            kwargs['icon'] = icon_arg
-        elif icon_arg:
-            logger.warning(
-                'pywebview.create_window() has no "icon" parameter in this version'
-            )
-        _ = webview.create_window(**kwargs)
         logger.info('Window created, starting WebView...')
         webview.start(debug=False)
         return True
@@ -281,11 +264,11 @@ def run_webview():
 def main():
     """Application entrypoint.
 
-        Flow:
-            1) Prepare environment and static assets.
-            2) Start the FastAPI server in a daemon thread.
-            3) Wait for backend readiness.
-            4) Open the UI in pywebview (or in a browser as fallback)."""
+    Flow:
+        1) Prepare environment and static assets.
+        2) Start the FastAPI server in a daemon thread.
+        3) Wait for backend readiness.
+        4) Open the UI in pywebview (or in a browser as fallback)."""
 
     logger.info('=' * 50)
     logger.info('LoL Voice Chat Desktop (WebView version)')

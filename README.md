@@ -1,297 +1,149 @@
-# LoL Voice Chat Desktop App
+# LoL Voice Chat Desktop (Discord-integrated team voice)
 
-## 📋 Project Overview
+[English](README.md) | [Русский](README.ru.md)
 
-A Windows desktop application that provides an in‑game voice chat for League of Legends with Discord integration. After the champion-select phase, the app automatically places all players from the same team (who also have the app installed) into a dedicated Discord voice channel where they can communicate during the match. When the game ends, all players are removed from the channel automatically.
+A Windows desktop app that automatically connects League of Legends teammates (who also run the app) into temporary Discord voice channels **at match start**, and cleans everything up **after the match**.
 
-## ✨ Features
+> **Strict mode**: the app requires a working Discord bot connection at startup (no demo/mock fallbacks).
 
-- ✅ **Automatic creation of Discord voice channels** for teams
-- ✅ **In-game overlay** with an intuitive interface
-- ✅ **Automatic connection** to the voice channel when the match starts
-- ✅ **Automatic disconnection** from the voice channel when the match ends
-- ✅ **Account linking** for Discord and League of Legends
-- ✅ **Compact interface** without unnecessary elements
-- ✅ **Ready-to-run Windows build** (.exe)
+---
 
-## 🛠 Technologies
+## What it does
 
-| Category | Technologies |
-|----------|--------------|
-| **Backend** | Python, FastAPI, Uvicorn |
-| **Frontend** | HTML5, CSS3, JavaScript (ES6+) |
-| **Desktop** | PyWebView, PyInstaller |
-| **Integrations** | Discord API, League of Legends LCU API |
-| **Database** | In-memory storage, Redis (optional) |
-| **Authentication** | JWT, Passlib |
-| **Validation** | Pydantic |
+- Detects match lifecycle via **League Client (LCU)** on Windows.
+- At match start:
+  - Creates a temporary **team voice channel** (Blue/Red).
+  - Grants access via roles/permissions.
+  - Moves/joins linked users into their team channel.
+- After match ends:
+  - Removes roles / kicks users from the temp channel.
+  - Deletes temporary channels.
+- Includes an embedded WebView UI.
 
-## 📦 Installation & Build
+---
 
-### Requirements
+## Requirements
 
-- **OS:** Windows 10/11 (64-bit)
-- **Python:** 3.8 or newer
-- **Discord:** Installed and running client
-- **League of Legends:** Installed game
+- **Windows 10/11**
+- **Python 3.11+** (recommended) or a built build (see Build)
+- **Discord server** where you have permission to add a bot and manage channels/roles
+- League of Legends installed and the **League Client running**
 
-### Clone repository
+---
+
+## Quick start (development)
+
+1) Create venv and install dependencies
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd GameOverlay-voicechat
-```
-
-### Install dependencies
-
-```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Configure environment
+2) Create `.env` in the project root (see Environment variables below)
 
-1. Copy the example env file to `.env`:
-
-```bash
-copy .env.example .env
-```
-
-2. Edit the `.env` file with your values.
-
-### Build the application
+3) Run
 
 ```bash
-# Build EXE
-python build.py
-```
-
-After a successful build the `dist/` folder will contain:
-
-```
-dist/
-├── LoLVoiceChat.exe              # Executable
-├── LoLVoiceChat/                 # Full application package
-│   ├── LoLVoiceChat.exe          # Copy of the EXE
-│   ├── Start.bat                 # Launch script
-│   └── INFO.txt                  # Application information
-└── LoLVoiceChat_v1.0_YYYYMMDD_HHMM.zip  # Distribution ZIP archive
-```
-
-## 🚀 Usage
-
-### Running the application
-
-**Option 1: Using the EXE**  
-Go to `dist/LoLVoiceChat/` and run `LoLVoiceChat.exe`.
-
-**Option 2: Using the start script**  
-Go to `dist/LoLVoiceChat/` and run `Start.bat`.
-
-**Option 3: Development mode**
-
-```bash
-# Run development server
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-```bash
-# Run WebView app
 python webview_app.py
 ```
 
-### How to use
+---
 
-#### Step 1: Prepare Discord
+## Environment variables
 
-- Make sure Discord is running.
-- Join the bot server: https://discord.gg/UcfX74R4
-- Enable Developer Mode in Discord:
-  Settings → Advanced → Developer Mode → Enable
-- Get your Discord ID:
-  Right-click your avatar → Copy ID
+Create a `.env` file in the project root:
 
-#### Step 2: Start the app
+```ini
+# Required (strict mode)
+DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN
+DISCORD_GUILD_ID=YOUR_SERVER_ID
 
-- Launch League of Legends.
-- Start LoL Voice Chat.
-- Enter your Discord ID in the input field.
-- Click **Link Discord Account**.
+# Optional (recommended)
+DISCORD_CATEGORY_ID=VOICE_CATEGORY_ID            # where to create temp channels
+DISCORD_OAUTH_CLIENT_ID=YOUR_OAUTH_CLIENT_ID     # if you use Discord account linking
+DISCORD_OAUTH_CLIENT_SECRET=YOUR_OAUTH_SECRET
+DISCORD_OAUTH_REDIRECT_URI=http://127.0.0.1:PORT/discord/callback
 
-#### Step 3: Play
-
-- Join a game (Normal, Ranked, ARAM).
-- After the match starts, a connect button will appear in the app.
-- Click **Join Voice Channel**.
-- Communicate with your team during the match.
-
-#### Step 4: After the match
-
-- You will be automatically disconnected from the channel when the match ends.
-- The voice channel will be deleted automatically.
-
-## 📁 Project Structure
-
-```
-GameOverlay-voicechat/
-├── app/                          # FastAPI main application
-│   ├── __init__.py
-│   ├── main.py                   # FastAPI entry point
-│   ├── config.py                 # Application configuration
-│   ├── database.py               # Database access
-│   ├── models.py                 # Pydantic data models
-│   ├── schemas.py                # Request/response schemas
-│   ├── services/                 # Business logic
-│   │   ├── __init__.py
-│   │   ├── discord_service.py    # Discord integration service
-│   │   ├── lol_service.py        # League of Legends service
-│   │   └── voice_service.py      # Voice channel management
-│   ├── endpoints/                # API endpoints
-│   │   ├── __init__.py
-│   │   ├── auth.py               # Authentication endpoints
-│   │   ├── discord.py            # Discord endpoints
-│   │   ├── lol.py                # LoL endpoints
-│   │   └── voice.py              # Voice endpoints
-│   └── middleware/               # Middleware
-│       ├── __init__.py
-│       └── demo_auth.py          # Demo auth middleware
-├── static/                       # Static files
-│   ├── logo/                     # Logos and icons
-│   │   ├── PNG_LOL.png
-│   │   └── icon_L.ico
-│   └── link_discord.html         # Main HTML file
-├── webview_app.py                # WebView desktop app
-├── build.py                      # PyInstaller build script
-├── requirements.txt              # Python dependencies
-├── .env.example                  # Example env file
-├── .env                          # Env file (created)
-├── lol_voice_chat.log            # Log file (created)
-└── README.md                     # This documentation
+# App behavior
+DEBUG=false
+REDIS_URL=memory://                              # default: in-memory storage
 ```
 
-## 🎨 Interface
+Notes:
+- If `REDIS_URL` is not set or Redis is unavailable, the app can use in-memory storage.
+- If Discord required variables are missing or the bot cannot connect, the app **won’t start**.
 
-### Main interface elements
+---
 
-#### 1. Header and logo
-- LoL Voice Chat logo
-- Connection status
+## Discord bot setup
 
-#### 2. Discord account linking
-- Input field for Discord ID (17–20 digits)
-- **Link Discord Account** button
-- **Change Discord ID** button (if already linked)
+1) Create an app in Discord Developer Portal, add a **Bot**.
+2) Enable **Privileged Gateway Intents** if your implementation needs them:
+   - *Server Members Intent* (often required to fetch/move members reliably)
+3) Grant permissions:
+   - Manage Channels
+   - Manage Roles
+   - Move Members
+   - View Channels
+   - Connect / Speak
+4) Invite the bot to your server.
 
-#### 3. Match status
-- Game state indicator:
-  - 🔄 Loading match
-  - 🎯 Champion select
-  - ⏳ Waiting to start
-  - ✅ Match started
-- **Refresh status** button
+Make sure your bot role is **above** any roles it needs to assign/manage.
 
-#### 4. Voice channel
-- Join link
-- **Copy link** button
-- Channel information:
-  - Channel name
-  - Team name
-  - Match ID
+---
 
-#### 5. Help panel
-- Instructions for obtaining Discord ID
-- Link to the Discord server
-- Important notes
 
-### UI characteristics
+## Build
 
-- **Responsive design** — adapts to window size
-- **Minimalistic style** — only necessary elements
-- **No scrolling** — all content visible at once
-- **White background** — clean, professional look
-- **Animations** — smooth transitions and loading indicators
+This repository includes scripts for building a distributable Windows app (exact build steps depend on your chosen toolchain, e.g. PyInstaller).
 
-## 🔒 Security
-
-### Security measures
-
-1. **Auth tokens** are stored locally only.
-2. **Discord ID** is validated before use.
-3. **LCU API** is used in read-only mode.
-4. **No password storage** — OAuth2 tokens are used.
-5. **Local server** — the API runs on localhost only.
-
-### Data protection
-
-- All user data is stored locally by default.
-- Discord tokens are not saved in logs.
-- No data is sent to external servers.
-- Voice channels are removed automatically after the match.
-
-## 🐛 Troubleshooting
-
-### Common issues & solutions:
-
-| Problem | Solution |
-|---------|----------|
-| **App does not start** | 1. Check the presence of `.env`<br>2. Ensure Python 3.10+ is installed<br>3. Check `lol_voice_chat.log` |
-| **Discord account not linking** | 1. Verify the Discord ID<br>2. Ensure you are on the bot server<br>3. Restart Discord |
-| **Active match not detected** | 1. Make sure League of Legends is running<br>2. Ensure you are in a game<br>3. Refresh status in the app |
-| **No join button available** | 1. Wait for the match to start (after loading)<br>2. Refresh status<br>3. Check logs for errors |
-| **Error `uvicorn.protocols.http.auto`** | 1. Rebuild the application: `python build.py`<br>2. Reinstall uvicorn: `pip install uvicorn[standard]` |
-
-### Logging:
-
-- **Main log:** `lol_voice_chat.log` (in the app folder)
-- **Log level:** INFO (set DEBUG in `.env` to increase verbosity)
-- **Log format:** Time - Module - Level - Message
-
-## 🤝 Development
-
-### How to contribute:
-
-1. **Fork the repository** on GitHub
-2. **Create a branch** for your feature:
+Typical workflow:
 
 ```bash
-git checkout -b feature/amazing-feature
+python build.py
 ```
 
-3. **Add changes** and commit them:
+If you change build tooling, keep **strict mode** behavior: no silent fallbacks when Discord is not available.
 
-```bash
-git commit -m 'Add amazing feature'
-```
+---
 
-4. **Run tests** and make sure everything works:
+## Troubleshooting
 
-```bash
-pytest tests/
-```
+### App fails on startup: “Discord connection failed”
+- Check `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID`
+- Ensure the bot is added to the server and online
+- Verify category/channel permissions and role hierarchy
 
-5. **Check code style** and documentation:
+### LCU not detected
+- Start League Client and ensure the `lockfile` exists
+- Run the app with normal user permissions (or match the permissions level of the League Client)
 
-```bash
-black . --check
-flake8 .
-```
+---
 
-6. **Create a Pull Request** to the main repository:
+## Security notes
 
-```bash
-git push origin feature/amazing-feature
-```
+- Keep `.env` private (never commit bot tokens).
+- Prefer `127.0.0.1` redirect URIs for local OAuth flows.
 
-7. **Open the Pull Request** on GitHub
+---
 
-## 📄 License
+## Contributing
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+PRs are welcome:
+- Bug fixes and cleanup improvements
+- Better logging and diagnostics
+- UI/UX improvements for the WebView
+
+---
+
+## License
 
 ```
 MIT License
 
-Copyright (c) 2025 LoL Voice Chat Project
+Copyright (c) 2026 Frenky19
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -311,37 +163,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-
-## 👨‍💻 Author - [Andrey Golovushkin](https://github.com/Frenky19)
-
-Developed to automate team voice communication in **League of Legends**.
-
-**Project goals:**
-
-- **Simplify team communication**
-- **Increase win chances** through better coordination
-- **Provide a convenient tool** for players
-- **Integrate existing platforms** (Discord + LoL)
-
-## 📞 Contact & Support
-
-### Discord server:
-- **Invite link:** https://discord.gg/e8ptcwB6c4
-- **Channels:** Support, Suggestions, Bug reports
-
-### Reporting bugs:
-1. Use **Issues** in the repository
-2. Describe the problem in detail:
-   - **Steps to reproduce**
-   - **Expected behavior**
-   - **Actual behavior**
-   - **Screenshots/logs**
-
-### Feature requests:
-- Create an Issue with the **`enhancement`** tag
-- Describe the proposed feature
-- Explain how it improves the app
-
-### Questions:
-- **Issues:** For technical questions
-- **Email:** Best way to get a quick answer

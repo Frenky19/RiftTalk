@@ -534,7 +534,7 @@ pause
         f.write(bat_content)
     print('✅ Start.bat created')
     # Create README
-    readme_content = """# LoL Voice Chat - Desktop Application
+    readme_content = """# Rift Talk - Desktop Application
 
 ## Installation
 1. Extract all files to one folder
