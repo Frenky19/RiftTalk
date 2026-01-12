@@ -132,7 +132,6 @@ async def initialize_services():
         raise RuntimeError(
             'Discord is required but not configured. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
         )
-
     try:
         await discord_service.connect()
         if not discord_service.connected:
@@ -142,7 +141,6 @@ async def initialize_services():
     except Exception as e:
         logger.error(f'Discord service failed to start: {e}')
         raise
-
     # LCU service - Windows optimized (best-effort)
     lcu_status = 'disconnected'
     try:
@@ -150,18 +148,15 @@ async def initialize_services():
         if lcu_initialized:
             lcu_status = 'initialized'
             logger.info('LCU service: INITIALIZED')
-
             # Register event handlers
             lcu_service.register_event_handler('match_start', handle_game_event)
             lcu_service.register_event_handler('match_end', handle_game_event)
             lcu_service.register_event_handler('phase_none', handle_game_event)
             lcu_service.register_event_handler('champ_select', handle_champ_select)
             lcu_service.register_event_handler('ready_check', handle_ready_check)
-
             # Start monitoring
             await lcu_service.start_monitoring()
             logger.info('LCU service: MONITORING STARTED')
-
             # Get detailed status
             lcu_details = await lcu_service.get_detailed_status()
             if lcu_details.get('connected'):
@@ -175,7 +170,6 @@ async def initialize_services():
     except Exception as e:
         lcu_status = f'error: {e}'
         logger.warning(f'LCU service: WARNING - {e}')
-
     # Redis service
     redis_status = 'connected'
     try:
@@ -187,13 +181,12 @@ async def initialize_services():
     except Exception as e:
         redis_status = f'error: {e}'
         logger.error(f'Redis service: ERROR - {e}')
-
     logger.info('All services initialized for Windows!')
-    logger.info(f'Status: Redis={redis_status}, Discord={discord_status}, LCU={lcu_status}')
-
+    logger.info(
+        f'Status: Redis={redis_status}, Discord={discord_status}, LCU={lcu_status}'
+    )
     await cleanup_service.start_cleanup_service()
     logger.info('Cleanup service: STARTED')
-
 
 
 async def cleanup_services():
@@ -724,8 +717,6 @@ else:
         logger.error('Static directory not found!')
 
 
-
-
 @app.get('/link-discord')
 async def link_discord_page():
     """Serve Discord linking page (public access)."""
@@ -754,8 +745,6 @@ async def root():
     }
 
 
-
-
 @app.get('/health')
 async def health_check():
     """Comprehensive health check for Windows."""
@@ -765,17 +754,14 @@ async def health_check():
         'discord': 'checking...',
         'lcu': 'checking...'
     }
-
     # Redis health
     try:
         services['redis'] = 'healthy' if redis_manager.redis.ping() else 'unhealthy'
     except Exception as e:
         services['redis'] = f'error: {str(e)}'
-
     # Discord health
     discord_status = discord_service.get_status()
     services['discord'] = 'connected' if discord_status.get('connected') else 'disconnected'
-
     # LCU health
     try:
         lcu_details = await lcu_service.get_detailed_status()
@@ -787,7 +773,6 @@ async def health_check():
             services['lcu'] = 'disconnected'
     except Exception:
         services['lcu'] = 'unavailable'
-
     # Message for Windows
     if services['discord'] == 'connected':
         message = 'Application running on Windows! Discord connected.'
@@ -798,7 +783,6 @@ async def health_check():
         message += ' LCU connected to game client.'
     elif services['lcu'] == 'waiting_for_game':
         message += ' LCU waiting for League of Legends launch.'
-
     return JSONResponse(content={
         'status': 'healthy',
         'services': services,

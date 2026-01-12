@@ -1,3 +1,15 @@
+"""Desktop launcher for LoL Voice Chat (FastAPI + pywebview).
+
+This script:
+- Loads environment variables (supports frozen builds).
+- Ensures required static assets are available next to the executable.
+- Starts the FastAPI backend in a background thread.
+- Opens the UI in an embedded pywebview window (with a browser fallback).
+
+Note: The window icon for pywebview is set only if the installed pywebview
+version supports the `icon` parameter.
+"""
+
 import logging
 import os
 import sys
@@ -42,9 +54,21 @@ else:
 
 
 class WebViewAPI:
-    """Exposes small helpers to JS inside pywebview."""
+    """Small bridge object exposed to JavaScript inside pywebview.
+
+    Methods of this class can be called from the embedded page via `window.pywebview.api`.
+    Keep this surface minimal: only add functions that must be called from the UI.
+    """
 
     def open_browser(self, url: str) -> bool:
+        """Open the given URL in the system default browser.
+
+        Args:
+            url (str): URL to open.
+
+        Returns:
+            bool: True if the call was attempted successfully.
+        """
         try:
             import webbrowser
             webbrowser.open(url)
@@ -54,6 +78,12 @@ class WebViewAPI:
 
 
 class SafeFileHandler(logging.FileHandler):
+    """FileHandler with predictable UTF-8 defaults.
+
+    On Windows and in frozen builds, encoding issues can easily break logging.
+    This wrapper forces UTF-8 encoding unless explicitly overridden.
+    """
+
     def __init__(self, filename, mode='a', encoding='utf-8', delay=False):
         super().__init__(filename, mode, encoding, delay)
 
@@ -71,8 +101,14 @@ logger = logging.getLogger(__name__)
 
 
 def _get_server_config():
-    """Return (bind_host, port, ui_base_url).
-    bind_host may be 0.0.0.0, but UI should use a loopback host."""
+    """Return server binding and UI base URL.
+
+        Returns:
+            tuple[str, int, str]: (bind_host, port, ui_base_url)
+
+        Notes:
+            - bind_host may be 0.0.0.0 / ::, but the UI should use loopback.
+            - If settings are not available, falls back to 127.0.0.1:8000."""
     try:
         from app.config import settings
         bind_host = getattr(settings, 'SERVER_HOST', '127.0.0.1') or '127.0.0.1'
@@ -91,6 +127,16 @@ logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 
 def setup_environment():
+    """Prepare runtime environment for the desktop app.
+
+        Responsibilities:
+            - Switch CWD to BASE_DIR.
+            - Ensure `static/` exists next to the executable.
+            - Set safe defaults for a few environment variables.
+
+        Returns:
+            bool: True if the environment is ready, otherwise False."""
+
     logger.info('Setting up environment...')
     os.chdir(BASE_DIR)
     logger.info(f'Working directory: {BASE_DIR}')
@@ -130,6 +176,13 @@ def setup_environment():
 
 
 def start_fastapi_server():
+    """Start the FastAPI backend using Uvicorn.
+
+        This runs in a background thread (daemon=True) so the UI can be launched.
+
+        Returns:
+            bool: True on clean shutdown, False if an exception occurred."""
+
     try:
         logger.info('Starting FastAPI server...')
         import uvicorn
@@ -152,6 +205,14 @@ def start_fastapi_server():
 
 
 def check_server_ready(timeout=30):
+    """Poll the backend health endpoint until it responds or a timeout is reached.
+
+        Args:
+            timeout (int): Maximum number of seconds to wait.
+
+        Returns:
+            bool: True if the server answered with HTTP 200, otherwise False."""
+
     import requests
     logger.info('Waiting for server to start...')
     for i in range(timeout):
@@ -172,6 +233,15 @@ def check_server_ready(timeout=30):
 
 
 def run_webview():
+    """Launch the UI inside a pywebview window.
+
+        - Builds the URL from the running backend config.
+        - Tries to set a custom icon when supported by the installed pywebview version.
+        - Returns False on failure, which triggers a browser fallback in `main()`.
+
+        Returns:
+            bool: True if the window was started successfully, otherwise False."""
+
     try:
         import webview
         import inspect
@@ -209,6 +279,14 @@ def run_webview():
 
 
 def main():
+    """Application entrypoint.
+
+        Flow:
+            1) Prepare environment and static assets.
+            2) Start the FastAPI server in a daemon thread.
+            3) Wait for backend readiness.
+            4) Open the UI in pywebview (or in a browser as fallback)."""
+
     logger.info('=' * 50)
     logger.info('LoL Voice Chat Desktop (WebView version)')
     logger.info('=' * 50)
