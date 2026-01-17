@@ -487,97 +487,24 @@ def build_with_pyinstaller():
 
 
 def create_package(exe_path: str) -> bool:
-    """Create package without .env file and without certificate files."""
-    print("Creating package...")
-    package_dir = os.path.join("dist", PACKAGE_DIR_NAME)
-    os.makedirs(package_dir, exist_ok=True)
-    if os.path.exists(exe_path):
-        shutil.copy2(exe_path, os.path.join(package_dir, EXE_NAME))
-        print("✅ EXE copied")
-    else:
+    """Create minimal release package: ONLY RiftTalk.exe (no static/, no README, no bat)."""
+    print("Creating minimal package (EXE only)...")
+
+    if not os.path.exists(exe_path):
         print("❌ EXE not found")
         return False
-    print("✅ .env embedded in EXE (not copied separately)")
-    bat_content = f"""@echo off
-chcp 65001 >nul
-title {APP_NAME} (WebView)
-echo ========================================
-echo    {APP_NAME} - Desktop App
-echo ========================================
-echo.
-echo Starting application...
-echo Please wait 5-10 seconds...
-echo.
-echo Note: Windows may show "Unknown Publisher" warning.
-echo       This is normal for self-signed applications.
-echo       Click "More info" -> "Run anyway" to continue.
-echo.
-{EXE_NAME}
-echo.
-echo Application started!
-echo Window should open automatically.
-pause
-"""
-    bat_path = os.path.join(package_dir, "Start.bat")
-    with open(bat_path, "w", encoding="utf-8") as f:
-        f.write(bat_content)
-    print("✅ Start.bat created")
-    readme_content = f"""# Rift Talk — Desktop Application (RU)
 
-## Установка
-1. Распакуйте все файлы в одну папку
-2. Запустите **Start.bat** или **{EXE_NAME}**
+    # Place the EXE into a dedicated folder, then zip that folder.
+    package_dir = os.path.join("dist", f"{APP_NAME}_EXE_ONLY")
+    os.makedirs(package_dir, exist_ok=True)
 
-## Примечание по безопасности
-- Приложение подписано **самоподписанным сертификатом**
-- Windows может показать предупреждение **"Unknown Publisher"**
-- Это **нормально** для self-signed приложений
-- Нажмите **"Подробнее" → "Выполнить в любом случае"**
+    dst_exe = os.path.join(package_dir, EXE_NAME)
+    shutil.copy2(exe_path, dst_exe)
+    print("✅ EXE copied (only file in package)")
+    print("✅ static/ is embedded in EXE via PyInstaller --add-data")
 
-## Возможности
-- ✅ Встроенный интерфейс (браузер не нужен)
-- ✅ Подписанный EXE (self-signed)
-- ✅ Нет консольного окна
-- ✅ Автоматический запуск сервера
-- ✅ Автоматическое подключение к голосовым каналам команды
-
-## Первый запуск
-1. Примите предупреждение безопасности, если оно появилось
-2. Откроется окно приложения с интерфейсом
-3. Нажмите **"Привязать Discord"** и завершите авторизацию
-4. Запустите **League of Legends** (League Client должен быть открыт)
-5. Заходите в матч — **в момент начала игры** приложение автоматически закинет вас в голосовой канал вашей команды (если тиммейты тоже используют приложение)
-
-## Как это работает
-- На старте матча создаются временные голосовые каналы для **Blue/Red**
-- Участникам выдаются роли/доступы и выполняется подключение к каналу команды
-- После окончания матча:
-  - пользователи удаляются из временных каналов
-  - роли/доступы снимаются
-  - временные каналы удаляются
-
-## Важно
-- Приложение должно быть **запущено ДО начала матча**
-- Discord-аккаунт должен быть **привязан**
-- Вы должны находиться на нужном Discord-сервере (где работает бот)
-- Если Discord недоступен — приложение не сможет работать (strict mode)
-
-## Troubleshooting
-- Если окно не открывается: проверьте файл **lol_voice_chat.log**
-- Предупреждение безопасности/SmartScreen: это ожидаемо → **"Подробнее" → "Выполнить в любом случае"**
-- Если не закинуло в канал:
-  - приложение запущено?
-  - Discord запущен и вы залогинены?
-  - аккаунт привязан?
-  - вы на нужном сервере?
-  - попробуйте перезапустить приложение и Discord
-"""
-    readme_path = os.path.join(package_dir, "README.txt")
-    with open(readme_path, "w", encoding="utf-8") as f:
-        f.write(readme_content)
-    print("✅ README created")
     date_str = datetime.now().strftime("%Y%m%d_%H%M")
-    zip_name = os.path.join("dist", f"{APP_NAME}_WebView_{date_str}")
+    zip_name = os.path.join("dist", f"{APP_NAME}_EXE_ONLY_{date_str}")
     shutil.make_archive(zip_name, "zip", package_dir)
     print(f"✅ ZIP created: {zip_name}.zip")
     return True
@@ -640,7 +567,7 @@ def main():
             print(f"  📄 {item} ({size:.1f} MB)")
         else:
             print(f"  📁 {item}")
-    print(f"\n🚀 For testing: dist/{PACKAGE_DIR_NAME}/Start.bat")
+    print(f"\n🚀 For testing: dist/{EXE_NAME}")
     print("🔒 .env file is encrypted and embedded in EXE")
     if signing_enabled:
         print("🔐 EXE is signed with self-signed certificate")
