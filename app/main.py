@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -127,21 +128,43 @@ async def initialize_services():
     # Automatic authentication via LCU (best-effort)
     await auto_authenticate_via_lcu()
 
-    # Discord service (STRICT)
+
+    # Discord service (resilient)
+    # Discord is required for the full experience, but we keep the API running
+    # and retry connection in the background instead of forcing app restart.
     if not settings.discord_enabled:
         raise RuntimeError(
             'Discord is required but not configured. '
             'Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
         )
+
+    async def _discord_reconnect_loop():
+        backoff = 5
+        while True:
+            try:
+                if not discord_service.connected:
+                    await discord_service.connect()
+                backoff = 5
+            except Exception as e:
+                logger.warning(f'Discord reconnect attempt failed: {e}')
+                backoff = min(60, backoff * 2)
+            await asyncio.sleep(backoff)
+
+    discord_status = 'disconnected'
     try:
         await discord_service.connect()
-        if not discord_service.connected:
-            raise RuntimeError('Discord connection failed (not connected after startup)')
-        discord_status = 'connected'
-        logger.info('Discord service: CONNECTED')
+        if discord_service.connected:
+            discord_status = 'connected'
+            logger.info('Discord service: CONNECTED')
+        else:
+            discord_status = 'retrying'
+            logger.warning('Discord service: NOT CONNECTED (will retry)')
+            asyncio.create_task(_discord_reconnect_loop())
     except Exception as e:
-        logger.error(f'Discord service failed to start: {e}')
-        raise
+        discord_status = f'error: {e}'
+        logger.error(f'Discord service failed to start (will retry): {e}')
+        asyncio.create_task(_discord_reconnect_loop())
+
     # LCU service - Windows optimized (best-effort)
     lcu_status = 'disconnected'
     try:
@@ -225,12 +248,18 @@ async def handle_champ_select(event_data: dict):
             if current_summoner:
                 summoner_id = str(current_summoner.get('summonerId'))
                 match_info_key = f'user_match:{summoner_id}'
+                # IMPORTANT:
+                # ChampSelect produces a synthetic match id like "champ_select_<ts>".
+                # We must NOT store it as the active "match_id" because:
+                # - /discord/match-status could create channels for that id
+                # - EndOfGame cleanup would delete the wrong room
+                # Instead, we keep it as *pending* metadata only.
                 match_info = {
-                    'match_id': match_id,
+                    'pending_match_id': match_id,
                     'players': json.dumps(players),
                     'team_data': json.dumps(team_data),
                     'phase': 'ChampSelect',
-                    'saved_at': datetime.now(timezone.utc).isoformat()
+                    'saved_at': datetime.now(timezone.utc).isoformat(),
                 }
                 redis_manager.redis.hset(match_info_key, mapping=match_info)
                 redis_manager.redis.expire(match_info_key, 3600)
@@ -416,6 +445,30 @@ async def handle_match_start():
         if not match_id:
             logger.error('No match_id found, cannot create room')
             return
+
+        # Persist *active* match_id for this summoner.
+        # This must be the real match_<gameId> (NOT champ_select_<ts>), so that:
+        # - UI polling never creates champ_select rooms
+        # - EndOfGame cleanup deletes the correct channels/roles
+        try:
+            match_info_key = f'user_match:{summoner_id}'
+            redis_manager.redis.hset(
+                match_info_key,
+                mapping={
+                    'match_id': match_id,
+                    'phase': 'InProgress',
+                    'started_at': datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            # If we had a pending champ_select id, keep it only as metadata.
+            # Clearing it helps avoid accidental reuse.
+            try:
+                redis_manager.redis.hdel(match_info_key, 'pending_match_id')
+            except Exception:
+                pass
+            redis_manager.redis.expire(match_info_key, 3600)
+        except Exception as e:
+            logger.warning(f'Failed to save user_match active match_id: {e}')
         # Save current match for this summoner (needed for early-exit cleanup)
         try:
             user_key = f'user:{summoner_id}'
@@ -505,30 +558,49 @@ async def handle_match_end(event_data: dict):
     """Handle match end - cleanup voice rooms with improved cleanup."""
     try:
         logger.info('Match ended - cleaning up voice rooms')
-        # Get current summoner to find match info
-        current_summoner = (
-            await lcu_service.lcu_connector.get_current_summoner()
-        )
+        # Determine match_id to cleanup (real match_<gameId> only).
+        current_summoner = await lcu_service.lcu_connector.get_current_summoner()
         match_id = None
-        if current_summoner:
+        summoner_id = None
+        if current_summoner and current_summoner.get('summonerId'):
             summoner_id = str(current_summoner.get('summonerId'))
             logger.info(f'Current summoner ID: {summoner_id}')
-            # Get all matches for this user
-            match_keys = []
+
+        # 1) Try LCU session (most reliable right at EndOfGame)
+        try:
+            session = await lcu_service.lcu_connector.get_current_session()
+            if session and session.get('gameData', {}).get('gameId'):
+                match_id = f"match_{session['gameData']['gameId']}"
+                logger.info(f'Found match ID from LCU session for cleanup: {match_id}')
+        except Exception as e:
+            logger.warning(f'Could not read match id from LCU session: {e}')
+
+        # 2) Fallback: user key saved at match start
+        if not match_id and summoner_id:
             try:
-                for key in redis_manager.redis.scan_iter(match='user_match:*'):
-                    match_keys.append(key)
+                user_key = f'user:{summoner_id}'
+                saved_match = redis_manager.redis.hget(user_key, 'current_match')
+                if saved_match:
+                    match_id = saved_match
+                    logger.info(f'Found match ID from user.current_match for cleanup: {match_id}')
             except Exception as e:
-                logger.error(f'Error scanning match keys: {e}')
-            for key in match_keys:
-                try:
-                    match_info = redis_manager.redis.hgetall(key)
-                    if match_info and match_info.get('match_id'):
-                        match_id = match_info['match_id']
-                        logger.info(f'Found match ID for cleanup: {match_id}')
-                        break
-                except Exception as e:
-                    logger.error(f'Error getting match info from {key}: {e}')
+                logger.warning(f'Could not read current_match from user key: {e}')
+
+        # 3) Fallback: user_match hash (should contain real match_id after our fix)
+        if not match_id and summoner_id:
+            try:
+                match_info_key = f'user_match:{summoner_id}'
+                match_info = redis_manager.redis.hgetall(match_info_key)
+                if match_info and match_info.get('match_id'):
+                    match_id = match_info['match_id']
+                    logger.info(f'Found match ID from user_match for cleanup: {match_id}')
+            except Exception as e:
+                logger.warning(f'Could not read match_id from user_match: {e}')
+
+        # Safety: never treat champ_select_* as a real match room.
+        if match_id and str(match_id).startswith('champ_select_'):
+            logger.warning(f'Ignoring champ_select match id for cleanup: {match_id}')
+            match_id = None
         # If match_id found - clean up
         if match_id:
             logger.info(f'Cleaning up voice room for match {match_id}')
@@ -559,6 +631,17 @@ async def handle_match_end(event_data: dict):
                         logger.warning(
                             f'Failed to clean up room for match {room_match_id}'
                         )
+
+        # Extra safety: cleanup any legacy champ_select_<ts> room created by older builds.
+        if summoner_id:
+            try:
+                match_info_key = f'user_match:{summoner_id}'
+                pending_id = redis_manager.redis.hget(match_info_key, 'pending_match_id')
+                if pending_id and str(pending_id).startswith('champ_select_'):
+                    logger.info(f'Cleaning up legacy champ_select room: {pending_id}')
+                    await voice_service.close_voice_room(pending_id)
+            except Exception as e:
+                logger.warning(f'Legacy champ_select cleanup skipped: {e}')
         # Clean up user match info
         if current_summoner:
             summoner_id = str(current_summoner.get('summonerId'))

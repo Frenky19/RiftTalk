@@ -66,11 +66,11 @@ class Settings(BaseSettings):
     # Cleanup / Garbage Collection
     CLEANUP_INTERVAL_SECONDS: int = Field(default=60)
     CLEANUP_INACTIVE_GRACE_SECONDS: int = Field(default=120)
-    CLEANUP_STALE_EMPTY_ROOM_HOURS: int = Field(default=6)
+    CLEANUP_STALE_EMPTY_ROOM_HOURS: int = Field(default=2)
 
     # Discord orphan cleanup (helps when using memory:// and app restarts)
     DISCORD_GC_ON_STARTUP: bool = Field(default=True)
-    DISCORD_GC_STALE_HOURS: int = Field(default=6)
+    DISCORD_GC_STALE_HOURS: int = Field(default=2)
     DISCORD_GC_MIN_AGE_MINUTES: int = Field(default=10)
 
     def __init__(self, **kwargs):

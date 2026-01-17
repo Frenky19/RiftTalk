@@ -189,19 +189,66 @@ class DiscordService:
             except Exception as e:
                 logger.error(f'Error in voice state update: {e}')
 
+
+    def _team_channel_name(self, match_id: str, team_name: str) -> str:
+        return f'LoL Match {match_id} - {team_name}'
+
+    async def _dedupe_voice_channels_by_name(self, channel_name: str) -> Optional[VoiceChannel]:
+        """Ensure there is only ONE voice channel with this exact name.
+
+        Discord allows duplicate channel names. When multiple app instances start at the same time,
+        a race can create duplicates. We keep the OLDEST channel (first created) and delete the rest.
+
+        Returns the kept channel if exists, else None.
+        """
+        if not self.guild or not self.category:
+            return None
+        try:
+            matches = [ch for ch in list(self.category.voice_channels)
+                       if isinstance(ch, VoiceChannel) and (getattr(ch, 'name', '') or '') == channel_name]
+            if len(matches) <= 1:
+                return matches[0] if matches else None
+            # Keep the oldest channel
+            matches.sort(key=lambda c: getattr(c, 'created_at', datetime.min.replace(tzinfo=timezone.utc)))
+            kept = matches[0]
+            duplicates = matches[1:]
+            for ch in duplicates:
+                try:
+                    # If anyone is in a duplicate channel, move them to kept before deletion
+                    if getattr(ch, 'members', None) and len(ch.members) > 0:
+                        for m in list(ch.members):
+                            try:
+                                await m.move_to(kept)
+                            except Exception:
+                                pass
+                    await ch.delete(reason='Removed duplicate LoL match voice channel (dedupe)')
+                    logger.warning(f'Deleted duplicate voice channel: {channel_name} (id={ch.id})')
+                except Exception as e:
+                    logger.debug(f'Failed deleting duplicate channel {getattr(ch, "id", "?")}: {e}')
+            return kept
+        except Exception as e:
+            logger.debug(f'Channel dedupe failed for {channel_name}: {e}')
+            return None
+
+
     async def find_team_channel(
         self,
         match_id: str,
         team_name: str
     ) -> Optional[VoiceChannel]:
-        """Find voice channel for specific team in match."""
+        """Find (and deduplicate) the single team voice channel for match/team.
+
+        Multiple app instances can race-create duplicate channels with the same name.
+        We always keep the oldest channel and delete any later duplicates.
+        """
         if not self.guild or not self.category:
             return None
-        channel_name = f'LoL Match {match_id} - {team_name}'
-        for channel in self.category.voice_channels:
-            if channel.name == channel_name:
-                return channel
+        channel_name = self._team_channel_name(match_id, team_name)
+        kept = await self._dedupe_voice_channels_by_name(channel_name)
+        if kept:
+            return kept
         return None
+
 
     async def _connect_internal(self):
         """Internal method to handle Discord connection."""
@@ -411,35 +458,45 @@ class DiscordService:
             logger.error(f'Failed to create team role: {e}')
             return None
 
+
     async def create_or_get_voice_channel(
         self,
         match_id: str,
         team_name: str
     ) -> Dict[str, Any]:
-        """Create or get existing voice channel for a team in a match."""
+        """Create or get existing voice channel for a team in a match.
+
+        Handles multi-instance races by deduplicating channels with the same name
+        and always keeping the oldest channel.
+        """
         if not self.connected or not self.guild or not self.category:
             raise RuntimeError('Discord service not ready')
-        try:
-            channel_name = f'LoL Match {match_id} - {team_name}'
-            # Check cache first
-            if (
-                match_id in self._match_channels_cache and (
-                    team_name in self._match_channels_cache[match_id])
-            ):
-                existing_channel = self._match_channels_cache[match_id][team_name]
-                logger.info(
-                    f'Found cached channel for {team_name} in match {match_id}'
-                )
-                # Update invite
-                invite = await existing_channel.create_invite(
-                    max_uses=0,  # Unlimited uses
+
+        channel_name = self._team_channel_name(match_id, team_name)
+
+        # Ensure cache container exists
+        if match_id not in self._match_channels_cache:
+            self._match_channels_cache[match_id] = {}
+
+        # Step 1: prefer cached
+        cached = self._match_channels_cache.get(match_id, {}).get(team_name)
+        if cached is not None:
+            try:
+                # If cached channel was deleted, this will raise
+                _ = cached.id
+                # Deduplicate (in case duplicates were created by other instances)
+                kept = await self._dedupe_voice_channels_by_name(channel_name)
+                if kept is not None:
+                    self._match_channels_cache[match_id][team_name] = kept
+                    cached = kept
+                invite = await cached.create_invite(
+                    max_uses=0,
                     unique=False,
                     reason=f'Recreated invite for {team_name} in match {match_id}'
                 )
-                # Get role
                 team_role = await self._get_or_create_team_role(match_id, team_name)
                 return {
-                    'channel_id': str(existing_channel.id),
+                    'channel_id': str(cached.id),
                     'channel_name': channel_name,
                     'invite_url': invite.url,
                     'match_id': match_id,
@@ -449,117 +506,88 @@ class DiscordService:
                     'existing': True,
                     'cached': True
                 }
-            # Look for existing channel in category
-            existing_channel = None
-            for channel in self.category.voice_channels:
-                if channel.name == channel_name:
-                    existing_channel = channel
-                    logger.info(f'Found existing voice channel: {channel_name}')
-                    # Update cache
-                    if match_id not in self._match_channels_cache:
-                        self._match_channels_cache[match_id] = {}
-                    self._match_channels_cache[match_id][team_name] = channel
-                    break
-            # If channel already exists - return it
-            if existing_channel:
-                # Update permissions
-                team_role = await self._get_or_create_team_role(match_id, team_name)
-                if team_role:
-                    overwrites = {
-                        self.guild.default_role: discord.PermissionOverwrite(
-                            view_channel=False,
-                            connect=False
-                        ),
-                        team_role: discord.PermissionOverwrite(
-                            view_channel=True,
-                            connect=True,
-                            speak=True
-                        ),
-                        self.guild.me: discord.PermissionOverwrite(
-                            view_channel=True,
-                            connect=True,
-                            speak=True,
-                            manage_channels=True,
-                            manage_roles=True
-                        )
-                    }
-                    await existing_channel.edit(overwrites=overwrites)
-                # Create invite
+            except Exception:
+                # Cache is stale
+                self._match_channels_cache[match_id].pop(team_name, None)
+
+        # Step 2: look for existing channels by name (and dedupe)
+        existing_channel = await self._dedupe_voice_channels_by_name(channel_name)
+
+        if existing_channel is not None:
+            try:
                 invite = await existing_channel.create_invite(
                     max_uses=0,
                     unique=False,
                     reason=f'Recreated invite for {team_name} in match {match_id}'
                 )
-                return {
-                    'channel_id': str(existing_channel.id),
-                    'channel_name': channel_name,
-                    'invite_url': invite.url,
-                    'match_id': match_id,
-                    'team_name': team_name,
-                    'role_id': str(team_role.id) if team_role else '',
-                    'secured': True,
-                    'existing': True
-                }
-            # Create new channel only if it doesn't exist
-            logger.info(f'Creating NEW voice channel: {channel_name}')
-            # Create team role
+            except Exception:
+                invite = None
             team_role = await self._get_or_create_team_role(match_id, team_name)
-            if not team_role:
-                raise RuntimeError('Failed to create team role')
-            # Setup permissions
+            self._match_channels_cache[match_id][team_name] = existing_channel
+            return {
+                'channel_id': str(existing_channel.id),
+                'channel_name': channel_name,
+                'invite_url': invite.url if invite else '',
+                'match_id': match_id,
+                'team_name': team_name,
+                'role_id': str(team_role.id) if team_role else '',
+                'secured': True,
+                'existing': True,
+                'cached': False
+            }
+
+        # Step 3: create new channel
+        try:
+            # Create permission overwrites
             overwrites = {
                 self.guild.default_role: discord.PermissionOverwrite(
-                    view_channel=False,
-                    connect=False
-                ),
-                team_role: discord.PermissionOverwrite(
-                    view_channel=True,
-                    connect=True,
-                    speak=True
-                ),
-                self.guild.me: discord.PermissionOverwrite(
-                    view_channel=True,
-                    connect=True,
-                    speak=True,
-                    manage_channels=True,
-                    manage_roles=True
+                    connect=False,
+                    view_channel=False
                 )
             }
-            # Create voice channel
+            # Get or create role for the team
+            team_role = await self._get_or_create_team_role(match_id, team_name)
+            if team_role:
+                overwrites[team_role] = discord.PermissionOverwrite(
+                    connect=True,
+                    view_channel=True
+                )
+
             voice_channel = await self.guild.create_voice_channel(
                 name=channel_name,
                 category=self.category,
                 overwrites=overwrites,
-                reason=(
-                    f'Secured voice chat for {team_name} '
-                    f'in LoL match {match_id}'
-                )
+                reason=f'Auto-created for {team_name} in LoL match {match_id}'
             )
-            # Update cache
-            if match_id not in self._match_channels_cache:
-                self._match_channels_cache[match_id] = {}
-            self._match_channels_cache[match_id][team_name] = voice_channel
-            # Create invite
+
+            # Dedupe again to ensure we keep the oldest if there was a race
+            kept = await self._dedupe_voice_channels_by_name(channel_name)
+            if kept is not None:
+                voice_channel = kept
+
             invite = await voice_channel.create_invite(
                 max_uses=0,
                 unique=False,
-                reason='Auto-generated for secured LoL match'
+                reason=f'Invite for {team_name} in match {match_id}'
             )
+            self._match_channels_cache[match_id][team_name] = voice_channel
 
-            logger.info(f'Created new Discord voice channel: {voice_channel.name}')
             return {
                 'channel_id': str(voice_channel.id),
                 'channel_name': channel_name,
                 'invite_url': invite.url,
                 'match_id': match_id,
                 'team_name': team_name,
-                'role_id': str(team_role.id),
+                'role_id': str(team_role.id) if team_role else '',
                 'secured': True,
-                'existing': False
+                'existing': False,
+                'cached': False
             }
         except Exception as e:
-            logger.error(f'Failed to create/get Discord channel: {e}')
+            logger.error(f'Failed to create voice channel: {e}')
             raise
+
+
 
     async def create_or_get_team_channels(
         self,
@@ -734,6 +762,26 @@ class DiscordService:
                     json.dumps(match_info)
                 )
                 return True
+            # Proactive cleanup: prevent users from accumulating multiple match roles.
+            # If the user still has roles from previous matches, remove them to avoid
+            # access to multiple team channels (e.g., after a crash/reconnect).
+            try:
+                stale = [
+                    r for r in list(getattr(member, 'roles', []) or [])
+                    if getattr(r, 'name', '').startswith('LoL ')
+                    and r not in (team_role, self.guild.default_role)
+                ]
+                if stale:
+                    await member.remove_roles(
+                        *stale,
+                        reason=f'Cleanup stale LoL roles before assigning {match_id}'
+                    )
+                    logger.info(
+                        f'Removed {len(stale)} stale LoL roles from {member.display_name}'
+                    )
+            except Exception as e:
+                logger.debug(f'Stale role cleanup skipped: {e}')
+
             # Assign role
             try:
                 await member.add_roles(
@@ -1015,14 +1063,30 @@ class DiscordService:
                     # Must be empty channels
                     if any(len(ch.members) > 0 for ch in channels):
                         continue
-                    # Must have no members in match roles
+                    # Must have no members in match roles.
+                    # If roles still have members but the match resources are very old,
+                    # we try to remove these stale match roles first (best-effort).
                     roles = []
                     for tn in ('Blue Team', 'Red Team'):
                         role = await self._get_team_role(match_id, tn)
                         if role:
                             roles.append(role)
-                    if any(len(r.members) > 0 for r in roles):
-                        continue
+                    if roles and any(len(r.members) > 0 for r in roles):
+                        # Best-effort role cleanup for stale matches
+                        try:
+                            if self.guild and self.guild.me and self.guild.me.guild_permissions.manage_roles:
+                                for role in roles:
+                                    # Copy list because it mutates
+                                    for member in list(getattr(role, 'members', []) or []):
+                                        try:
+                                            await member.remove_roles(role, reason=f'Orphan GC: stale match {match_id}')
+                                        except Exception:
+                                            continue
+                        except Exception:
+                            pass
+                        # Re-check; if still has members, do not delete
+                        if any(len(r.members) > 0 for r in roles):
+                            continue
                     logger.info(
                         f'Orphan GC: deleting stale match resources for {match_id} '
                         f'(age={age}, channels={len(channels)})'

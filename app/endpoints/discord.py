@@ -364,115 +364,22 @@ async def debug_team_assignment(
 
 @router.post('/link-account')
 async def link_discord_account(
-    request: DiscordLinkRequest,
+    discord_data: DiscordLinkRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Link Discord account to current LoL user with error handling."""
-    try:
-        summoner_id = current_user['sub']
-        user_key = f'user:{summoner_id}'
-        # Use string ID after validation
-        discord_user_id_str = request.discord_user_id
-        logger.info(f'Starting Discord link process for summoner '
-                    f'{summoner_id}')
-        logger.info(f'Received Discord ID: "{discord_user_id_str}" '
-                    f'(type: {type(discord_user_id_str)})')
-        # Check that Discord ID is not empty after validation
-        if not discord_user_id_str or not discord_user_id_str.strip():
-            raise HTTPException(
-                status_code=422,
-                detail='Discord ID cannot be empty after validation'
-            )
-        # Clean Discord ID
-        clean_discord_id = ''.join(filter(str.isdigit, discord_user_id_str))
-        if len(clean_discord_id) < 17:
-            raise HTTPException(
-                status_code=422,
-                detail=f'Discord ID too short: {len(clean_discord_id)} '
-                       f'digits (minimum 17)'
-            )
-        if len(clean_discord_id) > 20:
-            raise HTTPException(
-                status_code=422,
-                detail=f'Discord ID too long: {len(clean_discord_id)} '
-                       f'digits (maximum 20)'
-            )
-        logger.info(f'Cleaned Discord ID: {clean_discord_id}')
-        # Save as hash with correct fields
-        user_data = {
-            'discord_user_id': clean_discord_id,
-            'summoner_id': summoner_id,
-            'discord_linked_at': datetime.now(timezone.utc).isoformat(),
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }
-        # Delete old key and create new one as hash
-        logger.info(f'Removing old key: {user_key}')
-        redis_manager.redis.delete(user_key)
-        logger.info(f'Saving new user data: {user_data}')
-        redis_manager.redis.hset(user_key, mapping=user_data)
-        redis_manager.redis.expire(user_key, 30 * 24 * 3600)
-        # Check that data was saved correctly
-        saved_data = redis_manager.redis.hgetall(user_key)
-        logger.info(f'Saved user data: {saved_data}')
-        if not saved_data.get('discord_user_id'):
-            logger.error(f'Failed to save Discord ID. '
-                         f'Redis returned: {saved_data}')
-            raise HTTPException(
-                status_code=500,
-                detail='Failed to save Discord ID to database - '
-                       'no data saved'
-            )
-        # Check that saved value matches sent value
-        saved_discord_id = saved_data.get('discord_user_id')
-        if saved_discord_id != clean_discord_id:
-            logger.error(f'Data mismatch! Sent: {clean_discord_id}, '
-                         f'Saved: {saved_discord_id}')
-            raise HTTPException(
-                status_code=500,
-                detail=f'Data corruption: sent {clean_discord_id} but '
-                       f'saved {saved_discord_id}'
-            )
-        logger.info(f'Successfully linked Discord account {clean_discord_id} '
-                    f'to summoner {summoner_id}')
-        return {
-            'status': 'success',
-            'message': 'Discord account linked successfully',
-            'discord_user_id': clean_discord_id,
-            'summoner_id': summoner_id,
-            'saved_correctly': True,
-            'saved_value': saved_discord_id,
-            'debug': {
-                'received_type': type(request.discord_user_id).__name__,
-                'cleaned_value': clean_discord_id,
-                'redis_saved_value': saved_discord_id
-            }
-        }
-    except HTTPException:
-        raise
-    except ValidationError as e:
-        logger.error(f'Pydantic validation error in link_discord_account: {e}')
-        logger.error(f'Error details: {e.errors() if hasattr(e, "errors") else str(e)}')
-        raise HTTPException(
-            status_code=422,
-            detail={
-                'type': 'validation_error',
-                'message': str(e),
-                'errors': e.errors() if hasattr(e, 'errors') else None
-            }
+    """(Deprecated) Manual Discord ID linking.
+
+    This app now supports ONLY Discord OAuth2 linking to prevent wrong IDs and
+    improve security/usability.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            'Manual Discord ID linking has been removed. '
+            'Please link your Discord account using the "Link via Discord" button.'
         )
-    except Exception as e:
-        logger.error(f'Unexpected error in link_discord_account: {e}')
-        logger.error(f'Error type: {type(e).__name__}')
-        import traceback
-        logger.error(f'Stack trace: {traceback.format_exc()}')
-        raise HTTPException(
-            status_code=500,
-            detail={
-                'type': 'unexpected_error',
-                'message': f'Failed to link Discord account: {str(e)}',
-                'error_type': type(e).__name__
-            }
-        )
+    )
+
 
 
 @router.get('/linked-account')
@@ -809,35 +716,46 @@ async def get_match_status(
                     match_info = json.loads(match_info_data)
                 except json.JSONDecodeError:
                     match_info = {}
+        # Read stored match id (should only be match_<gameId>). Pending champ_select id is stored separately.
         match_id = match_info.get('match_id') if match_info else None
-        # If match_id not found, try to get it from LCU
+
+        # Always trust LCU for the *current* match when InProgress.
+        # This prevents accidental creation of champ_select_<ts> rooms.
+        phase = None
+        try:
+            if lcu_service.lcu_connector.is_connected():
+                phase = await lcu_service.lcu_connector.get_game_flow_phase()
+                logger.info(f'Current phase from LCU: {phase}')
+                if phase == 'InProgress':
+                    session = await lcu_service.lcu_connector.get_current_session()
+                    if session and session.get('gameData', {}).get('gameId'):
+                        real_match_id = f'match_{session["gameData"]["gameId"]}'
+                        if match_id != real_match_id:
+                            logger.info(f'Overriding stored match_id -> {real_match_id} (was: {match_id})')
+                        match_id = real_match_id
+                        # Persist for subsequent cleanup/status calls
+                        redis_manager.redis.hset(match_info_key, mapping={
+                            'match_id': match_id,
+                            'phase': 'InProgress',
+                            'updated_at': datetime.now(timezone.utc).isoformat(),
+                        })
+                        redis_manager.redis.expire(match_info_key, 3600)
+        except Exception as e:
+            logger.error(f'Error getting match status from LCU: {e}')
+
+        # Safety: never proceed with a champ_select_* id as a real match.
+        if match_id and str(match_id).startswith('champ_select_'):
+            logger.warning(f'Ignoring non-real match_id in match-status: {match_id}')
+            match_id = None
         if not match_id:
-            try:
-                # Check if LCU is connected
-                if lcu_service.lcu_connector.is_connected():
-                    # Get current phase
-                    phase = await lcu_service.lcu_connector.get_game_flow_phase()
-                    logger.info(f'Current phase from LCU: {phase}')
-                    # If phase is InProgress, get match data
-                    if phase == 'InProgress':
-                        session = await lcu_service.lcu_connector.get_current_session()
-                        if session and session.get('gameData', {}).get('gameId'):
-                            match_id = f'match_{session["gameData"]["gameId"]}'
-                            logger.info(f'Found match_id from LCU: {match_id}')
-                            # Save match_id for user
-                            redis_manager.redis.hset(match_info_key,
-                                                     'match_id', match_id)
-                            redis_manager.redis.expire(match_info_key, 3600)
-            except Exception as e:
-                logger.error(f'Error getting match_id from LCU: {e}')
-        if not match_id:
+            # Phase-aware empty response (no rooms are created before InProgress)
             return {
                 'match_id': None,
                 'match_started': False,
-                'in_champ_select': False,
-                'in_loading_screen': False,
-                'in_progress': False,
-                'voice_channel': None
+                'in_champ_select': phase == 'ChampSelect',
+                'in_loading_screen': phase == 'LoadingScreen',
+                'in_progress': phase == 'InProgress',
+                'voice_channel': None,
             }
         # Get voice room information
         room_data = voice_service.redis.get_voice_room_by_match(match_id)

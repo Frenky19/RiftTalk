@@ -151,42 +151,85 @@ async def real_authentication():
 
 @router.get('/auto-auth')
 async def auto_authenticate():
-    """Automatic authentication using LCU when available."""
+    """Automatic authentication using LCU when available.
+
+    IMPORTANT: This endpoint must never return a null/empty body on success,
+    otherwise the UI can crash with errors like "properties is null".
+
+    Behavior:
+    - If League of Legends client is running and LCU is reachable: returns TokenResponse.
+    - If LoL/LCU is not reachable: returns 503 with a clear user-facing message.
+    """
     try:
-        # Try LCU authentication first
-        if lcu_service.lcu_connector.is_connected():
-            current_summoner = (
-                await lcu_service.lcu_connector.get_current_summoner()
+        # Best-effort connect (does not throw on missing lockfile)
+        try:
+            if not lcu_service.lcu_connector.is_connected():
+                await lcu_service.lcu_connector.connect()
+        except Exception:
+            # handled below via is_connected() check
+            pass
+
+        if not lcu_service.lcu_connector.is_connected():
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    'type': 'lcu_not_connected',
+                    'message': (
+                        'League of Legends client is not detected. '
+                        'Please launch League of Legends (Riot Client), '
+                        'log in, and keep it running. Then try again.'
+                    ),
+                    'action': 'launch_lol_and_login'
+                }
             )
-            if current_summoner:
-                summoner_id = str(current_summoner.get('summonerId'))
-                summoner_name = (
-                    current_summoner.get('displayName') or current_summoner.get(
-                        'gameName', 'Unknown')
-                )
-                access_token_expires = timedelta(
-                    minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-                )
-                access_token = create_access_token(
-                    data={'sub': summoner_id, 'name': summoner_name},
-                    expires_delta=access_token_expires
-                )
-                # Save user info
-                user_key = f'user:{summoner_id}'
-                redis_manager.redis.hset(user_key, mapping={
-                    'summoner_id': summoner_id,
-                    'summoner_name': summoner_name,
-                    'last_login': datetime.now(timezone.utc).isoformat(),
-                    'auto_authenticated': 'true'
-                })
-                redis_manager.redis.expire(user_key, 3600 * 24 * 7)
-                return TokenResponse(
-                    access_token=access_token,
-                    token_type='bearer',
-                    summoner_id=summoner_id,
-                    summoner_name=summoner_name,
-                    source='lcu_auto'
-                )
+
+        current_summoner = await lcu_service.lcu_connector.get_current_summoner()
+        if not current_summoner:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    'type': 'lcu_no_summoner',
+                    'message': (
+                        'League Client is running, but summoner info is not available yet. '
+                        'Make sure you are logged in and not on the Riot Client login screen, '
+                        'then try again.'
+                    ),
+                    'action': 'login_to_lol'
+                }
+            )
+
+        summoner_id = str(current_summoner.get('summonerId'))
+        summoner_name = (
+            current_summoner.get('displayName')
+            or current_summoner.get('gameName')
+            or 'Unknown'
+        )
+
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={'sub': summoner_id, 'name': summoner_name},
+            expires_delta=access_token_expires
+        )
+
+        # Save user info
+        user_key = f'user:{summoner_id}'
+        redis_manager.redis.hset(user_key, mapping={
+            'summoner_id': summoner_id,
+            'summoner_name': summoner_name,
+            'last_login': datetime.now(timezone.utc).isoformat(),
+            'auto_authenticated': 'true'
+        })
+        redis_manager.redis.expire(user_key, 3600 * 24 * 7)
+
+        return TokenResponse(
+            access_token=access_token,
+            token_type='bearer',
+            summoner_id=summoner_id,
+            summoner_name=summoner_name,
+            source='lcu_auto'
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,

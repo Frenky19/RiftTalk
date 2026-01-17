@@ -244,7 +244,7 @@ def run_webview():
             f'{_get_server_config()[2]}/link-discord',
             js_api=WebViewAPI(),
             width=1400,
-            height=1250,
+            height=1350,
             resizable=True,
             fullscreen=False,
             min_size=(800, 600),

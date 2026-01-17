@@ -23,6 +23,27 @@ async def start_voice_chat(
 ):
     """Create a new voice chat room for a match."""
     try:
+        # Guard: do not allow creating match channels before the match actually starts
+        if request.match_id and 'champ_select' in request.match_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    'Voice channels are created only when the match starts. '
+                    'Wait until the game begins (InProgress), then try again.'
+                )
+            )
+        try:
+            phase = await lcu_service.lcu_connector.get_game_flow_phase()
+        except Exception:
+            phase = None
+        if phase and phase != 'InProgress':
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f'Current LoL phase is {phase}. Voice channels will be created only at match start (InProgress).'
+                )
+            )
+
         # Prepare team data
         team_data = {
             'blue_team': request.blue_team or [],
