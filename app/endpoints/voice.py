@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.schemas import MatchStartRequest, MatchEndRequest
+from app.database import redis_manager
 from app.services.discord_service import discord_service
 from app.services.lcu_service import lcu_service
 from app.services.voice_service import voice_service
@@ -369,6 +370,121 @@ async def join_existing_voice_room(
             status_code=500,
             detail=f'Failed to join existing room: {str(e)}'
         )
+
+
+@router.post('/reconnect')
+async def reconnect_voice(
+    current_user: dict = Depends(get_current_user)
+):
+    """Best-effort reconnect to the current match voice.
+
+    What we can do automatically:
+    - Re-assign the correct match role (if it was lost)
+    - If you are currently connected to ANY voice channel (e.g., Waiting Room),
+      move you into your team channel.
+
+    Limitation:
+    - If you're not connected to a voice channel at all, Discord bots cannot "connect" you.
+      In that case we return the invite link so you can join manually.
+    """
+    try:
+        summoner_id = str(current_user.get('sub') or '')
+        if not summoner_id:
+            raise HTTPException(status_code=401, detail='Not authenticated')
+
+        # Determine active match for this summoner
+        match_id = voice_service.get_active_match_id_for_summoner(summoner_id)
+        if not match_id:
+            # Fallback: scan rooms
+            try:
+                active_rooms = voice_service.redis.get_all_active_rooms()
+                for room in active_rooms:
+                    blue = voice_service.safe_json_parse(room.get('blue_team'), []) or []
+                    red = voice_service.safe_json_parse(room.get('red_team'), []) or []
+                    if summoner_id in blue or summoner_id in red:
+                        match_id = room.get('match_id')
+                        break
+            except Exception:
+                match_id = None
+
+        if not match_id:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    'type': 'no_active_match',
+                    'message': 'Active match not found for reconnect.',
+                    'action': 'start_match_or_wait'
+                }
+            )
+
+        room_data = voice_service.redis.get_voice_room_by_match(match_id)
+        if not room_data:
+            raise HTTPException(status_code=404, detail='Voice room not found')
+
+        # Determine team
+        blue = voice_service.safe_json_parse(room_data.get('blue_team'), []) or []
+        red = voice_service.safe_json_parse(room_data.get('red_team'), []) or []
+        if summoner_id in blue:
+            team_name = 'Blue Team'
+        elif summoner_id in red:
+            team_name = 'Red Team'
+        else:
+            raise HTTPException(status_code=404, detail='Player not found in room teams')
+
+        user_key = f'user:{summoner_id}'
+        discord_user_id = None
+        try:
+            discord_user_id = redis_manager.redis.hget(user_key, 'discord_user_id')
+        except Exception:
+            discord_user_id = None
+
+        if not discord_user_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    'type': 'discord_not_linked',
+                    'message': 'Discord is not linked for this summoner.',
+                    'action': 'link_discord_oauth'
+                }
+            )
+
+        discord_user_id_int = int(discord_user_id)
+
+        assigned = await discord_service.assign_player_to_team(
+            discord_user_id=discord_user_id_int,
+            match_id=match_id,
+            team_name=team_name,
+        )
+        moved = await discord_service.move_member_to_team_channel_if_in_voice(
+            discord_user_id=discord_user_id_int,
+            match_id=match_id,
+            team_name=team_name,
+        )
+
+        # Provide a fresh invite (useful if user isn't in voice)
+        invite_url = ''
+        try:
+            ch = await discord_service.create_or_get_voice_channel(match_id, team_name)
+            invite_url = (ch or {}).get('invite_url', '') or ''
+        except Exception:
+            invite_url = ''
+
+        return {
+            'status': 'ok',
+            'match_id': match_id,
+            'team_name': team_name,
+            'role_assigned': bool(assigned),
+            'moved_if_in_voice': bool(moved),
+            'invite_url': invite_url,
+            'note': (
+                'If you were not connected to voice, use invite_url or join Waiting Room and press reconnect again.'
+            )
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Reconnect failed: {e}')
+        raise HTTPException(status_code=500, detail=f'Reconnect failed: {str(e)}')
 
 
 @router.get('/{match_id}/status')

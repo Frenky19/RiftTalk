@@ -413,6 +413,26 @@
         .copy-btn:hover {
             background: var(--gray-dark);
         }
+
+        .reconnect-btn {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .reconnect-btn:hover {
+            background: var(--secondary-dark);
+        }
+
         
         .match-status {
             background: rgba(250, 166, 26, 0.05);
@@ -930,6 +950,9 @@
                         <button class="copy-btn" id="copyInviteBtn">
                             <i class="far fa-copy"></i> <span data-i18n="btn_copy_link">Copy Link</span>
                         </button>
+                        <button class="reconnect-btn" id="reconnectBtn">
+                            <i class="fas fa-arrows-rotate"></i> <span data-i18n="btn_reconnect">Reconnect</span>
+                        </button>
                     </div>
             
                 </div>
@@ -977,6 +1000,7 @@
                             <li data-i18n="note_waiting_room">To get into your team channel, you can join the open Waiting Room. You will be moved automatically after match starts.</li>
                             <li data-i18n="note_manual_join">You can manually join your team voice channel in Discord after match starts.</li>
                             <li data-i18n="note_invite_link">You can use the invite link that appears in the app after match starts.</li>
+                            <li data-i18n="note_reconnect">If you were disconnected, join Waiting Room (or any voice channel) and click Reconnect in the app.</li>
                         </ul>
                     </div>
                 </div>
@@ -1071,6 +1095,7 @@
                 lbl_status: "Status",
                 btn_join_voice: "Join Voice Chat",
                 btn_copy_link: "Copy Link",
+                btn_reconnect: "Reconnect",
 
                 how_it_works: "How It Works",
                 need_help: "Need Help?",
@@ -1089,6 +1114,8 @@
                 // Dynamic UI messages
                 msg_copied: "Invite link copied to clipboard!",
                 msg_copy_failed: "Couldn't copy the link. Please copy it manually.",
+                msg_reconnect_ok: "Reconnected. If you are in Waiting Room, you will be moved to your team channel.",
+                msg_reconnect_failed: "Couldn't reconnect. Join Waiting Room (or any voice channel) and try again.",
                 msg_opening_discord: "Opening Discord invite...",
                 msg_oauth_open: "Opening Discord authorization...",
                 msg_invalid_id: "Enter a valid Discord User ID (digits only).",
@@ -1107,6 +1134,7 @@
                 step_card_1_desc: "Authorization via official Discord OAuth. No password needed.",
                 step_card_1_title: "Link Discord",
                 note_invite_link: "You can use the invite link that appears in the app after match starts.",
+                note_reconnect: "If you were disconnected, join Waiting Room (or any voice channel) and click Reconnect in the app.",
                 note_manual_join: "You can manually join your team voice channel in Discord after match starts.",
                 note_waiting_room: "To get into your team channel, you can join the open Waiting Room. You will be moved automatically after match starts.",
                 start_match_desc: "RiftTalk will react automatically at the moment the game starts.",
@@ -1195,6 +1223,7 @@
                 lbl_status: "Статус",
                 btn_join_voice: "Зайти в голосовой чат",
                 btn_copy_link: "Скопировать ссылку",
+                btn_reconnect: "Переподключиться",
 
                 how_it_works: "Как это работает",
                 need_help: "Нужна помощь?",
@@ -1243,6 +1272,7 @@
                 note_waiting_room: "Чтобы попасть в канал своей команды, можно подключиться к открытому каналу Waiting Room. После старта матча вас автоматически переместит.",
                 note_manual_join: "Вы можете вручную перейти в голосовой канал Discord вашей команды после старта матча.",
                 note_invite_link: "Вы можете перейти по ссылке-приглашению, которая появится в приложении после начала матча.",
+                note_reconnect: "Если вы вылетели/пропал интернет — зайдите в Waiting Room (или любой голосовой канал) и нажмите «Переподключиться».",
 
                 note_change_id: "Если нужно изменить Discord ID — нажмите кнопку «Изменить»",
                 note_channels_created: "Голосовые каналы создаются автоматически после старта матча",
@@ -1387,6 +1417,7 @@
         const voiceChannelInfo = document.getElementById('voiceChannelInfo');
         const voiceInviteLink = document.getElementById('voiceInviteLink');
         const copyInviteBtn = document.getElementById('copyInviteBtn');
+        const reconnectBtn = document.getElementById('reconnectBtn');
 
         // Try to get current user information (via local LCU)
         async function loadCurrentUser() {
@@ -1719,6 +1750,47 @@ if (oauthLinkBtn) {
                 console.error('Copy error: ', err);
                 showMessage('❌ ' + t('msg_copy_failed'), 'error');
             });
+            });
+        }
+
+        // Handler for reconnect button (best-effort)
+        if (reconnectBtn) {
+            reconnectBtn.addEventListener('click', async function() {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    showMessage('❌ ' + t('msg_auth_failed'), 'error');
+                    return;
+                }
+                try {
+                    reconnectBtn.disabled = true;
+                    const resp = await fetch('/api/voice/reconnect', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({})
+                    });
+
+                    if (!resp.ok) {
+                        let detail = '';
+                        try {
+                            const err = await resp.json();
+                            detail = err.detail || '';
+                        } catch (_) {
+                            // ignore
+                        }
+                        showMessage(detail || ('❌ ' + t('msg_reconnect_failed')), 'error');
+                        return;
+                    }
+
+                    showMessage('✅ ' + t('msg_reconnect_ok'), 'success');
+                } catch (e) {
+                    console.error('Reconnect error:', e);
+                    showMessage('❌ ' + t('msg_reconnect_failed'), 'error');
+                } finally {
+                    reconnectBtn.disabled = false;
+                }
             });
         }
 

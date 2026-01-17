@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
+from app.services.lcu_service import lcu_service
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
 
@@ -56,6 +57,16 @@ class CleanupService:
         """Cleanup rooms based on age and activity."""
         try:
             current_time = datetime.now(timezone.utc)
+            # LCU-based fallback cleanup: if this instance is in Lobby/None for a long time,
+            # we assume the match is no longer active and clean stale rooms (handles crashes/leaves).
+            lcu_phase = None
+            try:
+                if getattr(lcu_service, 'lcu_connector', None) and lcu_service.lcu_connector.is_connected():
+                    lcu_phase = await lcu_service.lcu_connector.get_game_flow_phase()
+            except Exception:
+                lcu_phase = None
+            lobby_ttl_minutes = int(getattr(settings, 'CLEANUP_LOBBY_TTL_MINUTES', 60))
+
             # Iterate over all room:* keys (works for both real Redis and memory://)
             room_keys = []
             try:
@@ -85,6 +96,15 @@ class CleanupService:
                     except Exception:
                         continue
                     room_age = current_time - created_at
+
+                    # 0) Lobby/None TTL: if client is not in-game and room is old enough, cleanup.
+                    if lcu_phase in ('None', 'Lobby') and room_age >= timedelta(minutes=lobby_ttl_minutes):
+                        logger.info(
+                            f'Cleaning up room for match {match_id} (lobby ttl, phase={lcu_phase}, age={room_age})'
+                        )
+                        await voice_service.close_voice_room(match_id)
+                        continue
+
                     # 1) Hard safety timeout
                     if room_age > timedelta(hours=2):
                         logger.info(f'Cleaning up room for match {match_id} (hard timeout, age={room_age})')
