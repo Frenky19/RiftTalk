@@ -24,16 +24,35 @@ from app.utils.security import create_access_token
 
 logger = logging.getLogger(__name__)
 
-# Determine base directory for static files
-if getattr(sys, 'frozen', False):
-    # If running as exe
-    base_dir = os.path.dirname(sys.executable)
-else:
-    # In development mode
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def _resolve_static_dir() -> str:
+    """Resolve directory for static assets.
+
+    Goals:
+      - In PyInstaller onefile mode, use the embedded extraction dir
+        (sys._MEIPASS/static) and do NOT create/copy a ./static folder next
+        to the executable.
+      - In dev mode, use project_root/static.
+      - Allow override via env var RIFT_STATIC_DIR.
+    """
+    env_dir = os.environ.get('RIFT_STATIC_DIR')
+    if env_dir and os.path.exists(env_dir):
+        return env_dir
+
+    # PyInstaller onefile extracts bundled data into sys._MEIPASS
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        mei_static = os.path.join(getattr(sys, '_MEIPASS'), 'static')
+        if os.path.exists(mei_static):
+            return mei_static
+        # Fallback: if user ships a folder next to exe
+        exe_static = os.path.join(os.path.dirname(sys.executable), 'static')
+        return exe_static
+
+    # Dev mode
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(project_root, 'static')
 
 
-static_dir = os.path.join(base_dir, 'static')
+static_dir = _resolve_static_dir()
 
 
 async def validate_user_data_integrity():
@@ -277,13 +296,35 @@ async def handle_game_event(event_data: dict):
     """Handle game events from LCU."""
     try:
         event_type = event_data.get('phase')
+        prev_phase = event_data.get('previous_phase')
         logger.info(f'Game event received: {event_type}')
+
+        # Match start
         if event_type == 'InProgress':
             await handle_match_start()
-        elif event_type == 'EndOfGame':
+            return
+
+        # LCU may or may not emit EndOfGame. Many clients go:
+        # InProgress -> PreEndOfGame -> None.
+        if event_type in ('EndOfGame',):
             await handle_match_end(event_data)
-        elif event_type in ('None', 'Lobby'):
-            await handle_match_leave(event_data)
+            return
+
+        # We treat a transition to None/Lobby differently depending on
+        # the previous phase.
+        if event_type in ('None', 'Lobby'):
+            # If we were in an end-of-game phase, this is a full match end.
+            if prev_phase in ('PreEndOfGame', 'EndOfGame'):
+                await handle_match_end(event_data)
+            else:
+                # Otherwise it is most likely an early leave/crash of this player.
+                await handle_match_leave(event_data)
+            return
+
+        # PreEndOfGame doesn't require action on its own.
+        if event_type == 'PreEndOfGame':
+            logger.info('PreEndOfGame detected - waiting for match end')
+            return
     except Exception as e:
         logger.error(f'Error handling game event: {e}')
 

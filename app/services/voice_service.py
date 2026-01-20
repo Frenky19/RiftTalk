@@ -272,38 +272,13 @@ class VoiceService:
                 logger.warning(f'No room data found for match {match_id}')
                 return False
             logger.info(f'Room data found: {room_data.keys()}')
-            # Cleanup Discord channels if they exist
-            if room_data.get('discord_channels'):
+            # Cleanup Discord channels/roles (idempotent)
+            if self.discord_enabled:
                 try:
-                    discord_channels = room_data['discord_channels']
-                    # If discord_channels is a string (JSON), parse it
-                    if isinstance(discord_channels, str):
-                        try:
-                            discord_channels = json.loads(discord_channels)
-                            logger.info(
-                                'Parsed discord_channels from JSON'
-                            )
-                        except json.JSONDecodeError as e:
-                            logger.error(
-                                f'Failed to parse discord_channels JSON: {e}'
-                            )
-                            discord_channels = {}
+                    await discord_service.cleanup_match_channels({'match_id': match_id})
                     logger.info(
-                        f'Discord channels to cleanup: '
-                        f'{discord_channels.keys()}'
+                        f'Successfully cleaned up Discord channels/roles for match {match_id}'
                     )
-                    if discord_channels and isinstance(discord_channels, dict):
-                        await discord_service.cleanup_match_channels(
-                            discord_channels
-                        )
-                        logger.info(
-                            f'Successfully cleaned up Discord channels for '
-                            f'match {match_id}'
-                        )
-                    else:
-                        logger.warning(
-                            'No valid discord_channels data for cleanup'
-                        )
                 except Exception as e:
                     logger.error(f'Discord cleanup error: {e}')
             # Delete from Redis

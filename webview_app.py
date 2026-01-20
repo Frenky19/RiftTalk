@@ -143,18 +143,26 @@ def setup_environment():
         )
         if not os.environ.get('DISCORD_TOKEN'):
             logger.warning('DISCORD_TOKEN not found in environment variables')
+    # IMPORTANT:
+    # Do NOT copy embedded `static/` next to the executable.
+    # In PyInstaller onefile mode, bundled resources are already extracted to
+    # a temporary directory (sys._MEIPASS). We point the backend to that path.
     static_dir = BASE_DIR / 'static'
-    if not static_dir.exists():
-        if hasattr(sys, '_MEIPASS'):
-            temp_static = Path(sys._MEIPASS) / 'static'
-            if temp_static.exists():
-                logger.info(f'Static found in temp dir: {temp_static}')
-                import shutil
-                shutil.copytree(temp_static, static_dir, dirs_exist_ok=True)
-                logger.info(f'Static copied to: {static_dir}')
-            else:
-                logger.error('Static not found in BASE_DIR or temp dir')
-                return False
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        temp_static = Path(sys._MEIPASS) / 'static'
+        if temp_static.exists():
+            os.environ['RIFT_STATIC_DIR'] = str(temp_static)
+            logger.info(f'Using embedded static from: {temp_static}')
+        elif static_dir.exists():
+            os.environ['RIFT_STATIC_DIR'] = str(static_dir)
+            logger.info(f'Using static next to exe (fallback): {static_dir}')
+        else:
+            logger.error('Static not found in embedded temp dir or next to exe')
+            return False
+    else:
+        # Dev mode
+        if static_dir.exists():
+            os.environ['RIFT_STATIC_DIR'] = str(static_dir)
         else:
             logger.error(f'Static folder not found in: {static_dir}')
             return False

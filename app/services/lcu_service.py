@@ -65,10 +65,21 @@ class LCUService:
                     await self.lcu_connector.connect()
                     # If still not connected, wait for next tick
                     if not self.lcu_connector.is_connected():
+                        # If we were previously in a known phase and the client vanished,
+                        # emit a synthetic "None" phase once so the app can treat it as a leave/disconnect.
+                        if self._previous_phase not in (None, 'None'):
+                            try:
+                                await self._handle_phase_change('None')
+                            finally:
+                                self._previous_phase = 'None'
                         await asyncio.sleep(settings.LCU_UPDATE_INTERVAL)
                         continue
                 # Get current phase
                 current_phase = await self.lcu_connector.get_game_flow_phase()
+                # Some connector failures may surface as None instead of the string "None".
+                # Normalize so the phase change logic can still fire.
+                if current_phase is None:
+                    current_phase = 'None'
                 # Handle phase changes
                 if current_phase and current_phase != self._previous_phase:
                     await self._handle_phase_change(current_phase)

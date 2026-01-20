@@ -10,7 +10,7 @@
                 label_language: "Language",
                 toggle_theme: "Theme",
 
-                btn_oauth_link: "Link via Discord (recommended)",
+                btn_oauth_link: "Link via Discord",
                 
                 btn_donate: "Support the project",
                 oauth_info: "This will securely link your account.",
@@ -78,6 +78,7 @@
                 note_change_id: "If you need to re-link Discord, click the \"Change\" button",
                 note_channels_created: "Voice channels are created automatically after the match starts",
                 note_auto_connected: "You will be automatically connected to your team's channel",
+                link_discord_steps: "Launch League of Legends and link Discord.",
                 step_1: "Link account",
                 step_2: "Launch League of Legends and join games",
                 step_3: "When the match starts, status updates automatically",
@@ -119,7 +120,7 @@
                 label_language: "Язык",
                 toggle_theme: "Тема",
 
-                btn_oauth_link: "Привязать через Discord (рекомендуется)",
+                btn_oauth_link: "Привязать через Discord",
                 
                 btn_donate: "Поддержать проект",
                 oauth_info: "Аккаунт будет безопасно привязан через авторизацию.",
@@ -184,6 +185,7 @@
                 make_sure_in_server: "Убедитесь, что вы на",
                 our_discord_server: "нашем Discord-сервере",
                 important_to_know: "Важно знать:",
+                link_discord_steps: "Запустите League of Legends и привяжите Discord.",
                 note_change_id: "Если нужно изменить Discord ID — нажмите кнопку «Изменить»",
                 note_channels_created: "Голосовые каналы создаются автоматически после старта матча",
                 note_auto_connected: "Вы будете автоматически подключены к каналу вашей команды",
