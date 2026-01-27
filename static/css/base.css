@@ -1,0 +1,63 @@
+:root {
+  --primary: #7289da;
+  --primary-dark: #5b73c4;
+  --primary-light: #8fa3e0;
+  --secondary: #43b581;
+  --secondary-dark: #3ca374;
+  --danger: #f04747;
+  --danger-dark: #d84040;
+  --warning: #faa61a;
+  --warning-dark: #e69510;
+  --info: #00b0f4;
+  --dark: #2c2f33;
+  --darker: #23272a;
+  --light: #f8f9fa;
+  --gray: #99aab5;
+  --gray-dark: #6c757d;
+
+  --border-radius: 12px;
+  --border-radius-sm: 8px;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 15px 35px rgba(0, 0, 0, 0.15);
+  --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  --gradient: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--secondary) 0%, var(--info) 100%);
+  --border: rgba(0, 0, 0, 0.12);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: white;
+  color: var(--dark);
+  line-height: 1.6;
+}
+
+a { color: inherit; }
+button, input, select { font: inherit; }
+
+/* Theme support */
+html[data-theme="dark"] {
+  --light: #0f1115;
+  --dark: #e7e9ee;
+  --gray: #151a21;
+  --gray-dark: #a9b1bd;
+  --border: rgba(255, 255, 255, 0.12);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme="dark"] body {
+  background: linear-gradient(135deg, #0b0d10 0%, #111827 100%);
+  color: var(--dark);
+}

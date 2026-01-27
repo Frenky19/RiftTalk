@@ -1,0 +1,68 @@
+import logging
+from typing import Any, Dict, Optional
+
+import aiohttp
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class RemoteAPIError(RuntimeError):
+    pass
+
+
+class RemoteAPI:
+    """Async client for talking to the single remote RiftTalk server."""
+
+    def __init__(self):
+        self.base_url = (settings.REMOTE_SERVER_URL or '').rstrip('/')
+        self.shared_key = settings.RIFT_SHARED_KEY or ''
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            'X-Rift-Client-Key': self.shared_key,
+            'Content-Type': 'application/json',
+        }
+
+    async def _request(self, method: str, path: str, json_body: Optional[dict] = None, timeout: int = 15) -> Any:
+        if not self.base_url:
+            raise RemoteAPIError('REMOTE_SERVER_URL is not configured')
+        url = f'{self.base_url}{path}'
+        async with aiohttp.ClientSession() as session:
+            async with session.request(method, url, json=json_body, headers=self._headers(), timeout=timeout) as resp:
+                text = await resp.text()
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    data = None
+                if resp.status >= 400:
+                    detail = None
+                    if isinstance(data, dict):
+                        detail = data.get('detail') or data.get('message')
+                    raise RemoteAPIError(f'Remote API {method} {path} failed: {resp.status} {detail or text}')
+                return data if data is not None else text
+
+    async def health(self) -> Any:
+        return await self._request('GET', '/api/health', timeout=10)
+
+    async def discord_login_url(self, summoner_id: str) -> Dict[str, Any]:
+        return await self._request('GET', f'/api/public/discord/login-url?summoner_id={summoner_id}')
+
+    async def linked_account(self, summoner_id: str) -> Dict[str, Any]:
+        return await self._request('GET', f'/api/public/discord/linked-account?summoner_id={summoner_id}')
+
+    async def user_server_status(self, discord_user_id: str) -> Dict[str, Any]:
+        return await self._request('GET', f'/api/public/discord/user-server-status/{discord_user_id}')
+
+    async def match_start(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request('POST', '/api/client/match-start', json_body=payload)
+
+    async def match_end(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request('POST', '/api/client/match-end', json_body=payload)
+
+    async def match_leave(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request('POST', '/api/client/match-leave', json_body=payload)
+
+
+remote_api = RemoteAPI()
