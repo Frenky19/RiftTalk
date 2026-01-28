@@ -122,11 +122,9 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
         })
         redis_manager.redis.expire(user_key, 30 * 24 * 3600)
 
-        # Simple success page (no static needed)
-        return HTMLResponse(
-            '<h3>✅ Discord linked. You can close this window and return to RiftTalk.</h3>',
-            status_code=200
-        )
+        # Redirect to a custom success page (served from /static)
+        # so the UI/webview can show a nicer screen (and optionally auto-close).
+        return RedirectResponse(url='/static/oauth_success.html')
     except Exception as e:
         return HTMLResponse(f'<h3>OAuth error: {str(e)}</h3>', status_code=500)
 

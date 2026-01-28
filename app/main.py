@@ -21,6 +21,7 @@ from app.services.discord_service import discord_service
 from app.services.lcu_service import lcu_service
 from app.services.voice_service import voice_service
 from app.services.remote_api import remote_api, RemoteAPIError
+from app.services.shutdown_cleanup import notify_match_leave_on_shutdown
 from app.utils.security import create_access_token
 
 
@@ -229,7 +230,18 @@ async def cleanup_services():
         except Exception:
             pass
 
+        # stop_monitoring() cancels polling but doesn't close aiohttp session.
+        try:
+            if getattr(lcu_service, "lcu_connector", None):
+                await lcu_service.lcu_connector.disconnect()
+        except Exception:
+            pass
+
         if settings.is_client:
+            try:
+                await notify_match_leave_on_shutdown()
+            except Exception:
+                pass
             return
 
         try:
@@ -473,15 +485,49 @@ async def handle_match_start():
             return
         match_id = f'match_{game_id}'
 
+        # Deduplicate: LCU can briefly reconnect and emit InProgress multiple times.
+        # Also protect the remote VPS from spam if the monitor loop fires too often.
+        match_info_key = f'user_match:{summoner_id}'
+        existing: dict[str, str] = {}
+        try:
+            raw = redis_manager.redis.hgetall(match_info_key)
+            existing = {
+                (k.decode() if isinstance(k, (bytes, bytearray)) else str(k)):
+                (v.decode() if isinstance(v, (bytes, bytearray)) else str(v))
+                for k, v in (raw or {}).items()
+            }
+        except Exception:
+            existing = {}
+
+        now = datetime.now(timezone.utc)
+        now_ts = now.timestamp()
+
+        # If we already notified remote server for this exact match, do nothing.
+        if existing.get('match_id') == match_id and existing.get('remote_notified') == '1':
+            return
+
+        # If previous notify attempt failed, respect backoff.
+        if existing.get('match_id') == match_id:
+            next_retry = existing.get('notify_next_retry_ts')
+            if next_retry:
+                try:
+                    if now_ts < float(next_retry):
+                        return
+                except Exception:
+                    pass
+
         # Persist active match_id locally (helps UI + early leave cleanup)
         try:
-            match_info_key = f'user_match:{summoner_id}'
             redis_manager.redis.hset(
                 match_info_key,
                 mapping={
                     'match_id': match_id,
                     'phase': 'InProgress',
-                    'started_at': datetime.now(timezone.utc).isoformat(),
+                    'started_at': now.isoformat(),
+                    # Notification state for remote VPS
+                    'remote_notified': '0',
+                    'notify_fail_count': existing.get('notify_fail_count', '0'),
+                    'notify_next_retry_ts': existing.get('notify_next_retry_ts', '0'),
                 },
             )
             redis_manager.redis.expire(match_info_key, 3600)
@@ -506,8 +552,40 @@ async def handle_match_start():
         }
         try:
             await remote_api.match_start(payload)
+
+            # Mark as successfully notified, so we don't spam the VPS.
+            try:
+                redis_manager.redis.hset(
+                    match_info_key,
+                    mapping={
+                        'remote_notified': '1',
+                        'remote_notified_at': now.isoformat(),
+                        'notify_fail_count': '0',
+                        'notify_next_retry_ts': '0',
+                    },
+                )
+            except Exception:
+                pass
         except RemoteAPIError as e:
             logger.warning(f'Remote match-start failed: {e}')
+
+            # Backoff retries to avoid hammering the remote server if the network is down.
+            try:
+                fail_count = int(existing.get('notify_fail_count', '0') or '0') + 1
+            except Exception:
+                fail_count = 1
+            delay = min(300, 5 * (2 ** max(0, fail_count - 1)))  # 5,10,20,40,80,160,300...
+            try:
+                redis_manager.redis.hset(
+                    match_info_key,
+                    mapping={
+                        'remote_notified': '0',
+                        'notify_fail_count': str(fail_count),
+                        'notify_next_retry_ts': str(now_ts + delay),
+                    },
+                )
+            except Exception:
+                pass
     except Exception as e:
         logger.error(f'handle_match_start error: {e}')
 
@@ -528,6 +606,8 @@ async def handle_match_end(event_data: dict):
         try:
             match_info_key = f'user_match:{summoner_id}'
             match_id = redis_manager.redis.hget(match_info_key, 'match_id')
+            if isinstance(match_id, (bytes, bytearray)):
+                match_id = match_id.decode('utf-8', errors='ignore')
         except Exception:
             match_id = None
 
@@ -593,6 +673,7 @@ async def handle_match_leave(event_data: dict):
             pass
     except Exception as e:
         logger.error(f'handle_match_leave error: {e}')
+
 
 
 async def handle_ready_check(event_data: dict):

@@ -163,6 +163,8 @@ async def client_match_start(payload: Dict[str, Any], _: Any = Depends(require_c
     if discord_user_id and team_name:
         try:
             assigned = await discord_service.assign_player_to_team(int(discord_user_id), match_id, team_name)
+            # If the user is already in voice (e.g. Waiting Room), move them to their team channel
+            await discord_service.move_member_to_team_channel_if_in_voice(int(discord_user_id), match_id, team_name)
         except Exception as e:
             logger.warning(f"Assign failed for {discord_user_id}: {e}")
 

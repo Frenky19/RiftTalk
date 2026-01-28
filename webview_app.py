@@ -10,6 +10,7 @@ Note: The window icon for pywebview is set only if the installed pywebview
 version supports the `icon` parameter.
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -301,6 +302,17 @@ def main():
                 time.sleep(1)
         except KeyboardInterrupt:
             logger.info('Application terminated')
+    else:
+        try:
+            from app.services.shutdown_cleanup import notify_match_leave_on_shutdown
+            asyncio.run(
+                notify_match_leave_on_shutdown(
+                    allow_lcu=False,
+                    timeout_seconds=5,
+                )
+            )
+        except Exception as e:
+            logger.warning(f'Shutdown match-leave failed: {e}')
     logger.info('Application closed')
 
 
