@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.config import settings
 from app.database import redis_manager
 from app.services.discord_service import discord_service
+from app.services import persistent_store
 from app.utils.remote_key import require_client_key
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,16 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
             'link_method': 'oauth2'
         })
         redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+        try:
+            persistent_store.upsert_link(
+                summoner_id=str(summoner_id),
+                discord_user_id=str(discord_user_id),
+                discord_username=str(username),
+                linked_at=now_iso,
+                link_method='oauth2'
+            )
+        except Exception as e:
+            logger.warning(f'Failed to persist Discord link: {e}')
 
         # Redirect to a custom success page (served from /static)
         # so the UI/webview can show a nicer screen (and optionally auto-close).
@@ -135,11 +146,39 @@ async def linked_account(summoner_id: str = Query(...), _: Any = Depends(require
     user_data = redis_manager.redis.hgetall(user_key) or {}
     discord_user_id = user_data.get('discord_user_id')
     if not discord_user_id:
+        try:
+            link = persistent_store.get_link_by_summoner(str(summoner_id))
+        except Exception:
+            link = None
+        if not link or not link.get('discord_user_id'):
+            return {
+                'linked': False,
+                'summoner_id': str(summoner_id),
+                'discord_user_id': None,
+                'discord_username': None,
+            }
+        discord_user_id = str(link.get('discord_user_id'))
+        discord_username = link.get('discord_username')
+        linked_at = link.get('linked_at') or link.get('updated_at')
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            redis_manager.redis.hset(user_key, mapping={
+                'discord_user_id': discord_user_id,
+                'discord_username': discord_username,
+                'summoner_id': str(summoner_id),
+                'discord_linked_at': linked_at or now_iso,
+                'updated_at': now_iso,
+                'link_method': link.get('link_method') or 'persistent_db'
+            })
+            redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+        except Exception:
+            pass
         return {
-            'linked': False,
+            'linked': True,
             'summoner_id': str(summoner_id),
-            'discord_user_id': None,
-            'discord_username': None,
+            'discord_user_id': discord_user_id,
+            'discord_username': discord_username,
+            'linked_at': linked_at,
         }
     return {
         'linked': True,

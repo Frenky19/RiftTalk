@@ -4,12 +4,37 @@ Database module with automatic fallback to in-memory storage
 
 import json
 import logging
+import os
+import sys
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 
 logger = logging.getLogger(__name__)
+
+
+def _get_setting(name: str, default: Any = None) -> Any:
+    """Best-effort config lookup without forcing app.config import."""
+    value = os.getenv(name)
+    if value is not None and str(value).strip() != "":
+        return value
+    try:
+        cfg = sys.modules.get("app.config")
+        settings = getattr(cfg, "settings", None)
+        if settings and hasattr(settings, name):
+            return getattr(settings, name)
+    except Exception:
+        pass
+    return default
+
+
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 class MemoryStorage:
@@ -288,8 +313,42 @@ class DatabaseManager:
     """Mock database manager with RedisManager-compatible interface"""
 
     def __init__(self):
-        self.redis = MemoryStorage()
-        logger.info('Mock Database Manager initialized')
+        self.redis = self._init_storage()
+        logger.info('Database Manager initialized')
+
+    def _init_storage(self):
+        """Initialize Redis if available, otherwise fallback to memory."""
+        redis_url = _get_setting("REDIS_URL", "")
+        if redis_url:
+            redis_url = str(redis_url).strip()
+        if not redis_url or redis_url.lower().startswith("memory"):
+            logger.info('Using In-Memory storage (REDIS_URL=memory://)')
+            return MemoryStorage()
+
+        try:
+            import redis  # type: ignore
+        except Exception as e:
+            logger.warning(f'Redis library not available, using memory: {e}')
+            return MemoryStorage()
+
+        try:
+            max_connections = _get_setting("REDIS_MAX_CONNECTIONS", None)
+            ssl_enabled = _parse_bool(_get_setting("REDIS_SSL", False))
+            kwargs = {"decode_responses": True}
+            if max_connections:
+                try:
+                    kwargs["max_connections"] = int(max_connections)
+                except Exception:
+                    pass
+            if ssl_enabled and not str(redis_url).startswith("rediss://"):
+                kwargs["ssl"] = True
+            client = redis.Redis.from_url(redis_url, **kwargs)
+            client.ping()
+            logger.info(f'Using Redis storage: {redis_url}')
+            return client
+        except Exception as e:
+            logger.warning(f'Redis unavailable, using memory: {e}')
+            return MemoryStorage()
 
     def create_voice_room(
         self,
@@ -442,4 +501,7 @@ class DatabaseManager:
 
 
 redis_manager = DatabaseManager()
-logger.info('Using In-Memory database storage (Redis not available)')
+if isinstance(redis_manager.redis, MemoryStorage):
+    logger.info('Using In-Memory database storage')
+else:
+    logger.info('Using Redis database storage')

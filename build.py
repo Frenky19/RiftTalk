@@ -3,6 +3,8 @@ Build script for RiftTalk with WebView
 """
 
 import os
+import getpass
+import platform
 import shutil
 import subprocess
 import secrets
@@ -14,7 +16,10 @@ APP_NAME = "RiftTalk"
 EXE_NAME = f"{APP_NAME}.exe"
 PACKAGE_DIR_NAME = f"{APP_NAME}_WebView"
 CERT_BASENAME = "rifttalk"
-CERT_PASSWORD = "RiftTalk123"
+CERT_PASSWORD_ENV = "RIFT_CERT_PASSWORD"
+CERT_PASSWORD = None
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CLIENT_DIR = os.path.join(BASE_DIR, "client")
 
 
 def clean_build():
@@ -59,6 +64,17 @@ hiddenimports = collect_submodules("passlib")
     print("✅ Hook for passlib created")
 
 
+def _get_cert_password() -> str:
+    """Return certificate password from env or prompt."""
+    env_value = os.getenv(CERT_PASSWORD_ENV, "").strip()
+    if env_value:
+        return env_value
+    try:
+        return getpass.getpass(f"Enter PFX password ({CERT_PASSWORD_ENV}): ")
+    except (EOFError, KeyboardInterrupt):
+        return ""
+
+
 def create_self_signed_cert_for_signing():
     """Create self-signed certificate for EXE signing."""
     print("Creating self-signed certificate for EXE signing...")
@@ -73,6 +89,10 @@ def create_self_signed_cert_for_signing():
     try:
         # Method 1: PowerShell (Windows)
         if sys.platform == "win32":
+            cert_password = _get_cert_password()
+            if not cert_password:
+                print("❌ Certificate password not provided")
+                return False
             print("Using PowerShell to create code signing certificate...")
             ps_script = f"""
 $cert = New-SelfSignedCertificate -Type CodeSigningCert `
@@ -87,7 +107,7 @@ $cert = New-SelfSignedCertificate -Type CodeSigningCert `
     -CertStoreLocation "Cert:\\CurrentUser\\My"
 
 $certPath = "Cert:\\CurrentUser\\My\\$($cert.Thumbprint)"
-$password = ConvertTo-SecureString -String "{CERT_PASSWORD}" -Force -AsPlainText
+$password = ConvertTo-SecureString -String "{cert_password}" -Force -AsPlainText
 
 Export-PfxCertificate -Cert $certPath -FilePath "{pfx_path}" -Password $password
 Export-Certificate -Cert $certPath -FilePath "{cer_path}"
@@ -119,6 +139,10 @@ Write-Host "Issuer: $($cert.Issuer)"
                 print(f"❌ PowerShell failed: {result.stderr}")
         # Method 2: OpenSSL
         print("Trying OpenSSL for certificate creation...")
+        cert_password = _get_cert_password()
+        if not cert_password:
+            print("❌ Certificate password not provided")
+            return False
         subprocess.run(["openssl", "genrsa", "-out", pvk_path, "2048"], check=True, capture_output=True)
         config_content = f"""[ req ]
 default_bits = 2048
@@ -186,7 +210,7 @@ IP.1 = 127.0.0.1
                 "-in",
                 cer_path,
                 "-password",
-                f"pass:{CERT_PASSWORD}",
+                f"pass:{cert_password}",
             ],
             check=True,
             capture_output=True,
@@ -211,6 +235,47 @@ IP.1 = 127.0.0.1
         return False
 
 
+def _find_signtool_paths() -> list:
+    """Return candidate signtool.exe paths (prefer newest Windows Kits and correct arch)."""
+    machine = platform.machine().lower()
+    if machine in ("amd64", "x86_64"):
+        arch_preference = ["x64", "x86", "arm64"]
+    elif machine in ("x86", "i386", "i686"):
+        arch_preference = ["x86", "x64", "arm64"]
+    elif machine in ("arm64", "aarch64"):
+        arch_preference = ["arm64", "x64", "x86"]
+    else:
+        arch_preference = ["x64", "x86", "arm64"]
+
+    paths = [
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\arm64\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x86\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\x86\signtool.exe",
+        r"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Bin\signtool.exe",
+        "signtool.exe",
+    ]
+    kits_root = r"C:\Program Files (x86)\Windows Kits\10\bin"
+    try:
+        if os.path.isdir(kits_root):
+            versions = []
+            for name in os.listdir(kits_root):
+                ver_path = os.path.join(kits_root, name)
+                if os.path.isdir(ver_path) and name[0].isdigit():
+                    versions.append(name)
+            versions.sort(reverse=True)
+            for ver in versions:
+                for arch in arch_preference:
+                    candidate = os.path.join(kits_root, ver, arch, "signtool.exe")
+                    paths.insert(0, candidate)
+    except Exception:
+        pass
+    return paths
+
+
 def sign_exe_file(exe_path: str) -> bool:
     """Sign EXE file with self-signed certificate."""
     print(f"Signing EXE file: {exe_path}")
@@ -221,16 +286,13 @@ def sign_exe_file(exe_path: str) -> bool:
     if not os.path.exists(pfx_path):
         print("❌ Certificate file not found")
         return False
+    cert_password = _get_cert_password()
+    if not cert_password:
+        print("❌ Certificate password not provided")
+        return False
     try:
         print("Trying to sign with signtool...")
-        signtool_paths = [
-            r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
-            r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x86\signtool.exe",
-            r"C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe",
-            r"C:\Program Files (x86)\Windows Kits\10\bin\x86\signtool.exe",
-            r"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Bin\signtool.exe",
-            "signtool.exe",
-        ]
+        signtool_paths = _find_signtool_paths()
         signtool = None
         for path in signtool_paths:
             if os.path.exists(path):
@@ -252,7 +314,7 @@ def sign_exe_file(exe_path: str) -> bool:
                         "/f",
                         pfx_path,
                         "/p",
-                        CERT_PASSWORD,
+                        cert_password,
                         "/fd",
                         "SHA256",
                         "/tr",
@@ -291,7 +353,7 @@ def sign_exe_file(exe_path: str) -> bool:
                 "/f",
                 pfx_path,
                 "/p",
-                CERT_PASSWORD,
+                cert_password,
                 "/fd",
                 "SHA256",
                 "/du",
@@ -312,7 +374,7 @@ def sign_exe_file(exe_path: str) -> bool:
                 "-pkcs12",
                 pfx_path,
                 "-pass",
-                CERT_PASSWORD,
+                cert_password,
                 "-n",
                 APP_NAME,
                 "-i",
@@ -419,14 +481,16 @@ def build_with_pyinstaller():
         "app.endpoints",
         "app.middleware",
         "app.encrypted_env",
+        "shared",
+        "shared.database",
+        "shared.models",
+        "shared.schemas",
         "fastapi",
         "fastapi.staticfiles",
         "starlette",
         "uvicorn",
         "uvicorn.lifespan.on",
         "uvicorn.lifespan.off",
-        "discord",
-        "discord.voice_client",
         "pywebview",
         "pywebview.platforms.win32",
         "aiohttp",
@@ -452,6 +516,7 @@ def build_with_pyinstaller():
         "--onefile",
         "--windowed",
         "--clean",
+        "--paths=..",
         "--add-data=app;app",
         "--add-data=static;static",
         "--additional-hooks-dir=hooks",
@@ -487,15 +552,15 @@ def build_with_pyinstaller():
 
 
 def create_package(exe_path: str) -> bool:
-    """Create minimal release package: ONLY RiftTalk.exe (no static/, no README, no bat)."""
-    print("Creating minimal package (EXE only)...")
+    """Create minimal release package: RiftTalk.exe + ZIP (no extra folders)."""
+    print("Creating minimal package (EXE + ZIP)...")
 
     if not os.path.exists(exe_path):
         print("❌ EXE not found")
         return False
 
-    # Place the EXE into a dedicated folder, then zip that folder.
-    package_dir = os.path.join("dist", f"{APP_NAME}_EXE_ONLY")
+    # Place the EXE into a dedicated temp folder, zip it, then remove the folder.
+    package_dir = os.path.join("dist", f"{APP_NAME}_PACKAGE_TMP")
     os.makedirs(package_dir, exist_ok=True)
 
     dst_exe = os.path.join(package_dir, EXE_NAME)
@@ -504,9 +569,10 @@ def create_package(exe_path: str) -> bool:
     print("✅ static/ is embedded in EXE via PyInstaller --add-data")
 
     date_str = datetime.now().strftime("%Y%m%d_%H%M")
-    zip_name = os.path.join("dist", f"{APP_NAME}_EXE_ONLY_{date_str}")
+    zip_name = os.path.join("dist", f"{APP_NAME}_{date_str}")
     shutil.make_archive(zip_name, "zip", package_dir)
     print(f"✅ ZIP created: {zip_name}.zip")
+    shutil.rmtree(package_dir, ignore_errors=True)
     return True
 
 
@@ -522,11 +588,21 @@ def main():
     """Main function."""
     print(f"🎮 Building {APP_NAME} with WebView")
     print("=" * 50)
-    required_files = ["webview_app.py", ".env", "app", "static"]
-    for f in required_files:
-        if not os.path.exists(f):
-            print(f"❌ Missing: {f}")
+    if not os.path.isdir(CLIENT_DIR):
+        print(f"❌ Client directory not found: {CLIENT_DIR}")
+        return
+    required_in_client = ["webview_app.py", ".env", "app", "static"]
+    for f in required_in_client:
+        path = os.path.join(CLIENT_DIR, f)
+        if not os.path.exists(path):
+            print(f"❌ Missing in client/: {f}")
             return
+    shared_dir = os.path.join(BASE_DIR, "shared")
+    if not os.path.isdir(shared_dir):
+        print(f"❌ Shared directory not found: {shared_dir}")
+        return
+    os.chdir(CLIENT_DIR)
+    print(f"Using client directory: {CLIENT_DIR}")
     clean_build()
     create_hooks()
 

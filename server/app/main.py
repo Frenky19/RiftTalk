@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import redis_manager
 from app.endpoints import client_remote, public_discord
 from app.services.cleanup_service import cleanup_service
+from app.services import persistent_store
 from app.services.discord_service import discord_service
 
 
@@ -50,6 +51,12 @@ async def lifespan(app: FastAPI):
 
 
 async def initialize_services():
+    try:
+        db_path = persistent_store.init_db()
+        logger.info(f'Persistent DB ready: {db_path}')
+    except Exception as e:
+        logger.warning(f'Persistent DB init failed: {e}')
+
     if not settings.discord_enabled:
         raise RuntimeError(
             'Server mode requires Discord config. '

@@ -54,7 +54,7 @@ class DiscordService:
         self._ready_event: asyncio.Event = asyncio.Event()
         self._initialized_event: asyncio.Event = asyncio.Event()
         self._connect_error: Optional[BaseException] = None
-        self.category_name = 'LoL Voice Chat'
+        self.category_name = 'Your Voice Chat'
         self._match_channels_cache = {}  # Cache of channels by match_id
 
     async def connect(self) -> bool:

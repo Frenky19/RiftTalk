@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
+from app.services import persistent_store
 from app.utils.remote_key import require_client_key
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,44 @@ def _parse_discord_channels(room_data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         pass
     return discord_channels or {}
+
+
+def _get_discord_user_id(summoner_id: str) -> Optional[str]:
+    user_key = f"user:{summoner_id}"
+    try:
+        user_data = redis_manager.redis.hgetall(user_key) or {}
+        discord_user_id = user_data.get("discord_user_id")
+        if discord_user_id:
+            return str(discord_user_id)
+    except Exception:
+        pass
+
+    try:
+        link = persistent_store.get_link_by_summoner(str(summoner_id))
+    except Exception:
+        link = None
+    if not link or not link.get("discord_user_id"):
+        return None
+
+    discord_user_id = str(link.get("discord_user_id"))
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        redis_manager.redis.hset(
+            user_key,
+            mapping={
+                "discord_user_id": discord_user_id,
+                "discord_username": link.get("discord_username"),
+                "summoner_id": str(summoner_id),
+                "discord_linked_at": link.get("linked_at") or link.get("updated_at") or now_iso,
+                "updated_at": now_iso,
+                "link_method": link.get("link_method") or "persistent_db",
+            },
+        )
+        redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+    except Exception:
+        pass
+
+    return discord_user_id
 
 
 def _acquire_lock(key: str, ttl_seconds: int) -> bool:
@@ -113,9 +153,7 @@ async def client_match_start(payload: Dict[str, Any], _: Any = Depends(require_c
         room_data = redis_manager.get_voice_room_by_match(match_id) or {}
         discord_channels = _parse_discord_channels(room_data)
 
-        user_key = f"user:{summoner_id}"
-        user_data = redis_manager.redis.hgetall(user_key) or {}
-        discord_user_id = user_data.get("discord_user_id")
+        discord_user_id = _get_discord_user_id(summoner_id)
 
         voice_channel = None
         if team_name == "Blue Team":
@@ -155,9 +193,7 @@ async def client_match_start(payload: Dict[str, Any], _: Any = Depends(require_c
     discord_channels = _parse_discord_channels(room_data)
 
     # Linked discord?
-    user_key = f"user:{summoner_id}"
-    user_data = redis_manager.redis.hgetall(user_key) or {}
-    discord_user_id = user_data.get("discord_user_id")
+    discord_user_id = _get_discord_user_id(summoner_id)
 
     assigned = False
     if discord_user_id and team_name:
@@ -213,9 +249,7 @@ async def client_match_leave(payload: Dict[str, Any], _: Any = Depends(require_c
     if not match_id or not summoner_id:
         raise HTTPException(status_code=400, detail="Missing match_id or summoner_id")
 
-    user_key = f"user:{summoner_id}"
-    user_data = redis_manager.redis.hgetall(user_key) or {}
-    discord_user_id = user_data.get("discord_user_id")
+    discord_user_id = _get_discord_user_id(summoner_id)
 
     if discord_user_id:
         try:
@@ -263,9 +297,7 @@ async def client_voice_reconnect(payload: Dict[str, Any], _: Any = Depends(requi
     else:
         raise HTTPException(status_code=404, detail="Player not found in room teams")
 
-    user_key = f"user:{summoner_id}"
-    user_data = redis_manager.redis.hgetall(user_key) or {}
-    discord_user_id = user_data.get("discord_user_id")
+    discord_user_id = _get_discord_user_id(summoner_id)
     if not discord_user_id:
         raise HTTPException(status_code=409, detail="Discord is not linked for this summoner")
 
