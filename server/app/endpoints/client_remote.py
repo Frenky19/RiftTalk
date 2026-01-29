@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
-from app.services import persistent_store
 from app.utils.remote_key import require_client_key
 
 logger = logging.getLogger(__name__)
@@ -45,33 +43,7 @@ def _get_discord_user_id(summoner_id: str) -> Optional[str]:
             return str(discord_user_id)
     except Exception:
         pass
-
-    try:
-        link = persistent_store.get_link_by_summoner(str(summoner_id))
-    except Exception:
-        link = None
-    if not link or not link.get("discord_user_id"):
-        return None
-
-    discord_user_id = str(link.get("discord_user_id"))
-    now_iso = datetime.now(timezone.utc).isoformat()
-    try:
-        redis_manager.redis.hset(
-            user_key,
-            mapping={
-                "discord_user_id": discord_user_id,
-                "discord_username": link.get("discord_username"),
-                "summoner_id": str(summoner_id),
-                "discord_linked_at": link.get("linked_at") or link.get("updated_at") or now_iso,
-                "updated_at": now_iso,
-                "link_method": link.get("link_method") or "persistent_db",
-            },
-        )
-        redis_manager.redis.expire(user_key, 30 * 24 * 3600)
-    except Exception:
-        pass
-
-    return discord_user_id
+    return None
 
 
 def _acquire_lock(key: str, ttl_seconds: int) -> bool:

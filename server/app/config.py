@@ -61,8 +61,6 @@ class Settings(BaseSettings):
     REDIS_SSL: bool = Field(default=False)
     REDIS_MAX_CONNECTIONS: int = Field(default=20)
 
-    # Persistent storage (server-only)
-    PERSISTENT_DB_DSN: Optional[str] = Field(default=None)
 
     # JWT Configuration (used by local client UI/API session)
     JWT_SECRET_KEY: str = Field(default='your-super-secret-jwt-key-change-this-in-production')

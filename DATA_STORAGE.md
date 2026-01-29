@@ -6,8 +6,7 @@ is considered persistent vs. ephemeral.
 ## 1) High-level
 
 - Server:
-  - Redis: short-lived operational state (rooms, matches, locks).
-  - Postgres: long-lived identity link (summoner_id <-> discord_user_id).
+  - Redis: short-lived operational state (rooms, matches, locks, user link).
 - Client:
   - In-memory storage only (no persistence). Treat all client data as disposable.
 
@@ -46,34 +45,13 @@ Notes:
 - On server restart, Redis data is expected to be empty; rooms/roles are cleaned
   by Discord cleanup logic.
 
-## 3) Postgres (persistent)
-
-Persistent links are stored in Postgres to survive restarts.
-
-Table: `discord_links`
-- `summoner_id` (PRIMARY KEY)
-- `discord_user_id` (UNIQUE)
-- `discord_username`
-- `linked_at`
-- `updated_at`
-- `link_method`
-
-Connection string:
-- `PERSISTENT_DB_DSN` (recommended)
-- Falls back to `DATABASE_URL` or `POSTGRES_DSN` if set.
-
-Example:
-```
-PERSISTENT_DB_DSN=postgresql://user:pass@localhost:5432/rifttalk
-```
-
-## 4) Secrets and safety
+## 3) Secrets and safety
 
 - Server secrets live only in `server/.env` (bot token, OAuth secret).
 - Client `.env` is not a secret (client is distributed).
 - Do not store secrets in Redis or in the client.
 
-## 5) Operational guidance
+## 4) Operational guidance
 
-- For production, run Redis + Postgres on the server.
+- For production, run Redis on the server.
 - On client machines, set `REDIS_URL=memory://` to avoid Redis connection warnings.
