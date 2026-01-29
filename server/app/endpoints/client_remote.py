@@ -225,3 +225,81 @@ async def client_match_leave(payload: Dict[str, Any], _: Any = Depends(require_c
             return {"ok": False, "error": str(e)}
 
     return {"ok": True}
+
+
+@router.post("/voice-reconnect")
+async def client_voice_reconnect(payload: Dict[str, Any], _: Any = Depends(require_client_key)):
+    """Reconnect a user to their match role/channel on the server side."""
+    summoner_id = str(payload.get("summoner_id") or "")
+    if not summoner_id:
+        raise HTTPException(status_code=400, detail="Missing summoner_id")
+
+    match_id = voice_service.get_active_match_id_for_summoner(summoner_id)
+    if not match_id:
+        try:
+            active_rooms = voice_service.redis.get_all_active_rooms()
+            for room in active_rooms:
+                blue = voice_service.safe_json_parse(room.get("blue_team"), []) or []
+                red = voice_service.safe_json_parse(room.get("red_team"), []) or []
+                if summoner_id in blue or summoner_id in red:
+                    match_id = room.get("match_id")
+                    break
+        except Exception:
+            match_id = None
+
+    if not match_id:
+        raise HTTPException(status_code=404, detail="Active match not found")
+
+    room_data = voice_service.redis.get_voice_room_by_match(match_id)
+    if not room_data:
+        raise HTTPException(status_code=404, detail="Voice room not found")
+
+    blue = voice_service.safe_json_parse(room_data.get("blue_team"), []) or []
+    red = voice_service.safe_json_parse(room_data.get("red_team"), []) or []
+    if summoner_id in blue:
+        team_name = "Blue Team"
+    elif summoner_id in red:
+        team_name = "Red Team"
+    else:
+        raise HTTPException(status_code=404, detail="Player not found in room teams")
+
+    user_key = f"user:{summoner_id}"
+    user_data = redis_manager.redis.hgetall(user_key) or {}
+    discord_user_id = user_data.get("discord_user_id")
+    if not discord_user_id:
+        raise HTTPException(status_code=409, detail="Discord is not linked for this summoner")
+
+    try:
+        discord_user_id_int = int(discord_user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid discord_user_id")
+
+    assigned = await discord_service.assign_player_to_team(
+        discord_user_id=discord_user_id_int,
+        match_id=match_id,
+        team_name=team_name,
+    )
+    moved = await discord_service.move_member_to_team_channel_if_in_voice(
+        discord_user_id=discord_user_id_int,
+        match_id=match_id,
+        team_name=team_name,
+    )
+
+    invite_url = ""
+    try:
+        channel = await discord_service.create_or_get_voice_channel(match_id, team_name)
+        invite_url = (channel or {}).get("invite_url", "") or ""
+    except Exception:
+        invite_url = ""
+
+    return {
+        "status": "ok",
+        "match_id": match_id,
+        "team_name": team_name,
+        "role_assigned": bool(assigned),
+        "moved_if_in_voice": bool(moved),
+        "invite_url": invite_url,
+        "note": (
+            "If you were not connected to voice, use invite_url or join Waiting Room and press reconnect again."
+        ),
+    }

@@ -163,7 +163,11 @@ def setup_environment():
     else:
         # Dev mode
         if static_dir.exists():
-            os.environ['RIFT_STATIC_DIR'] = str(static_dir)
+            nested_static = static_dir / 'static'
+            if (nested_static / 'link-discord.html').exists():
+                os.environ['RIFT_STATIC_DIR'] = str(nested_static)
+            else:
+                os.environ['RIFT_STATIC_DIR'] = str(static_dir)
         else:
             logger.error(f'Static folder not found in: {static_dir}')
             return False

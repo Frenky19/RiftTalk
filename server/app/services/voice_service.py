@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.database import redis_manager
 from app.services.discord_service import discord_service
-from app.services.lcu_service import lcu_service
 
 
 logger = logging.getLogger(__name__)
@@ -80,27 +79,7 @@ class VoiceService:
                     f'Voice room already exists for match {match_id}, '
                     f'returning existing room'
                 )
-                # Add current player to existing room if not present
-                current_summoner = (
-                    await lcu_service.lcu_connector.get_current_summoner()
-                )
-                if current_summoner:
-                    summoner_id = str(current_summoner.get('summonerId'))
-                    existing_players = safe_json_parse(
-                        existing_room.get('players'), []
-                    )
-                    if summoner_id not in existing_players:
-                        existing_players.append(summoner_id)
-                        # Update player list in room
-                        room_id = existing_room.get('room_id')
-                        redis_manager.redis.hset(
-                            f'room:{room_id}',
-                            mapping={'players': json.dumps(existing_players)}
-                        )
-                        logger.info(
-                            f'Added player {summoner_id} to existing room '
-                            f'{room_id}'
-                        )
+                # Server does not have local LCU; rely on payload players.
                 # Check and update team data if needed
                 if team_data and (
                     team_data.get('blue_team') or team_data.get('red_team')

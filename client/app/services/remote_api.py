@@ -64,5 +64,8 @@ class RemoteAPI:
     async def match_leave(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return await self._request('POST', '/api/client/match-leave', json_body=payload)
 
+    async def voice_reconnect(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request('POST', '/api/client/voice-reconnect', json_body=payload)
+
 
 remote_api = RemoteAPI()

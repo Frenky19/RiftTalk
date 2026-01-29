@@ -3,7 +3,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
-from app.services.lcu_service import lcu_service
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
 
@@ -57,17 +56,8 @@ class CleanupService:
         """Cleanup rooms based on age and activity."""
         try:
             current_time = datetime.now(timezone.utc)
-            # LCU-based fallback cleanup: if this instance is in Lobby/None for a long time,
-            # we assume the match is no longer active and clean stale rooms (handles crashes/leaves).
+            # Server does not track LCU phase.
             lcu_phase = None
-            try:
-                if getattr(lcu_service, 'lcu_connector', None) and lcu_service.lcu_connector.is_connected():
-                    if settings.is_server:
-                        lcu_phase = None
-                    else:
-                        lcu_phase = await lcu_service.lcu_connector.get_game_flow_phase()
-            except Exception:
-                lcu_phase = None
             lobby_ttl_minutes = int(getattr(settings, 'CLEANUP_LOBBY_TTL_MINUTES', 60))
 
             # Iterate over all room:* keys (works for both real Redis and memory://)
