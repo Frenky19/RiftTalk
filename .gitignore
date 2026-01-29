@@ -138,3 +138,4 @@ signing_certs
 sign_exe_manual.py
 encrypted_env.py
 .ruff_cache
+hooks
