@@ -7,7 +7,6 @@ from app.config import settings
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -43,17 +42,17 @@ class VoiceService:
         """Backward-compatible helper used by endpoints."""
         return safe_json_parse(data, default)
 
-    def get_active_match_id_for_summoner(self, summoner_id: str) -> str:
+    async def get_active_match_id_for_summoner(self, summoner_id: str) -> str:
         """Get active match ID for a summoner."""
         try:
             # Check different keys where match_id might be stored
             match_info_key = f'user_match:{summoner_id}'
-            match_info = self.redis.redis.hgetall(match_info_key)
+            match_info = await self.redis.redis.hgetall(match_info_key)
             if match_info and match_info.get('match_id'):
                 return match_info['match_id']
             # Also check user key
             user_key = f'user:{summoner_id}'
-            user_data = self.redis.redis.hgetall(user_key)
+            user_data = await self.redis.redis.hgetall(user_key)
             if user_data and user_data.get('current_match'):
                 return user_data['current_match']
             return None
@@ -73,7 +72,7 @@ class VoiceService:
                 f'Creating or getting voice room for match {match_id}'
             )
             #  Check if room already exists for this match
-            existing_room = self.redis.get_voice_room_by_match(match_id)
+            existing_room = await self.redis.get_voice_room_by_match(match_id)
             if existing_room and existing_room.get('is_active'):
                 logger.info(
                     f'Voice room already exists for match {match_id}, '
@@ -97,7 +96,7 @@ class VoiceService:
                                 team_data['red_team']
                             )
                         if update_data:
-                            self.redis.redis.hset(
+                            await self.redis.redis.hset(
                                 f'room:{room_id}',
                                 mapping=update_data
                             )
@@ -197,7 +196,7 @@ class VoiceService:
                 f'red_team={red_team_to_save}'
             )
             # Save to Redis
-            success = self.redis.create_voice_room(
+            success = await self.redis.create_voice_room(
                 room_id,
                 match_id,
                 room_data
@@ -217,8 +216,8 @@ class VoiceService:
                     'created_at': now.isoformat()
                 }
                 # Save as hash for consistency
-                self.redis.redis.hset(user_match_key, mapping=match_info)
-                self.redis.redis.expire(user_match_key, 3600)  # 1 hour
+                await self.redis.redis.hset(user_match_key, mapping=match_info)
+                await self.redis.redis.expire(user_match_key, 3600)  # 1 hour
                 logger.debug(
                     f'Saved match info for player {player_id}: {match_info}'
                 )
@@ -246,7 +245,7 @@ class VoiceService:
         try:
             logger.info(f'Closing voice room for match {match_id}')
             # Get room data
-            room_data = self.redis.get_voice_room_by_match(match_id)
+            room_data = await self.redis.get_voice_room_by_match(match_id)
             if not room_data:
                 logger.warning(f'No room data found for match {match_id}')
                 return False
@@ -254,14 +253,17 @@ class VoiceService:
             # Cleanup Discord channels/roles (idempotent)
             if self.discord_enabled:
                 try:
-                    await discord_service.cleanup_match_channels({'match_id': match_id})
+                    await discord_service.cleanup_match_channels(
+                        {'match_id': match_id}
+                    )
                     logger.info(
-                        f'Successfully cleaned up Discord channels/roles for match {match_id}'
+                        f'Successfully cleaned up Discord channels/roles for '
+                        f'match {match_id}'
                     )
                 except Exception as e:
                     logger.error(f'Discord cleanup error: {e}')
             # Delete from Redis
-            delete_success = self.redis.delete_voice_room(match_id)
+            delete_success = await self.redis.delete_voice_room(match_id)
             if delete_success:
                 logger.info(
                     f'Successfully deleted voice room from Redis for '
@@ -277,10 +279,10 @@ class VoiceService:
             logger.error(f'Close voice room error: {e}')
             return False
 
-    def get_voice_room_discord_channels(self, match_id: str) -> dict:
+    async def get_voice_room_discord_channels(self, match_id: str) -> dict:
         """Get discord channels for a voice room (internal use only)."""
         try:
-            room_data = self.redis.get_voice_room_by_match(match_id)
+            room_data = await self.redis.get_voice_room_by_match(match_id)
             if not room_data:
                 return {}
             discord_channels = room_data.get('discord_channels')
@@ -306,7 +308,7 @@ class VoiceService:
             logger.info(
                 f'Handling player leave: summoner={summoner_id}, match={match_id}'
             )
-            room_data = self.redis.get_voice_room_by_match(match_id)
+            room_data = await self.redis.get_voice_room_by_match(match_id)
             if not room_data:
                 logger.warning(f'No room found for match {match_id}')
                 return False
@@ -328,7 +330,7 @@ class VoiceService:
                         update['expires_at'] = new_dt.isoformat()
                     except Exception:
                         update['expires_at'] = (now + timedelta(minutes=15)).isoformat()
-                    self.redis.redis.hset(f'room:{room_id}', mapping=update)
+                    await self.redis.redis.hset(f'room:{room_id}', mapping=update)
             except Exception as e:
                 logger.debug(f'Failed to mark room for cleanup: {e}')
 
@@ -343,15 +345,15 @@ class VoiceService:
 
             # Prevent auto-move back: clear match tracking keys for this user
             try:
-                self.redis.redis.delete(f'user_discord:{discord_user_id}')
+                await self.redis.redis.delete(f'user_discord:{discord_user_id}')
             except Exception:
                 pass
             try:
-                self.redis.redis.delete(f'user_match:{summoner_id}')
+                await self.redis.redis.delete(f'user_match:{summoner_id}')
             except Exception:
                 pass
             try:
-                self.redis.redis.hdel(f'user:{summoner_id}', 'current_match')
+                await self.redis.redis.hdel(f'user:{summoner_id}', 'current_match')
             except Exception:
                 pass
 
@@ -368,7 +370,7 @@ class VoiceService:
                 if room_id:
                     players = self.safe_json_parse(room_data.get('players'), []) or []
                     players = [p for p in players if str(p) != str(summoner_id)]
-                    self.redis.redis.hset(
+                    await self.redis.redis.hset(
                         f'room:{room_id}',
                         mapping={'players': json.dumps(players)}
                     )
@@ -403,7 +405,7 @@ class VoiceService:
                 f'{match_id}, team: {team_name}'
             )
             # Get room data
-            room_data = self.redis.get_voice_room_by_match(match_id)
+            room_data = await self.redis.get_voice_room_by_match(match_id)
             if not room_data:
                 logger.error(f'Room not found for match {match_id}')
                 return False
@@ -415,7 +417,7 @@ class VoiceService:
             players = safe_json_parse(room_data.get('players'), [])
             if summoner_id not in players:
                 players.append(summoner_id)
-                self.redis.redis.hset(
+                await self.redis.redis.hset(
                     f'room:{room_id}',
                     mapping={'players': json.dumps(players)}
                 )
@@ -427,7 +429,7 @@ class VoiceService:
             red_team = safe_json_parse(room_data.get('red_team'), [])
             if team_name == 'Blue Team' and summoner_id not in blue_team:
                 blue_team.append(summoner_id)
-                self.redis.redis.hset(
+                await self.redis.redis.hset(
                     f'room:{room_id}',
                     'blue_team',
                     json.dumps(blue_team)
@@ -437,7 +439,7 @@ class VoiceService:
                 )
             elif team_name == 'Red Team' and summoner_id not in red_team:
                 red_team.append(summoner_id)
-                self.redis.redis.hset(
+                await self.redis.redis.hset(
                     f'room:{room_id}',
                     'red_team',
                     json.dumps(red_team)
@@ -453,8 +455,8 @@ class VoiceService:
                 'team_name': team_name,
                 'joined_at': datetime.now(timezone.utc).isoformat()
             }
-            self.redis.redis.hset(user_match_key, mapping=match_info)
-            self.redis.redis.expire(user_match_key, 3600)
+            await self.redis.redis.hset(user_match_key, mapping=match_info)
+            await self.redis.redis.expire(user_match_key, 3600)
             return True
         except Exception as e:
             logger.error(f'Failed to add player to existing room: {e}')

@@ -1,2 +1,2 @@
 # Routers
-from . import public_discord, client_remote
+from . import public_discord, client_remote # noqa

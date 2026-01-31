@@ -13,14 +13,17 @@ class CleanupService:
     """Service for automatic cleanup of stale match resources.
 
     Goals:
-    - Prevent channels/roles from accumulating if matches end abnormally (InProgress -> None, crash, etc.)
+    - Prevent channels/roles from accumulating if matches end abnormally
+      (InProgress -> None, crash, etc.)
     - Work even when REDIS_URL=memory:// (app restarts), via Discord orphan GC.
     """
 
     def __init__(self):
         self.is_running = False
         self.cleanup_task = None
-        self.cleanup_interval = int(getattr(settings, 'CLEANUP_INTERVAL_SECONDS', 60))
+        self.cleanup_interval = int(
+            getattr(settings, 'CLEANUP_INTERVAL_SECONDS', 60)
+        )
         self._last_discord_gc = datetime.min.replace(tzinfo=timezone.utc)
 
     async def start_cleanup_service(self):
@@ -58,24 +61,30 @@ class CleanupService:
             current_time = datetime.now(timezone.utc)
             # Server does not track LCU phase.
             lcu_phase = None
-            lobby_ttl_minutes = int(getattr(settings, 'CLEANUP_LOBBY_TTL_MINUTES', 60))
+            lobby_ttl_minutes = int(
+                getattr(settings, 'CLEANUP_LOBBY_TTL_MINUTES', 60)
+            )
 
             # Iterate over all room:* keys (works for both real Redis and memory://)
             room_keys = []
             try:
-                for key in voice_service.redis.redis.scan_iter():
+                for key in await voice_service.redis.redis.scan_iter():
                     if isinstance(key, bytes):
                         key = key.decode('utf-8', errors='ignore')
                     if str(key).startswith('room:'):
                         room_keys.append(str(key))
             except Exception:
                 # Fallback: DatabaseManager helper
-                room_keys = [f"room:{r.get('room_id')}" for r in voice_service.redis.get_all_active_rooms() if r.get('room_id')]
+                room_keys = [
+                    f"room:{r.get('room_id')}"
+                    for r in await voice_service.redis.get_all_active_rooms()
+                    if r.get('room_id')
+                ]
             logger.info(f'Cleanup service checking {len(room_keys)} rooms')
             for key in room_keys:
                 try:
                     room_id = key.split('room:', 1)[-1]
-                    room_data = voice_service.redis.get_voice_room(room_id)
+                    room_data = await voice_service.redis.get_voice_room(room_id)
                     if not room_data:
                         continue
                     match_id = room_data.get('match_id')
@@ -85,36 +94,54 @@ class CleanupService:
                     if not created_at_str:
                         continue
                     try:
-                        created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                        created_at = datetime.fromisoformat(
+                            created_at_str.replace('Z', '+00:00')
+                        )
                     except Exception:
                         continue
                     room_age = current_time - created_at
 
-                    # 0) Lobby/None TTL: if client is not in-game and room is old enough, cleanup.
-                    if lcu_phase in ('None', 'Lobby') and room_age >= timedelta(minutes=lobby_ttl_minutes):
+                    # 0) Lobby/None TTL: if client is not in-game and room is old,
+                    # cleanup.
+                    if (
+                        lcu_phase in ('None', 'Lobby')
+                        and room_age >= timedelta(minutes=lobby_ttl_minutes)
+                    ):
                         logger.info(
-                            f'Cleaning up room for match {match_id} (lobby ttl, phase={lcu_phase}, age={room_age})'
+                            f'Cleaning up room for match {match_id} '
+                            f'(lobby ttl, phase={lcu_phase}, age={room_age})'
                         )
                         await voice_service.close_voice_room(match_id)
                         continue
 
                     # 1) Hard safety timeout
                     if room_age > timedelta(hours=2):
-                        logger.info(f'Cleaning up room for match {match_id} (hard timeout, age={room_age})')
+                        logger.info(
+                            f'Cleaning up room for match {match_id} '
+                            f'(hard timeout, age={room_age})'
+                        )
                         await voice_service.close_voice_room(match_id)
                         continue
-                    # 2) Early-leave / crash path: room explicitly marked as closing candidate
+                    # 2) Early-leave / crash path: room marked for closing
                     closing_at_str = room_data.get('closing_requested_at')
-                    grace = int(getattr(settings, 'CLEANUP_INACTIVE_GRACE_SECONDS', 120))
-                    stale_hours = int(getattr(settings, 'CLEANUP_STALE_EMPTY_ROOM_HOURS', 6))
+                    grace = int(
+                        getattr(settings, 'CLEANUP_INACTIVE_GRACE_SECONDS', 120)
+                    )
+                    stale_hours = int(
+                        getattr(settings, 'CLEANUP_STALE_EMPTY_ROOM_HOURS', 6)
+                    )
 
                     async def _is_inactive() -> bool:
                         if not voice_service.discord_enabled:
                             return True
-                        return not await discord_service.match_has_active_players(match_id)
+                        return not await discord_service.match_has_active_players(
+                            match_id
+                        )
                     if closing_at_str:
                         try:
-                            closing_at = datetime.fromisoformat(closing_at_str.replace('Z', '+00:00'))
+                            closing_at = datetime.fromisoformat(
+                                closing_at_str.replace('Z', '+00:00')
+                            )
                         except Exception:
                             closing_at = created_at
                         if (current_time - closing_at).total_seconds() >= grace:
@@ -140,7 +167,7 @@ class CleanupService:
             logger.error(f'Cleanup rooms error: {e}')
 
     async def _discord_orphan_gc_tick(self):
-        """Garbage-collect orphan channels/roles in Discord when using memory:// or after crashes."""
+        """Garbage-collect orphan channels/roles in Discord after crashes."""
         try:
             if not getattr(settings, 'DISCORD_GC_ON_STARTUP', True):
                 return
@@ -152,8 +179,12 @@ class CleanupService:
                 return
             self._last_discord_gc = now
             await discord_service.garbage_collect_orphaned_matches(
-                max_age_hours=int(getattr(settings, 'DISCORD_GC_STALE_HOURS', 6)),
-                min_age_minutes=int(getattr(settings, 'DISCORD_GC_MIN_AGE_MINUTES', 10)),
+                max_age_hours=int(
+                    getattr(settings, 'DISCORD_GC_STALE_HOURS', 6)
+                ),
+                min_age_minutes=int(
+                    getattr(settings, 'DISCORD_GC_MIN_AGE_MINUTES', 10)
+                ),
             )
         except Exception as e:
             logger.debug(f'Discord orphan GC tick failed: {e}')

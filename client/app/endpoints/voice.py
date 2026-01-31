@@ -1,7 +1,8 @@
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.services.remote_api import remote_api, RemoteAPIError
+from app.services.remote_api import RemoteAPIError, remote_api
 from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)

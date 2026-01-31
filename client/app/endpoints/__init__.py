@@ -1,2 +1,2 @@
 # Routers
-from . import auth, discord, lcu, voice
+from . import auth, discord, lcu, voice # noqa

@@ -8,7 +8,6 @@ import aiohttp
 
 from app.utils.exceptions import LCUException
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -151,7 +150,8 @@ class LCUConnector:
         # If the lockfile changed (client restart), drop the old session
         signature = (
             f"{self.lockfile_data.get('protocol')}://"
-            f"127.0.0.1:{self.lockfile_data.get('port')}@{self.lockfile_data.get('password')}"
+            f"127.0.0.1:{self.lockfile_data.get('port')}"
+            f"@{self.lockfile_data.get('password')}"
         )
         if self._lockfile_signature and self._lockfile_signature != signature:
             await self._cleanup()
@@ -247,7 +247,6 @@ class LCUConnector:
             )
             self._next_retry_time = now + self._retry_delay
             return False
-
 
     async def _cleanup(self):
         """Cleanup resources."""

@@ -18,7 +18,6 @@ import threading
 import time
 from pathlib import Path
 
-
 if getattr(sys, 'frozen', False):
     try:
         from app.encrypted_env import decrypt_env  # type: ignore
@@ -85,7 +84,10 @@ def _configure_logging() -> logging.Logger:
     In dev mode (non-frozen) file logging is enabled by default.
     """
     is_frozen = bool(getattr(sys, 'frozen', False))
-    want_file = os.getenv('LOLVC_LOG_TO_FILE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    want_file = (
+        os.getenv('LOLVC_LOG_TO_FILE', '').strip().lower()
+        in ('1', 'true', 'yes', 'on')
+    )
     enable_file_logging = want_file or (not is_frozen)
     if enable_file_logging:
         log_file = BASE_DIR / 'lol_voice_chat.log'
@@ -195,6 +197,7 @@ def start_fastapi_server():
     try:
         logger.info('Starting FastAPI server...')
         import uvicorn
+
         from app.main import app
         bind_host, port, _ = _get_server_config()
         uvicorn.run(

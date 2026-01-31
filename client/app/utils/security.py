@@ -12,7 +12,6 @@ from jose import JWTError, jwt
 
 from app.config import settings
 
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 

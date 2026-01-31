@@ -1,13 +1,13 @@
+import asyncio
 import logging
 import os
 import sys
-import asyncio
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -16,7 +16,6 @@ from app.database import redis_manager
 from app.endpoints import client_remote, public_discord
 from app.services.cleanup_service import cleanup_service
 from app.services.discord_service import discord_service
-
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +107,37 @@ app = FastAPI(
 )
 
 
+@app.middleware('http')
+async def rate_limit_middleware(request: Request, call_next):
+    if not getattr(settings, 'RIFT_RATE_LIMIT_ENABLED', True):
+        return await call_next(request)
+
+    path = request.url.path
+    if path.startswith('/api/client/') or path.startswith('/api/public/discord/'):
+        if path.endswith('/callback'):
+            return await call_next(request)
+        client_ip = request.headers.get('x-forwarded-for', '').split(',')[0].strip()
+        if not client_ip:
+            client_ip = request.client.host if request.client else 'unknown'
+
+        window = int(time.time() // 60)
+        key = f'rl:{client_ip}:{window}'
+        try:
+            count = await redis_manager.redis.incr(key, 1)
+            if int(count) == 1:
+                await redis_manager.redis.expire(key, 120)
+            limit = int(getattr(settings, 'RIFT_RATE_LIMIT_PER_MINUTE', 60) or 60)
+            if int(count) > limit:
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={'detail': 'Rate limit exceeded'},
+                )
+        except Exception:
+            pass
+
+    return await call_next(request)
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request,
@@ -125,14 +155,6 @@ async def validation_exception_handler(
         },
     )
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
-)
 
 if os.path.exists(static_dir):
     app.mount('/static', StaticFiles(directory=static_dir), name='static')
@@ -169,12 +191,21 @@ async def health_check():
         'discord': 'checking...'
     }
     try:
-        services['redis'] = 'healthy' if redis_manager.redis.ping() else 'unhealthy'
+        services['redis'] = (
+            'healthy' if await redis_manager.redis.ping() else 'unhealthy'
+        )
     except Exception as e:
         services['redis'] = f'error: {str(e)}'
 
     discord_status = discord_service.get_status()
-    services['discord'] = 'connected' if discord_status.get('connected') else 'disconnected'
+    services['discord'] = (
+        'connected' if discord_status.get('connected') else 'disconnected'
+    )
+    redis_details = {}
+    try:
+        redis_details = redis_manager.redis_health()
+    except Exception:
+        redis_details = {}
 
     message = 'Server running on Windows.'
     if services['discord'] == 'connected':
@@ -187,6 +218,7 @@ async def health_check():
         'services': services,
         'platform': 'windows',
         'discord_details': discord_status,
+        'redis_details': redis_details,
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'message': message,
     })

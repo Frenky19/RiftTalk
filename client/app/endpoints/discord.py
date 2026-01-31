@@ -1,19 +1,56 @@
+import json
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+import time
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import redis_manager
 from app.services.lcu_service import lcu_service
-from app.services.remote_api import remote_api, RemoteAPIError
+from app.services.remote_api import RemoteAPIError, remote_api
 from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/discord', tags=['discord-client'])
 
+MATCH_STATUS_REMOTE_REFRESH_SECONDS = 10
+
 
 def _decode_redis_value(value):
+    """Decode bytes values returned by Redis into UTF-8 strings."""
     if isinstance(value, (bytes, bytearray)):
         return value.decode('utf-8', errors='ignore')
+    return value
+
+
+def _decode_redis_hash(data):
+    """Decode a Redis hash to a plain dict with string keys/values."""
+    decoded = {}
+    for key, value in (data or {}).items():
+        decoded[_decode_redis_value(key)] = _decode_redis_value(value)
+    return decoded
+
+
+def _parse_bool(value):
+    """Parse common truthy values into a bool."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _parse_json(value):
+    """Parse JSON strings into Python types, return original on failure."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str) and value.strip() != '':
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
     return value
 
 
@@ -50,7 +87,7 @@ async def get_user_match_info(
             raise HTTPException(status_code=403, detail='Forbidden')
         match_info_key = f'user_match:{summoner_id}'
         match_id = _decode_redis_value(
-            redis_manager.redis.hget(match_info_key, 'match_id')
+            await redis_manager.redis.hget(match_info_key, 'match_id')
         )
         return {
             'match_id': match_id,
@@ -129,10 +166,66 @@ async def get_match_status(
             'red_team': red_team_ids,
         }
 
+        match_info_key = f'user_match:{summoner_id}'
+        cached = {}
         try:
-            remote = await remote_api.match_start(payload)
+            cached = _decode_redis_hash(await redis_manager.redis.hgetall(match_info_key))
+        except Exception:
+            cached = {}
+
+        now_ts = time.time()
+        cache_match_id = cached.get('match_id')
+        cache_ts_raw = cached.get('remote_status_cached_at', '0') or '0'
+        try:
+            cache_ts = float(cache_ts_raw)
+        except Exception:
+            cache_ts = 0.0
+
+        use_cache = (
+            cache_match_id == match_id
+            and cache_ts > 0
+            and (now_ts - cache_ts) < MATCH_STATUS_REMOTE_REFRESH_SECONDS
+        )
+
+        try:
+            if use_cache:
+                remote = {
+                    'match_id': cache_match_id,
+                    'team_name': cached.get('remote_team_name'),
+                    'voice_channel': _parse_json(cached.get('remote_voice_channel')),
+                    'linked': _parse_bool(cached.get('remote_linked')),
+                    'assigned': _parse_bool(cached.get('remote_assigned')),
+                }
+            else:
+                remote = await remote_api.match_start(payload)
+                try:
+                    await redis_manager.redis.hset(
+                        match_info_key,
+                        mapping={
+                            'match_id': match_id,
+                            'remote_team_name': str(remote.get('team_name') or ''),
+                            'remote_voice_channel': json.dumps(
+                                remote.get('voice_channel')
+                            ) if remote.get('voice_channel') is not None else '',
+                            'remote_linked': '1' if remote.get('linked') else '0',
+                            'remote_assigned': '1' if remote.get('assigned') else '0',
+                            'remote_status_cached_at': str(now_ts),
+                        },
+                    )
+                    await redis_manager.redis.expire(match_info_key, 3600)
+                except Exception:
+                    pass
         except RemoteAPIError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            if cache_match_id == match_id and cached:
+                remote = {
+                    'match_id': cache_match_id,
+                    'team_name': cached.get('remote_team_name'),
+                    'voice_channel': _parse_json(cached.get('remote_voice_channel')),
+                    'linked': _parse_bool(cached.get('remote_linked')),
+                    'assigned': _parse_bool(cached.get('remote_assigned')),
+                }
+            else:
+                raise HTTPException(status_code=502, detail=str(e))
 
         return {
             'match_id': remote.get('match_id') or match_id,

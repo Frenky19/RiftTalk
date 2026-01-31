@@ -1,9 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import redis_manager
 from app.services.lcu_service import lcu_service
 from app.utils.security import get_current_user
-
 
 router = APIRouter(prefix='/lcu', tags=['lcu-integration'])
 
@@ -154,7 +153,7 @@ async def toggle_auto_voice(
     try:
         # Save user settings
         user_key = f'user:{current_user["sub"]}'
-        redis_manager.redis.hset(
+        await redis_manager.redis.hset(
             user_key, 'auto_voice', str(enabled).lower()
         )
         # If enabling auto-voice and there's an active game, create room

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -22,14 +22,14 @@ except Exception as e:
         def __init__(self):
             self._data = {}
 
-        def get(self, key):
+        async def get(self, key):
             return self._data.get(key)
 
-        def setex(self, key, ttl, value):
+        async def setex(self, key, ttl, value):
             self._data[key] = value
             return True
 
-        def delete(self, key):
+        async def delete(self, key):
             if key in self._data:
                 del self._data[key]
             return True
@@ -152,7 +152,7 @@ class DiscordService:
                     )
                     # Find active matches for this user
                     user_key = f'user_discord:{member.id}'
-                    match_data = redis_manager.redis.get(user_key)
+                    match_data = await redis_manager.redis.get(user_key)
                     if match_data:
                         match_info = json.loads(match_data)
                         match_id = match_info.get('match_id')
@@ -160,7 +160,10 @@ class DiscordService:
                         if match_id and team_name:
                             # If user no longer has a match role, do not auto-move
                             role_prefix = f'LoL {match_id} -'
-                            if not any(getattr(r, 'name', '').startswith(role_prefix) for r in member.roles):
+                            if not any(
+                                getattr(r, 'name', '').startswith(role_prefix)
+                                for r in member.roles
+                            ):
                                 return
                             # Find team voice channel
                             target_channel = await self.find_team_channel(
@@ -189,15 +192,18 @@ class DiscordService:
             except Exception as e:
                 logger.error(f'Error in voice state update: {e}')
 
-
     def _team_channel_name(self, match_id: str, team_name: str) -> str:
         return f'LoL Match {match_id} - {team_name}'
 
-    async def _dedupe_voice_channels_by_name(self, channel_name: str) -> Optional[VoiceChannel]:
+    async def _dedupe_voice_channels_by_name(
+        self,
+        channel_name: str,
+    ) -> Optional[VoiceChannel]:
         """Ensure there is only ONE voice channel with this exact name.
 
-        Discord allows duplicate channel names. When multiple app instances start at the same time,
-        a race can create duplicates. We keep the OLDEST channel (first created) and delete the rest.
+        Discord allows duplicate channel names. When multiple app instances
+        start at the same time, a race can create duplicates. We keep the
+        OLDEST channel (first created) and delete the rest.
 
         Returns the kept channel if exists, else None.
         """
@@ -205,31 +211,46 @@ class DiscordService:
             return None
         try:
             matches = [ch for ch in list(self.category.voice_channels)
-                       if isinstance(ch, VoiceChannel) and (getattr(ch, 'name', '') or '') == channel_name]
+                       if isinstance(ch, VoiceChannel)
+                       and (getattr(ch, 'name', '') or '') == channel_name]
             if len(matches) <= 1:
                 return matches[0] if matches else None
             # Keep the oldest channel
-            matches.sort(key=lambda c: getattr(c, 'created_at', datetime.min.replace(tzinfo=timezone.utc)))
+            matches.sort(
+                key=lambda c: getattr(
+                    c,
+                    'created_at',
+                    datetime.min.replace(tzinfo=timezone.utc),
+                )
+            )
             kept = matches[0]
             duplicates = matches[1:]
             for ch in duplicates:
                 try:
-                    # If anyone is in a duplicate channel, move them to kept before deletion
+                    # If anyone is in a duplicate channel, move them to kept
+                    # before deletion
                     if getattr(ch, 'members', None) and len(ch.members) > 0:
                         for m in list(ch.members):
                             try:
                                 await m.move_to(kept)
                             except Exception:
                                 pass
-                    await ch.delete(reason='Removed duplicate LoL match voice channel (dedupe)')
-                    logger.warning(f'Deleted duplicate voice channel: {channel_name} (id={ch.id})')
+                    await ch.delete(
+                        reason=(
+                            'Removed duplicate LoL match voice channel (dedupe)'
+                        )
+                    )
+                    logger.warning(
+                        f'Deleted duplicate voice channel: {channel_name} (id={ch.id})'
+                    )
                 except Exception as e:
-                    logger.debug(f'Failed deleting duplicate channel {getattr(ch, "id", "?")}: {e}')
+                    logger.debug(
+                        f'Failed deleting duplicate channel {getattr(ch, "id", "?")}: {e}'
+                    )
             return kept
         except Exception as e:
             logger.debug(f'Channel dedupe failed for {channel_name}: {e}')
             return None
-
 
     async def find_team_channel(
         self,
@@ -249,7 +270,6 @@ class DiscordService:
             return kept
         return None
 
-
     async def _connect_internal(self):
         """Internal method to handle Discord connection."""
         try:
@@ -261,7 +281,9 @@ class DiscordService:
             self._connect_error = RuntimeError(
                 'Bot requires privileged intents - enable in Discord Developer Portal'
             )
-            logger.error('Bot requires privileged intents - enable in Discord Developer Portal')
+            logger.error(
+                'Bot requires privileged intents - enable in Discord Developer Portal'
+            )
         except Exception as e:
             self._connect_error = e
             logger.error(f'Discord connection error: {e}')
@@ -297,7 +319,9 @@ class DiscordService:
                         logger.info(
                             f'Bot is in these guilds: {available_guilds}'
                         )
-                        raise RuntimeError('Configured DISCORD_GUILD_ID not found in bot guilds')
+                        raise RuntimeError(
+                            'Configured DISCORD_GUILD_ID not found in bot guilds'
+                        )
                 except ValueError:
                     logger.error(
                         f'Invalid DISCORD_GUILD_ID format: '
@@ -362,7 +386,9 @@ class DiscordService:
                 try:
                     await self.garbage_collect_orphaned_matches(
                         max_age_hours=int(getattr(settings, 'DISCORD_GC_STALE_HOURS', 6)),
-                        min_age_minutes=int(getattr(settings, 'DISCORD_GC_MIN_AGE_MINUTES', 10)),
+                        min_age_minutes=int(
+                            getattr(settings, 'DISCORD_GC_MIN_AGE_MINUTES', 10)
+                        ),
                     )
                 except Exception as e:
                     logger.debug(f'Orphan GC on startup skipped: {e}')
@@ -457,7 +483,6 @@ class DiscordService:
         except Exception as e:
             logger.error(f'Failed to create team role: {e}')
             return None
-
 
     async def create_or_get_voice_channel(
         self,
@@ -586,8 +611,6 @@ class DiscordService:
         except Exception as e:
             logger.error(f'Failed to create voice channel: {e}')
             raise
-
-
 
     async def create_or_get_team_channels(
         self,
@@ -756,7 +779,7 @@ class DiscordService:
                     'team_name': team_name,
                     'assigned_at': datetime.now(timezone.utc).isoformat()
                 }
-                redis_manager.redis.setex(
+                await redis_manager.redis.setex(
                     user_key,
                     3600,
                     json.dumps(match_info)
@@ -798,7 +821,7 @@ class DiscordService:
                     'team_name': team_name,
                     'assigned_at': datetime.now(timezone.utc).isoformat()
                 }
-                redis_manager.redis.setex(
+                await redis_manager.redis.setex(
                     user_key,
                     3600,
                     json.dumps(match_info)
@@ -845,7 +868,10 @@ class DiscordService:
                 return False
             # Must be connected to voice to move
             if not member.voice or not member.voice.channel:
-                logger.info(f'User {member.display_name} is not in a voice channel; nothing to move')
+                logger.info(
+                    f'User {member.display_name} is not in a voice channel; '
+                    'nothing to move'
+                )
                 return False
             # Find target channel by name
             target_name = f'LoL Match {match_id} - {team_name}'
@@ -855,7 +881,10 @@ class DiscordService:
             if self.category:
                 search_channels = list(getattr(self.category, 'voice_channels', []) or [])
             if not search_channels:
-                search_channels = [c for c in self.guild.channels if isinstance(c, VoiceChannel)]
+                search_channels = [
+                    c for c in self.guild.channels
+                    if isinstance(c, VoiceChannel)
+                ]
             for ch in search_channels:
                 try:
                     if isinstance(ch, VoiceChannel) and ch.name == target_name:
@@ -871,7 +900,10 @@ class DiscordService:
                 return True
             try:
                 await member.move_to(target_channel)
-                logger.info(f'Automatically moved {member.display_name} to {team_name} channel')
+                logger.info(
+                    f'Automatically moved {member.display_name} to {team_name} '
+                    'channel'
+                )
                 return True
             except discord.Forbidden:
                 logger.error('Bot lacks permission to move members (Move Members)')
@@ -936,7 +968,8 @@ class DiscordService:
                         reason=f'LoL match {match_id}: player left early'
                     )
                     logger.info(
-                        f'Removed {len(roles_to_remove)} match roles from {member.display_name}'
+                        f'Removed {len(roles_to_remove)} match roles from '
+                        f'{member.display_name}'
                     )
                 except Exception as e:
                     logger.warning(f'Failed to remove roles: {e}')
@@ -949,7 +982,10 @@ class DiscordService:
                         waiting = None
                         if self.category:
                             for vc in self.category.voice_channels:
-                                if isinstance(vc, VoiceChannel) and vc.name.lower() == 'waiting room':
+                                if (
+                                    isinstance(vc, VoiceChannel)
+                                    and vc.name.lower() == 'waiting room'
+                                ):
                                     waiting = vc
                                     break
                         try:
@@ -997,14 +1033,20 @@ class DiscordService:
                 if self.category:
                     match_channels = [
                         ch for ch in self.category.voice_channels
-                        if isinstance(ch, VoiceChannel) and f'LoL Match {match_id}' in ch.name
+                        if (
+                            isinstance(ch, VoiceChannel)
+                            and f'LoL Match {match_id}' in ch.name
+                        )
                     ]
                     if match_channels:
                         voice_members_total = sum(len(ch.members) for ch in match_channels)
             except Exception:
                 voice_members_total = None
             # If we have at least one reliable signal:
-            active_counts = [c for c in (role_members_total, voice_members_total) if c is not None]
+            active_counts = [
+                c for c in (role_members_total, voice_members_total)
+                if c is not None
+            ]
             if active_counts:
                 return sum(active_counts) > 0
             # No reliable signal -> don't risk deletion
@@ -1018,7 +1060,7 @@ class DiscordService:
         max_age_hours: int = 6,
         min_age_minutes: int = 10
     ) -> None:
-        """Delete stale/empty match channels & roles left behind (e.g., app restart with memory://).
+        """Delete stale/empty match channels & roles left behind.
 
         Safe rules (won't delete active matches):
         - Match voice channels are EMPTY (no members in them)
@@ -1074,12 +1116,21 @@ class DiscordService:
                     if roles and any(len(r.members) > 0 for r in roles):
                         # Best-effort role cleanup for stale matches
                         try:
-                            if self.guild and self.guild.me and self.guild.me.guild_permissions.manage_roles:
+                            if (
+                                self.guild
+                                and self.guild.me
+                                and self.guild.me.guild_permissions.manage_roles
+                            ):
                                 for role in roles:
                                     # Copy list because it mutates
                                     for member in list(getattr(role, 'members', []) or []):
                                         try:
-                                            await member.remove_roles(role, reason=f'Orphan GC: stale match {match_id}')
+                                            await member.remove_roles(
+                                                role,
+                                                reason=(
+                                                    f'Orphan GC: stale match {match_id}'
+                                                ),
+                                            )
                                         except Exception:
                                             continue
                         except Exception:
@@ -1130,7 +1181,7 @@ class DiscordService:
                 )
                 # Store the invite for the user
                 invite_key = f'server_invite:{discord_user_id}'
-                redis_manager.redis.setex(invite_key, 3600, invite.url)
+                await redis_manager.redis.setex(invite_key, 3600, invite.url)
                 # You could also send a DM to the user if possible
                 await self._send_dm_to_user(
                     discord_user_id,

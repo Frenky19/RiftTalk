@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import sys
-import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -16,10 +15,9 @@ from app.config import settings
 from app.database import redis_manager
 from app.endpoints import auth, discord, lcu, voice
 from app.services.lcu_service import lcu_service
-from app.services.remote_api import remote_api, RemoteAPIError
+from app.services.remote_api import RemoteAPIError, remote_api
 from app.services.shutdown_cleanup import notify_match_leave_on_shutdown
 from app.utils.security import create_access_token
-
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +55,7 @@ async def validate_user_data_integrity():
         logger.info('Validating user data integrity...')
         user_keys = []
         try:
-            for key in redis_manager.redis.scan_iter(match='user:*'):
+            for key in await redis_manager.redis.scan_iter(match='user:*'):
                 user_keys.append(key)
         except Exception as e:
             logger.error(f'Error scanning keys: {e}')
@@ -65,17 +63,17 @@ async def validate_user_data_integrity():
         fixed_count = 0
         for key in user_keys:
             try:
-                old_data = redis_manager.redis.get(key)
+                old_data = await redis_manager.redis.get(key)
                 if old_data and isinstance(old_data, str):
                     try:
                         parsed_data = json.loads(old_data)
-                        redis_manager.redis.delete(key)
-                        redis_manager.redis.hset(key, mapping=parsed_data)
+                        await redis_manager.redis.delete(key)
+                        await redis_manager.redis.hset(key, mapping=parsed_data)
                         fixed_count += 1
                         logger.info(f'Fixed user key: {key}')
                     except json.JSONDecodeError:
-                        redis_manager.redis.delete(key)
-                        redis_manager.redis.hset(key, 'data', old_data)
+                        await redis_manager.redis.delete(key)
+                        await redis_manager.redis.hset(key, 'data', old_data)
                         fixed_count += 1
                         logger.info(f'Fixed string user key: {key}')
             except Exception as e:
@@ -189,8 +187,8 @@ async def handle_champ_select(event_data: dict):
                     'phase': 'ChampSelect',
                     'saved_at': datetime.now(timezone.utc).isoformat(),
                 }
-                redis_manager.redis.hset(match_info_key, mapping=match_info)
-                redis_manager.redis.expire(match_info_key, 3600)
+                await redis_manager.redis.hset(match_info_key, mapping=match_info)
+                await redis_manager.redis.expire(match_info_key, 3600)
                 logger.info(
                     f'Saved champ select info for match {match_id}, '
                     f'waiting for match start'
@@ -258,7 +256,7 @@ async def handle_match_start():
         match_info_key = f'user_match:{summoner_id}'
         existing: dict[str, str] = {}
         try:
-            raw = redis_manager.redis.hgetall(match_info_key)
+            raw = await redis_manager.redis.hgetall(match_info_key)
             existing = {
                 (k.decode() if isinstance(k, (bytes, bytearray)) else str(k)):
                 (v.decode() if isinstance(v, (bytes, bytearray)) else str(v))
@@ -283,7 +281,7 @@ async def handle_match_start():
                     pass
 
         try:
-            redis_manager.redis.hset(
+            await redis_manager.redis.hset(
                 match_info_key,
                 mapping={
                     'match_id': match_id,
@@ -294,18 +292,26 @@ async def handle_match_start():
                     'notify_next_retry_ts': existing.get('notify_next_retry_ts', '0'),
                 },
             )
-            redis_manager.redis.expire(match_info_key, 3600)
+            await redis_manager.redis.expire(match_info_key, 3600)
         except Exception:
             pass
         try:
             user_key = f'user:{summoner_id}'
-            redis_manager.redis.hset(user_key, 'current_match', match_id)
+            await redis_manager.redis.hset(user_key, 'current_match', match_id)
         except Exception:
             pass
 
         teams_data = await lcu_service.lcu_connector.get_teams()
-        blue_team_ids = [str(p.get('summonerId')) for p in (teams_data or {}).get('blue_team', []) if p.get('summonerId')]
-        red_team_ids = [str(p.get('summonerId')) for p in (teams_data or {}).get('red_team', []) if p.get('summonerId')]
+        blue_team_ids = [
+            str(p.get('summonerId'))
+            for p in (teams_data or {}).get('blue_team', [])
+            if p.get('summonerId')
+        ]
+        red_team_ids = [
+            str(p.get('summonerId'))
+            for p in (teams_data or {}).get('red_team', [])
+            if p.get('summonerId')
+        ]
 
         payload = {
             'match_id': match_id,
@@ -317,7 +323,7 @@ async def handle_match_start():
         try:
             await remote_api.match_start(payload)
             try:
-                redis_manager.redis.hset(
+                await redis_manager.redis.hset(
                     match_info_key,
                     mapping={
                         'remote_notified': '1',
@@ -331,12 +337,14 @@ async def handle_match_start():
         except RemoteAPIError as e:
             logger.warning(f'Remote match-start failed: {e}')
             try:
-                fail_count = int(existing.get('notify_fail_count', '0') or '0') + 1
+                fail_count = (
+                    int(existing.get('notify_fail_count', '0') or '0') + 1
+                )
             except Exception:
                 fail_count = 1
             delay = min(300, 5 * (2 ** max(0, fail_count - 1)))
             try:
-                redis_manager.redis.hset(
+                await redis_manager.redis.hset(
                     match_info_key,
                     mapping={
                         'remote_notified': '0',
@@ -361,7 +369,7 @@ async def handle_match_end(event_data: dict):
         match_id = None
         try:
             match_info_key = f'user_match:{summoner_id}'
-            match_id = redis_manager.redis.hget(match_info_key, 'match_id')
+            match_id = await redis_manager.redis.hget(match_info_key, 'match_id')
             if isinstance(match_id, (bytes, bytearray)):
                 match_id = match_id.decode('utf-8', errors='ignore')
         except Exception:
@@ -382,12 +390,12 @@ async def handle_match_end(event_data: dict):
 
         try:
             match_info_key = f'user_match:{summoner_id}'
-            redis_manager.redis.delete(match_info_key)
+            await redis_manager.redis.delete(match_info_key)
         except Exception:
             pass
         try:
             user_key = f'user:{summoner_id}'
-            redis_manager.redis.hdel(user_key, 'current_match')
+            await redis_manager.redis.hdel(user_key, 'current_match')
         except Exception:
             pass
     except Exception as e:
@@ -405,7 +413,7 @@ async def handle_match_leave(event_data: dict):
         match_id = None
         try:
             user_key = f'user:{summoner_id}'
-            match_id = redis_manager.redis.hget(user_key, 'current_match')
+            match_id = await redis_manager.redis.hget(user_key, 'current_match')
         except Exception:
             match_id = None
 
@@ -413,13 +421,18 @@ async def handle_match_leave(event_data: dict):
             return
 
         try:
-            await remote_api.match_leave({'match_id': str(match_id), 'summoner_id': str(summoner_id)})
+            await remote_api.match_leave(
+                {
+                    'match_id': str(match_id),
+                    'summoner_id': str(summoner_id),
+                }
+            )
         except RemoteAPIError as e:
             logger.warning(f'Remote match-leave failed: {e}')
 
         try:
             user_key = f'user:{summoner_id}'
-            redis_manager.redis.hdel(user_key, 'current_match')
+            await redis_manager.redis.hdel(user_key, 'current_match')
         except Exception:
             pass
     except Exception as e:
@@ -520,7 +533,7 @@ async def health_check():
         'lcu': 'checking...'
     }
     try:
-        services['redis'] = 'healthy' if redis_manager.redis.ping() else 'unhealthy'
+        services['redis'] = 'healthy' if await redis_manager.redis.ping() else 'unhealthy'
     except Exception as e:
         services['redis'] = f'error: {str(e)}'
 

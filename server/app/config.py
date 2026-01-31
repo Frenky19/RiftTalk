@@ -1,16 +1,18 @@
 import logging
 import os
+import platform
 import sys
 from typing import Optional
 
-import platform
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
 # Ensure repo root is on sys.path so shared/ is importable
-repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+repo_root = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
@@ -52,7 +54,8 @@ class Settings(BaseSettings):
     # Shared key for client->server API auth (required in both modes)
     RIFT_SHARED_KEY: Optional[str] = Field(default=None)
 
-    # Public base URL of the server (recommended in server mode), e.g. https://your-domain.com
+    # Public base URL of the server (recommended in server mode),
+    # e.g. https://your-domain.com
     # If you don't have a domain yet, you can use a tunnel URL for testing.
     PUBLIC_BASE_URL: Optional[str] = Field(default=None)
 
@@ -61,9 +64,10 @@ class Settings(BaseSettings):
     REDIS_SSL: bool = Field(default=False)
     REDIS_MAX_CONNECTIONS: int = Field(default=20)
 
-
     # JWT Configuration (used by local client UI/API session)
-    JWT_SECRET_KEY: str = Field(default='your-super-secret-jwt-key-change-this-in-production')
+    JWT_SECRET_KEY: str = Field(
+        default='your-super-secret-jwt-key-change-this-in-production'
+    )
     JWT_ALGORITHM: str = Field(default='HS256')
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30)
 
@@ -83,7 +87,8 @@ class Settings(BaseSettings):
     # Discord OAuth2 (server mode)
     DISCORD_OAUTH_CLIENT_ID: Optional[str] = Field(default=None)
     DISCORD_OAUTH_CLIENT_SECRET: Optional[str] = Field(default=None)
-    # If not set, defaults to: {PUBLIC_BASE_URL}/api/public/discord/callback (server mode)
+    # If not set, defaults to:
+    # {PUBLIC_BASE_URL}/api/public/discord/callback (server mode)
     DISCORD_OAUTH_REDIRECT_URI: Optional[str] = Field(default=None)
     DISCORD_OAUTH_SCOPES: str = Field(default='identify')
     DISCORD_OAUTH_STATE_TTL_SECONDS: int = Field(default=600)
@@ -97,6 +102,12 @@ class Settings(BaseSettings):
     DISCORD_GC_ON_STARTUP: bool = Field(default=True)
     DISCORD_GC_STALE_HOURS: int = Field(default=2)
     DISCORD_GC_MIN_AGE_MINUTES: int = Field(default=10)
+
+    # Client request protection
+    RIFT_SIGNATURE_ENABLED: bool = Field(default=True)
+    RIFT_SIGNATURE_TTL_SECONDS: int = Field(default=60)
+    RIFT_RATE_LIMIT_ENABLED: bool = Field(default=True)
+    RIFT_RATE_LIMIT_PER_MINUTE: int = Field(default=60)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -124,17 +135,24 @@ class Settings(BaseSettings):
         if not self.RIFT_SHARED_KEY:
             raise ValueError('RIFT_SHARED_KEY is required in server mode')
         if not self.DISCORD_BOT_TOKEN or not self.DISCORD_GUILD_ID:
-            raise ValueError('Server mode requires DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env')
+            raise ValueError(
+                'Server mode requires DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
+            )
         try:
             int(self.DISCORD_GUILD_ID)
         except Exception:
             raise ValueError('DISCORD_GUILD_ID must be a numeric guild ID')
 
         if not self.DISCORD_OAUTH_CLIENT_ID or not self.DISCORD_OAUTH_CLIENT_SECRET:
-            raise ValueError('Server mode requires DISCORD_OAUTH_CLIENT_ID and DISCORD_OAUTH_CLIENT_SECRET')
+            raise ValueError(
+                'Server mode requires DISCORD_OAUTH_CLIENT_ID '
+                'and DISCORD_OAUTH_CLIENT_SECRET'
+            )
 
         if not self.DISCORD_OAUTH_REDIRECT_URI and not self.PUBLIC_BASE_URL:
-            raise ValueError('Server mode requires DISCORD_OAUTH_REDIRECT_URI or PUBLIC_BASE_URL')
+            raise ValueError(
+                'Server mode requires DISCORD_OAUTH_REDIRECT_URI or PUBLIC_BASE_URL'
+            )
 
     @property
     def is_windows(self) -> bool:
@@ -155,7 +173,11 @@ class Settings(BaseSettings):
     def public_base_url_resolved(self) -> str:
         if self.PUBLIC_BASE_URL:
             return str(self.PUBLIC_BASE_URL).rstrip('/')
-        host = '127.0.0.1' if self.SERVER_HOST in ('0.0.0.0', '::') else self.SERVER_HOST
+        host = (
+            '127.0.0.1'
+            if self.SERVER_HOST in ('0.0.0.0', '::')
+            else self.SERVER_HOST
+        )
         return f'http://{host}:{self.SERVER_PORT}'
 
     def discord_redirect_uri(self) -> str:
@@ -170,7 +192,9 @@ try:
     if settings.is_windows:
         logger.info('Running on Windows - LCU integration enabled')
     else:
-        logger.warning('Running on non-Windows system - LCU may have limited functionality')
+        logger.warning(
+            'Running on non-Windows system - LCU may have limited functionality'
+        )
 except Exception as e:
     logger.error(f'Failed to load settings: {e}')
     logger.error('Please check your .env file configuration')

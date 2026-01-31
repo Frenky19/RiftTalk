@@ -6,7 +6,6 @@ from typing import Any, Callable, Dict, Optional
 from app.config import settings
 from app.utils.lcu_connector import LCUConnector
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +65,8 @@ class LCUService:
                     # If still not connected, wait for next tick
                     if not self.lcu_connector.is_connected():
                         # If we were previously in a known phase and the client vanished,
-                        # emit a synthetic "None" phase once so the app can treat it as a leave/disconnect.
+                        # emit a synthetic "None" phase so the app treats it as
+                        # leave/disconnect.
                         if self._previous_phase not in (None, 'None'):
                             try:
                                 await self._handle_phase_change('None')
