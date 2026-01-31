@@ -12,6 +12,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.constants import (
+    MATCH_INFO_TTL_SECONDS,
+    MATCH_NOTIFY_RETRY_BASE_SECONDS,
+    MATCH_NOTIFY_RETRY_MAX_SECONDS,
+)
 from app.database import redis_manager
 from app.endpoints import auth, discord, lcu, voice
 from app.services.lcu_service import lcu_service
@@ -188,7 +193,10 @@ async def handle_champ_select(event_data: dict):
                     'saved_at': datetime.now(timezone.utc).isoformat(),
                 }
                 await redis_manager.redis.hset(match_info_key, mapping=match_info)
-                await redis_manager.redis.expire(match_info_key, 3600)
+                await redis_manager.redis.expire(
+                    match_info_key,
+                    MATCH_INFO_TTL_SECONDS,
+                )
                 logger.info(
                     f'Saved champ select info for match {match_id}, '
                     f'waiting for match start'
@@ -292,7 +300,10 @@ async def handle_match_start():
                     'notify_next_retry_ts': existing.get('notify_next_retry_ts', '0'),
                 },
             )
-            await redis_manager.redis.expire(match_info_key, 3600)
+            await redis_manager.redis.expire(
+                match_info_key,
+                MATCH_INFO_TTL_SECONDS,
+            )
         except Exception:
             pass
         try:
@@ -342,7 +353,10 @@ async def handle_match_start():
                 )
             except Exception:
                 fail_count = 1
-            delay = min(300, 5 * (2 ** max(0, fail_count - 1)))
+            delay = min(
+                MATCH_NOTIFY_RETRY_MAX_SECONDS,
+                MATCH_NOTIFY_RETRY_BASE_SECONDS * (2 ** max(0, fail_count - 1)),
+            )
             try:
                 await redis_manager.redis.hset(
                     match_info_key,
@@ -500,7 +514,10 @@ async def link_discord_page():
     link_discord_file = os.path.join(static_dir, 'link-discord.html')
     if os.path.exists(link_discord_file):
         return FileResponse(link_discord_file)
-    raise HTTPException(status_code=404, detail='Link Discord page not found')
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail='Link Discord page not found',
+    )
 
 
 app.include_router(auth.router, prefix='/api')

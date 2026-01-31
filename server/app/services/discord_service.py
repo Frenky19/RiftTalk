@@ -8,6 +8,7 @@ import discord
 from discord import CategoryChannel, Guild, Role, VoiceChannel
 
 from app.config import settings
+from app.constants import DISCORD_INVITE_TTL_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -781,7 +782,7 @@ class DiscordService:
                 }
                 await redis_manager.redis.setex(
                     user_key,
-                    3600,
+                    DISCORD_INVITE_TTL_SECONDS,
                     json.dumps(match_info)
                 )
                 return True
@@ -823,7 +824,7 @@ class DiscordService:
                 }
                 await redis_manager.redis.setex(
                     user_key,
-                    3600,
+                    DISCORD_INVITE_TTL_SECONDS,
                     json.dumps(match_info)
                 )
                 return True
@@ -1181,7 +1182,11 @@ class DiscordService:
                 )
                 # Store the invite for the user
                 invite_key = f'server_invite:{discord_user_id}'
-                await redis_manager.redis.setex(invite_key, 3600, invite.url)
+                await redis_manager.redis.setex(
+                    invite_key,
+                    DISCORD_INVITE_TTL_SECONDS,
+                    invite.url,
+                )
                 # You could also send a DM to the user if possible
                 await self._send_dm_to_user(
                     discord_user_id,

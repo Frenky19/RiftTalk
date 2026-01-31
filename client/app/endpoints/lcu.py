@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.database import redis_manager
 from app.services.lcu_service import lcu_service
@@ -20,7 +20,8 @@ async def lcu_connection_status(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'LCU connection error: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'LCU connection error: {str(e)}',
         )
 
 
@@ -31,7 +32,10 @@ async def get_current_game_info(
     """Get detailed information about current game."""
     try:
         if not lcu_service.lcu_connector.is_connected():
-            raise HTTPException(status_code=503, detail='LCU not connected')
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail='LCU not connected',
+            )
         session = await lcu_service.lcu_connector.get_current_session()
         if not session:
             return {'status': 'no_active_session'}
@@ -45,7 +49,8 @@ async def get_current_game_info(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Failed to get game info: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to get game info: {str(e)}',
         )
 
 
@@ -56,7 +61,10 @@ async def get_current_summoner_info(
     """Get information about current summoner."""
     try:
         if not lcu_service.lcu_connector.is_connected():
-            raise HTTPException(status_code=503, detail='LCU not connected')
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail='LCU not connected',
+            )
         summoner = await lcu_service.lcu_connector.get_current_summoner()
         if not summoner:
             return {'status': 'no_summoner_info'}
@@ -66,7 +74,8 @@ async def get_current_summoner_info(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Failed to get summoner info: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to get summoner info: {str(e)}',
         )
 
 
@@ -77,7 +86,10 @@ async def get_current_teams(
     """Get team information in current game."""
     try:
         if not lcu_service.lcu_connector.is_connected():
-            raise HTTPException(status_code=503, detail='LCU not connected')
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail='LCU not connected',
+            )
         teams = await lcu_service.lcu_connector.get_teams()
         if not teams:
             return {
@@ -92,7 +104,8 @@ async def get_current_teams(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Failed to get teams: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to get teams: {str(e)}',
         )
 
 
@@ -109,7 +122,8 @@ async def get_champ_select_debug(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Champ select debug failed: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Champ select debug failed: {str(e)}',
         )
 
 
@@ -120,7 +134,10 @@ async def get_session_debug(
     """Debug endpoint to see raw session data."""
     try:
         if not lcu_service.lcu_connector.is_connected():
-            raise HTTPException(status_code=503, detail='LCU not connected')
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail='LCU not connected',
+            )
         session = await lcu_service.lcu_connector.get_current_session()
         if not session:
             return {'status': 'no_session'}
@@ -141,7 +158,8 @@ async def get_session_debug(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Debug failed: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Debug failed: {str(e)}',
         )
 
 
@@ -168,7 +186,8 @@ async def toggle_auto_voice(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Failed to update settings: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to update settings: {str(e)}',
         )
 
 
@@ -187,7 +206,8 @@ async def force_lcu_reconnect(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f'Failed to reconnect: {str(e)}'
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to reconnect: {str(e)}',
         )
 
 

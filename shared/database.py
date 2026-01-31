@@ -12,6 +12,12 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from shared.constants import (
+    DEFAULT_ROOM_TTL_SECONDS,
+    DEFAULT_USER_MATCH_TTL_SECONDS,
+    REDIS_RECONNECT_INTERVAL_SECONDS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -470,13 +476,15 @@ class DatabaseManager:
             if redis_url and not str(redis_url).strip().lower().startswith('memory'):
                 now = time.monotonic()
                 if (
-                    now - self._last_reconnect_attempt > 5
+                    now - self._last_reconnect_attempt
+                    > REDIS_RECONNECT_INTERVAL_SECONDS
                     and not self._reconnect_in_flight
                 ):
                     with self._reconnect_lock:
                         now = time.monotonic()
                         if (
-                            now - self._last_reconnect_attempt > 5
+                            now - self._last_reconnect_attempt
+                            > REDIS_RECONNECT_INTERVAL_SECONDS
                             and not self._reconnect_in_flight
                         ):
                             self._last_reconnect_attempt = now
@@ -563,7 +571,7 @@ class DatabaseManager:
         room_id: str,
         match_id: str,
         room_data: dict,
-        ttl: int = 3600
+        ttl: int = DEFAULT_ROOM_TTL_SECONDS
     ) -> bool:
         """Create voice room with proper data serialization."""
         try:
@@ -680,7 +688,7 @@ class DatabaseManager:
         self,
         discord_user_id: int,
         match_info: dict,
-        ttl: int = 3600
+        ttl: int = DEFAULT_USER_MATCH_TTL_SECONDS
     ) -> bool:
         """Save user match information for automatic voice channel manage."""
         try:

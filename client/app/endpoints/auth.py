@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from app.config import settings
+from app.constants import DISCORD_LINK_TTL_SECONDS, USER_SESSION_TTL_SECONDS
 from app.database import redis_manager
 from app.schemas import TokenResponse
 from app.services.lcu_service import lcu_service
@@ -62,7 +63,7 @@ async def login_for_access_token(
         # Authentication through LCU
         if not lcu_service.lcu_connector.is_connected():
             raise HTTPException(
-                status_code=503,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail='LCU not connected. Please launch League of Legends.'
             )
         current_summoner = (
@@ -70,7 +71,7 @@ async def login_for_access_token(
         )
         if not current_summoner:
             raise HTTPException(
-                status_code=404,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail='No summoner data available'
             )
         summoner_id = str(current_summoner.get('summonerId'))
@@ -93,7 +94,10 @@ async def login_for_access_token(
             'summoner_name': summoner_name,
             'last_login': datetime.now(timezone.utc).isoformat()
         })
-        await redis_manager.redis.expire(user_key, 3600 * 24 * 7)
+        await redis_manager.redis.expire(
+            user_key,
+            USER_SESSION_TTL_SECONDS,
+        )
         return TokenResponse(
             access_token=access_token,
             token_type='bearer',
@@ -103,7 +107,7 @@ async def login_for_access_token(
     except Exception as e:
         logger.error(f'Authentication error: {e}')
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Authentication failed: {str(e)}'
         )
 
@@ -132,7 +136,7 @@ async def real_authentication():
     try:
         if not lcu_service.lcu_connector.is_connected():
             raise HTTPException(
-                status_code=503,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail='LCU not connected. Please launch League of Legends.'
             )
         current_summoner = (
@@ -140,7 +144,7 @@ async def real_authentication():
         )
         if not current_summoner:
             raise HTTPException(
-                status_code=404,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail='No summoner data available'
             )
         summoner_id = str(current_summoner.get('summonerId'))
@@ -163,7 +167,10 @@ async def real_authentication():
             'summoner_name': summoner_name,
             'last_login': datetime.now(timezone.utc).isoformat()
         })
-        await redis_manager.redis.expire(user_key, 3600 * 24 * 7)
+        await redis_manager.redis.expire(
+            user_key,
+            USER_SESSION_TTL_SECONDS,
+        )
         return TokenResponse(
             access_token=access_token,
             token_type='bearer',
@@ -172,7 +179,7 @@ async def real_authentication():
         )
     except Exception as e:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Authentication failed: {str(e)}'
         )
 
@@ -199,7 +206,7 @@ async def auto_authenticate():
 
         if not lcu_service.lcu_connector.is_connected():
             raise HTTPException(
-                status_code=503,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={
                     'type': 'lcu_not_connected',
                     'message': (
@@ -214,7 +221,7 @@ async def auto_authenticate():
         current_summoner = await lcu_service.lcu_connector.get_current_summoner()
         if not current_summoner:
             raise HTTPException(
-                status_code=503,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={
                     'type': 'lcu_no_summoner',
                     'message': (
@@ -249,7 +256,10 @@ async def auto_authenticate():
             'last_login': datetime.now(timezone.utc).isoformat(),
             'auto_authenticated': 'true'
         })
-        await redis_manager.redis.expire(user_key, 3600 * 24 * 7)
+        await redis_manager.redis.expire(
+            user_key,
+            USER_SESSION_TTL_SECONDS,
+        )
 
         return TokenResponse(
             access_token=access_token,
@@ -262,7 +272,7 @@ async def auto_authenticate():
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Auto-authentication failed: {str(e)}'
         )
 
@@ -303,13 +313,13 @@ async def discord_oauth_login_url(
                 await remote_api.discord_login_url(summoner_id)
             )
         except RemoteAPIError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
     # --- Server/local OAuth (kept for compatibility;
     # normally server mode uses /api/public/discord/*) ---
     if not _discord_oauth_enabled():
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 'Discord OAuth is not configured. Set '
                 'DISCORD_OAUTH_CLIENT_ID and DISCORD_OAUTH_CLIENT_SECRET in .env'
@@ -355,7 +365,7 @@ async def discord_oauth_login(
         return RedirectResponse(url=body['url'])
     except Exception:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Failed to build Discord OAuth URL',
         )
 
@@ -375,20 +385,20 @@ async def discord_oauth_callback(
                 '<h3>This client is in remote mode. OAuth callback is handled '
                 'by the server.</h3>'
             ),
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     if not _discord_oauth_enabled():
         return HTMLResponse(
             '<h3>Discord OAuth is not configured on this app.</h3>',
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
     state_key = f'oauth_state:{state}'
     raw = await redis_manager.redis.get(state_key)
     if not raw:
         return HTMLResponse(
             '<h3>Invalid or expired OAuth state. Please try linking again.</h3>',
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
     try:
         payload = json.loads(raw)
@@ -398,7 +408,7 @@ async def discord_oauth_callback(
     if not summoner_id:
         return HTMLResponse(
             '<h3>Could not resolve summoner context. Please retry.</h3>',
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
     # One-time use
     try:
@@ -429,14 +439,14 @@ async def discord_oauth_callback(
                         '<h3>Failed to obtain access token from Discord.</h3>'
                         f'<pre>{token_text}</pre>'
                     ),
-                    status_code=400
+                    status_code=status.HTTP_400_BAD_REQUEST
                 )
             token_data = token_data or {}
             access_token = token_data.get('access_token')
             if not access_token:
                 return HTMLResponse(
                     '<h3>No access token returned by Discord.</h3>',
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
             status_code, me_text, me = await _request_with_retry(
@@ -451,7 +461,7 @@ async def discord_oauth_callback(
                         '<h3>Failed to fetch user profile from Discord.</h3>'
                         f'<pre>{me_text}</pre>'
                     ),
-                    status_code=400
+                    status_code=status.HTTP_400_BAD_REQUEST
                 )
             me = me or {}
         discord_user_id = str(me.get('id') or '')
@@ -459,7 +469,7 @@ async def discord_oauth_callback(
         if not discord_user_id:
             return HTMLResponse(
                 '<h3>Discord did not return a user id.</h3>',
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
         # Persist link (hash format)
         user_key = f'user:{summoner_id}'
@@ -477,7 +487,16 @@ async def discord_oauth_callback(
             },
         )
         # Keep for 30 days (refreshable)
-        await redis_manager.redis.expire(user_key, 30 * 24 * 3600)
-        return RedirectResponse(url='/static/oauth_success.html', status_code=302)
+        await redis_manager.redis.expire(
+            user_key,
+            DISCORD_LINK_TTL_SECONDS,
+        )
+        return RedirectResponse(
+            url='/static/oauth_success.html',
+            status_code=status.HTTP_302_FOUND,
+        )
     except Exception as e:
-        return HTMLResponse(f'<h3>OAuth error: {str(e)}</h3>', status_code=500)
+        return HTMLResponse(
+            f'<h3>OAuth error: {str(e)}</h3>',
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

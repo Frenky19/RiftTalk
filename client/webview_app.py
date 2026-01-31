@@ -315,7 +315,6 @@ def main():
             asyncio.run(
                 notify_match_leave_on_shutdown(
                     allow_lcu=False,
-                    timeout_seconds=5,
                 )
             )
         except Exception as e:

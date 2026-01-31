@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.remote_api import RemoteAPIError, remote_api
 from app.utils.security import get_current_user
@@ -16,13 +16,22 @@ async def reconnect_voice(current_user: dict = Depends(get_current_user)):
     try:
         summoner_id = str(current_user.get('sub') or '')
         if not summoner_id:
-            raise HTTPException(status_code=401, detail='Not authenticated')
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail='Not authenticated',
+            )
         try:
             return await remote_api.voice_reconnect({'summoner_id': summoner_id})
         except RemoteAPIError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(e),
+            )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f'Reconnect failed: {e}')
-        raise HTTPException(status_code=500, detail='Reconnect failed')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Reconnect failed',
+        )

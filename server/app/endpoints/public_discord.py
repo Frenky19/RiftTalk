@@ -8,10 +8,17 @@ from typing import Any
 
 import aiohttp
 import discord as discordpy
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.config import settings
+from app.constants import (
+    DISCORD_LINK_TTL_SECONDS,
+    DISCORD_OAUTH_HTTP_TIMEOUT_SECONDS,
+    REQUEST_RETRY_BACKOFF_MAX_SECONDS,
+    REQUEST_RETRY_BACKOFF_START_SECONDS,
+    REQUEST_RETRY_MAX_ATTEMPTS,
+)
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 from app.utils.remote_key import require_client_key
@@ -35,8 +42,8 @@ async def _request_with_retry(
     **kwargs,
 ):
     """Discord HTTP with simple retry/backoff for 429/5xx."""
-    backoff = 1
-    for attempt in range(3):
+    backoff = REQUEST_RETRY_BACKOFF_START_SECONDS
+    for attempt in range(REQUEST_RETRY_MAX_ATTEMPTS):
         async with session.request(method, url, **kwargs) as resp:
             text = await resp.text()
             data = None
@@ -51,7 +58,10 @@ async def _request_with_retry(
                 except Exception:
                     sleep_for = backoff
                 await asyncio.sleep(sleep_for)
-                backoff = min(backoff * 2, 8)
+                backoff = min(
+                    backoff * 2,
+                    REQUEST_RETRY_BACKOFF_MAX_SECONDS,
+                )
                 continue
             return resp.status, text, data
 
@@ -63,7 +73,7 @@ async def discord_login_url(
 ):
     if not _oauth_enabled():
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail='Discord OAuth is not configured on server',
         )
 
@@ -98,7 +108,7 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
     if not _oauth_enabled():
         return HTMLResponse(
             '<h3>Discord OAuth is not configured on this server.</h3>',
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     state_key = f'oauth_state:{state}'
@@ -106,7 +116,7 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
     if not raw:
         return HTMLResponse(
             '<h3>Invalid or expired OAuth state. Please try linking again.</h3>',
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
@@ -117,7 +127,7 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
     if not summoner_id:
         return HTMLResponse(
             '<h3>Could not resolve summoner context. Please retry.</h3>',
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
@@ -128,7 +138,9 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
     redirect_uri = settings.discord_redirect_uri()
 
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
+        timeout = aiohttp.ClientTimeout(
+            total=DISCORD_OAUTH_HTTP_TIMEOUT_SECONDS
+        )
         async with aiohttp.ClientSession(timeout=timeout) as session:
             status_code, token_text, token_data = await _request_with_retry(
                 session,
@@ -149,14 +161,14 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
                         '<h3>Failed to obtain access token from Discord.</h3>'
                         f'<pre>{token_text}</pre>'
                     ),
-                    status_code=400
+                    status_code=status.HTTP_400_BAD_REQUEST
                 )
             token_data = token_data or {}
             access_token = token_data.get('access_token')
             if not access_token:
                 return HTMLResponse(
                     '<h3>No access token returned by Discord.</h3>',
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
             status_code, me_text, me = await _request_with_retry(
@@ -171,7 +183,7 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
                         '<h3>Failed to fetch user profile from Discord.</h3>'
                         f'<pre>{me_text}</pre>'
                     ),
-                    status_code=400
+                    status_code=status.HTTP_400_BAD_REQUEST
                 )
             me = me or {}
         discord_user_id = str(me.get('id') or '')
@@ -179,7 +191,7 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
         if not discord_user_id:
             return HTMLResponse(
                 '<h3>Discord did not return a user id.</h3>',
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -195,13 +207,19 @@ async def discord_callback(code: str = Query(...), state: str = Query(...)):
                 'link_method': 'oauth2',
             },
         )
-        await redis_manager.redis.expire(user_key, 30 * 24 * 3600)
+        await redis_manager.redis.expire(
+            user_key,
+            DISCORD_LINK_TTL_SECONDS,
+        )
 
         # Redirect to a custom success page (served from /static)
         # so the UI/webview can show a nicer screen (and optionally auto-close).
         return RedirectResponse(url='/static/oauth_success.html')
     except Exception as e:
-        return HTMLResponse(f'<h3>OAuth error: {str(e)}</h3>', status_code=500)
+        return HTMLResponse(
+            f'<h3>OAuth error: {str(e)}</h3>',
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @router.get('/linked-account')

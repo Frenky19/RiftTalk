@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
+from app.constants import USER_MATCH_TTL_SECONDS
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 
@@ -217,7 +218,10 @@ class VoiceService:
                 }
                 # Save as hash for consistency
                 await self.redis.redis.hset(user_match_key, mapping=match_info)
-                await self.redis.redis.expire(user_match_key, 3600)  # 1 hour
+                await self.redis.redis.expire(
+                    user_match_key,
+                    USER_MATCH_TTL_SECONDS,
+                )
                 logger.debug(
                     f'Saved match info for player {player_id}: {match_info}'
                 )
@@ -456,7 +460,10 @@ class VoiceService:
                 'joined_at': datetime.now(timezone.utc).isoformat()
             }
             await self.redis.redis.hset(user_match_key, mapping=match_info)
-            await self.redis.redis.expire(user_match_key, 3600)
+            await self.redis.redis.expire(
+                user_match_key,
+                USER_MATCH_TTL_SECONDS,
+            )
             return True
         except Exception as e:
             logger.error(f'Failed to add player to existing room: {e}')

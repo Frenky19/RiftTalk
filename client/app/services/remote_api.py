@@ -8,6 +8,10 @@ from typing import Any, Dict, Optional
 import aiohttp
 
 from app.config import settings
+from app.constants import (
+    REMOTE_API_HEALTH_TIMEOUT_SECONDS,
+    REMOTE_API_TIMEOUT_SECONDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +54,7 @@ class RemoteAPI:
         method: str,
         path: str,
         json_body: Optional[dict] = None,
-        timeout: int = 15,
+        timeout: int = REMOTE_API_TIMEOUT_SECONDS,
     ) -> Any:
         if not self.base_url:
             raise RemoteAPIError('REMOTE_SERVER_URL is not configured')
@@ -89,7 +93,11 @@ class RemoteAPI:
                 return data if data is not None else text
 
     async def health(self) -> Any:
-        return await self._request('GET', '/api/health', timeout=10)
+        return await self._request(
+            'GET',
+            '/api/health',
+            timeout=REMOTE_API_HEALTH_TIMEOUT_SECONDS,
+        )
 
     async def discord_login_url(self, summoner_id: str) -> Dict[str, Any]:
         return await self._request(

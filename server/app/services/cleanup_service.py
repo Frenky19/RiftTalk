@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
+from app.constants import DISCORD_GC_INTERVAL_MINUTES
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
 
@@ -174,8 +175,10 @@ class CleanupService:
             if not discord_service.connected:
                 return
             now = datetime.now(timezone.utc)
-            # run at most every 30 minutes
-            if (now - self._last_discord_gc) < timedelta(minutes=30):
+            # run at most every N minutes
+            if (now - self._last_discord_gc) < timedelta(
+                minutes=DISCORD_GC_INTERVAL_MINUTES
+            ):
                 return
             self._last_discord_gc = now
             await discord_service.garbage_collect_orphaned_matches(

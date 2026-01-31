@@ -3,8 +3,14 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.constants import (
+    MATCH_START_DEBOUNCE_SECONDS,
+    ROOM_CREATE_LOCK_TTL_SECONDS,
+    ROOM_CREATE_WAIT_ATTEMPTS,
+    ROOM_CREATE_WAIT_SLEEP_SECONDS,
+)
 from app.database import redis_manager
 from app.services.discord_service import discord_service
 from app.services.voice_service import voice_service
@@ -121,16 +127,25 @@ async def client_match_start(
     red_team = payload.get('red_team') or []
 
     if not match_id or not match_id.startswith('match_'):
-        raise HTTPException(status_code=400, detail='Invalid match_id')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Invalid match_id',
+        )
     if not summoner_id:
-        raise HTTPException(status_code=400, detail='Missing summoner_id')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Missing summoner_id',
+        )
 
     team_name = _get_team_name(summoner_id, blue_team, red_team)
 
     # --- Anti-spam / idempotency guards ---
     # 1) Per-player debounce (prevents role spam & race conditions)
     player_lock_key = f'lock:matchstart:{match_id}:{summoner_id}'
-    got_player_lock = await _acquire_lock(player_lock_key, ttl_seconds=10)
+    got_player_lock = await _acquire_lock(
+        player_lock_key,
+        ttl_seconds=MATCH_START_DEBOUNCE_SECONDS,
+    )
 
     if not got_player_lock:
         room_data = await redis_manager.get_voice_room_by_match(match_id) or {}
@@ -158,7 +173,10 @@ async def client_match_start(
 
     # 2) Per-match room creation lock (only one creator at a time)
     room_lock_key = f'lock:roomcreate:{match_id}'
-    got_room_lock = await _acquire_lock(room_lock_key, ttl_seconds=30)
+    got_room_lock = await _acquire_lock(
+        room_lock_key,
+        ttl_seconds=ROOM_CREATE_LOCK_TTL_SECONDS,
+    )
 
     if got_room_lock:
         all_players = [str(x) for x in (blue_team + red_team)]
@@ -169,10 +187,10 @@ async def client_match_start(
         )
     else:
         # Another request is likely creating it. Wait briefly until room appears.
-        for _ in range(10):  # up to ~1s
+        for _ in range(ROOM_CREATE_WAIT_ATTEMPTS):  # up to ~1s
             if await redis_manager.get_voice_room_by_match(match_id):
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(ROOM_CREATE_WAIT_SLEEP_SECONDS)
 
     room_data = await redis_manager.get_voice_room_by_match(match_id) or {}
     discord_channels = _parse_discord_channels(room_data)
@@ -224,7 +242,10 @@ async def client_match_end(
 ):
     match_id = str(payload.get('match_id') or '')
     if not match_id:
-        raise HTTPException(status_code=400, detail='Missing match_id')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Missing match_id',
+        )
 
     try:
         await discord_service.cleanup_match_channels({'match_id': match_id})
@@ -248,7 +269,7 @@ async def client_match_leave(
     summoner_id = str(payload.get('summoner_id') or '')
     if not match_id or not summoner_id:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail='Missing match_id or summoner_id',
         )
 
@@ -276,7 +297,10 @@ async def client_voice_reconnect(
     """Reconnect a user to their match role/channel on the server side."""
     summoner_id = str(payload.get('summoner_id') or '')
     if not summoner_id:
-        raise HTTPException(status_code=400, detail='Missing summoner_id')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Missing summoner_id',
+        )
 
     match_id = await voice_service.get_active_match_id_for_summoner(summoner_id)
     if not match_id:
@@ -296,11 +320,17 @@ async def client_voice_reconnect(
             match_id = None
 
     if not match_id:
-        raise HTTPException(status_code=404, detail='Active match not found')
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='Active match not found',
+        )
 
     room_data = await voice_service.redis.get_voice_room_by_match(match_id)
     if not room_data:
-        raise HTTPException(status_code=404, detail='Voice room not found')
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='Voice room not found',
+        )
 
     blue = voice_service.safe_json_parse(room_data.get('blue_team'), []) or []
     red = voice_service.safe_json_parse(room_data.get('red_team'), []) or []
@@ -310,21 +340,24 @@ async def client_voice_reconnect(
         team_name = 'Red Team'
     else:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail='Player not found in room teams',
         )
 
     discord_user_id = await _get_discord_user_id(summoner_id)
     if not discord_user_id:
         raise HTTPException(
-            status_code=409,
+            status_code=status.HTTP_409_CONFLICT,
             detail='Discord is not linked for this summoner',
         )
 
     try:
         discord_user_id_int = int(discord_user_id)
     except Exception:
-        raise HTTPException(status_code=400, detail='Invalid discord_user_id')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Invalid discord_user_id',
+        )
 
     assigned = await discord_service.assign_player_to_team(
         discord_user_id=discord_user_id_int,

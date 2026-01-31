@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Tuple
 
 from app.config import settings
+from app.constants import SHUTDOWN_MATCH_LEAVE_TIMEOUT_SECONDS
 from app.database import redis_manager
 from app.services.lcu_service import lcu_service
 from app.services.remote_api import RemoteAPIError, remote_api
@@ -124,7 +125,7 @@ async def _resolve_shutdown_match_context(
 
 async def notify_match_leave_on_shutdown(
     allow_lcu: bool = True,
-    timeout_seconds: int = 5,
+    timeout_seconds: int = SHUTDOWN_MATCH_LEAVE_TIMEOUT_SECONDS,
 ) -> None:
     """Best-effort notify remote server if the app closes mid-match."""
     if not settings.is_client:

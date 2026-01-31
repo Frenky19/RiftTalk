@@ -2,8 +2,12 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.constants import (
+    MATCH_INFO_TTL_SECONDS,
+    MATCH_STATUS_REMOTE_REFRESH_SECONDS,
+)
 from app.database import redis_manager
 from app.services.lcu_service import lcu_service
 from app.services.remote_api import RemoteAPIError, remote_api
@@ -12,9 +16,6 @@ from app.utils.security import get_current_user
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/discord', tags=['discord-client'])
-
-MATCH_STATUS_REMOTE_REFRESH_SECONDS = 30
-
 
 def _decode_redis_value(value):
     """Decode bytes values returned by Redis into UTF-8 strings."""
@@ -62,7 +63,7 @@ async def get_linked_discord_account(
         summoner_id = str(current_user['sub'])
         return await remote_api.linked_account(summoner_id)
     except RemoteAPIError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
 @router.get('/user-server-status/{discord_user_id}')
@@ -73,7 +74,7 @@ async def check_user_server_status(
     try:
         return await remote_api.user_server_status(str(discord_user_id))
     except RemoteAPIError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
 @router.get('/user-match-info/{summoner_id}')
@@ -84,7 +85,7 @@ async def get_user_match_info(
     """Best-effort local match info for compatibility."""
     try:
         if str(current_user.get('sub')) != str(summoner_id):
-            raise HTTPException(status_code=403, detail='Forbidden')
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Forbidden')
         match_info_key = f'user_match:{summoner_id}'
         match_id = _decode_redis_value(
             await redis_manager.redis.hget(match_info_key, 'match_id')
@@ -98,7 +99,10 @@ async def get_user_match_info(
         raise
     except Exception as e:
         logger.error(f'Failed to get user match info: {e}')
-        raise HTTPException(status_code=500, detail='Failed to get user match info')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to get user match info',
+        )
 
 
 @router.get('/match-status/{summoner_id}')
@@ -212,7 +216,10 @@ async def get_match_status(
                             'remote_status_cached_at': str(now_ts),
                         },
                     )
-                    await redis_manager.redis.expire(match_info_key, 3600)
+                    await redis_manager.redis.expire(
+                        match_info_key,
+                        MATCH_INFO_TTL_SECONDS,
+                    )
                 except Exception:
                     pass
         except RemoteAPIError as e:
@@ -225,7 +232,10 @@ async def get_match_status(
                     'assigned': _parse_bool(cached.get('remote_assigned')),
                 }
             else:
-                raise HTTPException(status_code=502, detail=str(e))
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=str(e),
+                )
 
         return {
             'match_id': remote.get('match_id') or match_id,
@@ -242,4 +252,7 @@ async def get_match_status(
         raise
     except Exception as e:
         logger.error(f'Failed to get match status: {e}')
-        raise HTTPException(status_code=500, detail='Failed to get match status')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to get match status',
+        )

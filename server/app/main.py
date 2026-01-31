@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.constants import RATE_LIMIT_KEY_TTL_SECONDS, RATE_LIMIT_WINDOW_SECONDS
 from app.database import redis_manager
 from app.endpoints import client_remote, public_discord
 from app.services.cleanup_service import cleanup_service
@@ -120,12 +121,15 @@ async def rate_limit_middleware(request: Request, call_next):
         if not client_ip:
             client_ip = request.client.host if request.client else 'unknown'
 
-        window = int(time.time() // 60)
+        window = int(time.time() // RATE_LIMIT_WINDOW_SECONDS)
         key = f'rl:{client_ip}:{window}'
         try:
             count = await redis_manager.redis.incr(key, 1)
             if int(count) == 1:
-                await redis_manager.redis.expire(key, 120)
+                await redis_manager.redis.expire(
+                    key,
+                    RATE_LIMIT_KEY_TTL_SECONDS,
+                )
             limit = int(getattr(settings, 'RIFT_RATE_LIMIT_PER_MINUTE', 60) or 60)
             if int(count) > limit:
                 return JSONResponse(
