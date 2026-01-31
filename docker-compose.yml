@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7
@@ -18,6 +16,8 @@ services:
       - REDIS_URL=redis://redis:6379
     depends_on:
       - redis
+    ports:
+      - "8001:8001"
     restart: unless-stopped
 
   nginx:
