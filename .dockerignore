@@ -1,0 +1,16 @@
+.git
+.venv
+.ruff_cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+build/
+dist/
+signing_certs/
+hooks/
+client/
+server/.env
+client/.env
+.env
