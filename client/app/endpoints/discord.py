@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/discord', tags=['discord-client'])
 
-MATCH_STATUS_REMOTE_REFRESH_SECONDS = 10
+MATCH_STATUS_REMOTE_REFRESH_SECONDS = 30
 
 
 def _decode_redis_value(value):
