@@ -1,144 +1,139 @@
-# RiftTalk (командный голосовой чат через Discord)
+﻿# RiftTalk (командный голосовой чат через Discord)
 
 [English](README.md) | [Русский](README.ru.md)
 
-Windows‑приложение, которое автоматически объединяет игроков одной команды (которые тоже запустили приложение) в временные Discord‑голосовые каналы **в момент начала матча** и полностью очищает всё **после окончания матча**.
+RiftTalk состоит из двух частей:
 
-> **Strict mode**: приложение требует успешного подключения к Discord‑боту на старте.
+- Server: FastAPI + Discord-бот, который создает и удаляет временные голосовые каналы.
+- Client: Windows-приложение (WebView), которое отслеживает матч через LCU и
+  отправляет события на сервер.
+
+> Strict mode: сервер обязан успешно подключиться к Discord при старте;
+> никаких скрытых демо-режимов.
 
 ---
 
-## Скачать рабочий собранный .exe можно по ссылке: https://github.com/Frenky19/RiftTalk-Desktop-App
+## Десктопный клиент
+
+Готовый .exe: https://github.com/Frenky19/RiftTalk-Desktop-App
 
 ---
 
-## Что делает приложение
+## Структура репозитория
 
-- Отслеживает состояние матча через **League Client (LCU)** на Windows.
-- При старте матча:
-  - Создаёт временный **голосовой канал** для Blue/Red команды.
-  - Выдаёт доступ через роли/права.
-  - Перемещает/подключает привязанных пользователей в нужный канал.
-- После окончания матча:
-  - Снимает роли / выгоняет пользователей из временного канала.
-  - Удаляет временные каналы.
-- Есть встроенный интерфейс на WebView.
+- `client/` - Windows-приложение (WebView UI + LCU)
+- `server/` - FastAPI сервер + Discord-бот
+- `shared/` - общий код и модели
+- `nginx/` - опциональные конфиги reverse proxy
 
 ---
 
 ## Требования
 
-- **Windows 10/11**
-- **Python 3.11+** (рекомендуется) или собранная версия (см. Build)
-- **Discord‑сервер**, где у вас есть права добавлять бота и управлять каналами/ролями
-- Установленная League of Legends и запущенный **League Client**
+Сервер:
+- Python 3.11+ (или Docker)
+- Discord-бот и права на управление каналами/ролями
+- Redis (опционально; есть in-memory fallback)
 
----
-
-## Быстрый старт (разработка)
-
-1) Виртуальное окружение и зависимости
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-2) Создайте `.env` в корне проекта (см. переменные ниже)
-
-3) Запуск
-
-```bash
-python webview_app.py
-```
+Клиент:
+- Windows 10/11
+- Установленная League of Legends и запущенный League Client
 
 ---
 
 ## Переменные окружения
 
-Создайте `.env` в корне проекта:
+Скопируйте `.env.example` в `server/.env` и `client/.env` и отредактируйте.
+
+Минимум для сервера (`server/.env`):
 
 ```ini
-# Обязательные (strict mode)
+APP_MODE=server
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8001
+RIFT_SHARED_KEY=CHANGE_ME
+JWT_SECRET_KEY=CHANGE_ME
+
 DISCORD_BOT_TOKEN=ВАШ_ТОКЕН_БОТА
-DISCORD_GUILD_ID=ID_ВАШЕГО_СЕРВЕРА
+DISCORD_GUILD_ID=ID_СЕРВЕРА
+DISCORD_OAUTH_CLIENT_ID=OAUTH_CLIENT_ID
+DISCORD_OAUTH_CLIENT_SECRET=OAUTH_CLIENT_SECRET
+PUBLIC_BASE_URL=http://ваш-домен-или-ip:8001
+# либо укажите DISCORD_OAUTH_REDIRECT_URI
+```
 
-# Опционально (рекомендуется)
-DISCORD_CATEGORY_ID=ID_КАТЕГОРИИ_ДЛЯ_КАНАЛОВ       # куда создавать временные каналы
-DISCORD_OAUTH_CLIENT_ID=CLIENT_ID_OAUTH            # если используете привязку аккаунта
-DISCORD_OAUTH_CLIENT_SECRET=CLIENT_SECRET_OAUTH
-DISCORD_OAUTH_REDIRECT_URI=http://127.0.0.1:PORT/discord/callback
+Минимум для клиента (`client/.env`):
 
-# Поведение приложения
-DEBUG=false
-REDIS_URL=memory://                                # по умолчанию: in-memory storage
+```ini
+APP_MODE=client
+REMOTE_SERVER_URL=http://127.0.0.1:8001
+RIFT_SHARED_KEY=CHANGE_ME
+JWT_SECRET_KEY=CHANGE_ME
 ```
 
 Примечания:
-- Если Redis недоступен, приложение может работать с in‑memory хранилищем.
-- Если обязательных Discord‑переменных нет или бот не подключается, приложение **не стартует**.
+- `RIFT_SHARED_KEY` должен совпадать на сервере и на клиенте.
+- Если Redis недоступен, приложение перейдет на in-memory хранилище.
 
 ---
 
-## Настройка Discord‑бота
+## Быстрый старт (разработка)
 
-1) Создайте приложение в Discord Developer Portal, добавьте **Bot**.
-2) Включите **Privileged Gateway Intents**, если требуется логикой проекта:
-   - *Server Members Intent* (часто нужен для надёжной работы с участниками/перемещением)
-3) Выдайте права боту:
-   - Manage Channels
-   - Manage Roles
-   - Move Members
-   - View Channels
-   - Connect / Speak
-4) Пригласите бота на сервер.
+Сервер:
 
-Важно: роль бота должна быть **выше** ролей, которыми он управляет (role hierarchy).
+```bash
+cd server
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+Клиент:
+
+```bash
+cd client
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python webview_app.py
+```
 
 ---
 
+## Docker (сервер)
 
-## Build (сборка)
+Локальный запуск:
 
-В репозитории есть скрипты для сборки Windows‑версии (конкретные шаги зависят от выбранного инструмента, например PyInstaller).
+```bash
+docker compose up --build redis server
+```
 
-Типовой запуск:
+Подробности — в `DEPLOY_DOCKER.md`.
+
+---
+
+## Тесты
+
+```bash
+pip install -r server/requirements.txt -r requirements-dev.txt
+pytest
+```
+
+---
+
+## Сборка (Windows клиент)
 
 ```bash
 python build.py
 ```
 
-Если меняете build‑пайплайн — сохраняйте **strict mode** (без «тихих» фоллбеков при проблемах с Discord).
-
----
-
-## Troubleshooting (частые проблемы)
-
-### Старт падает: “Discord connection failed”
-- Проверьте `DISCORD_BOT_TOKEN` и `DISCORD_GUILD_ID`
-- Убедитесь, что бот добавлен на сервер и онлайн
-- Проверьте права в категории/каналах и иерархию ролей
-
-### Не находится LCU
-- Запустите League Client и убедитесь, что существует `lockfile`
-- Запускайте приложение с тем же уровнем прав, что и клиент (не смешивайте Admin/не‑Admin)
-
 ---
 
 ## Безопасность
 
-- Никогда не коммитьте `.env` и токены бота.
-- Для локального OAuth используйте redirect на `127.0.0.1`.
-
----
-
-## Вклад в проект
-
-PR приветствуются:
-- фиксы и рефакторинг
-- улучшение логирования/диагностики
-- улучшения UI/UX WebView
+- Никогда не коммитьте `.env` и токены.
+- Используйте сильные секреты для `JWT_SECRET_KEY` и `RIFT_SHARED_KEY`.
 
 ---
 

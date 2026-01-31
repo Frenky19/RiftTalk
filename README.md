@@ -1,144 +1,139 @@
-# RiftTalk (Discord-integrated team voice)
+﻿# RiftTalk (Discord-integrated team voice)
 
-[English](README.md) | [Русский](README.ru.md)
+[English](README.md) | [Russian](README.ru.md)
 
-A Windows desktop app that automatically connects League of Legends teammates (who also run the app) into temporary Discord voice channels **at match start**, and cleans everything up **after the match**.
+RiftTalk is split into two parts:
 
-> **Strict mode**: the app requires a working Discord bot connection at startup (no demo/mock fallbacks).
+- Server: FastAPI + Discord bot that creates and cleans temporary voice channels.
+- Client: Windows desktop app (WebView) that detects match state via LCU and
+  calls the server.
+
+> Strict mode: the server must connect to Discord successfully on startup;
+> no silent demo fallbacks.
 
 ---
 
-## Download .exe build: https://github.com/Frenky19/RiftTalk-Desktop-App
+## Desktop client
+
+Prebuilt .exe: https://github.com/Frenky19/RiftTalk-Desktop-App
 
 ---
 
-## What it does
+## Repo layout
 
-- Detects match lifecycle via **League Client (LCU)** on Windows.
-- At match start:
-  - Creates a temporary **team voice channel** (Blue/Red).
-  - Grants access via roles/permissions.
-  - Moves/joins linked users into their team channel.
-- After match ends:
-  - Removes roles / kicks users from the temp channel.
-  - Deletes temporary channels.
-- Includes an embedded WebView UI.
+- `client/` - Windows app (WebView UI + LCU integration)
+- `server/` - FastAPI server + Discord bot
+- `shared/` - shared models/services
+- `nginx/` - optional reverse proxy configs
 
 ---
 
 ## Requirements
 
-- **Windows 10/11**
-- **Python 3.11+** (recommended) or a built build (see Build)
-- **Discord server** where you have permission to add a bot and manage channels/roles
-- League of Legends installed and the **League Client running**
+Server:
+- Python 3.11+ (or Docker)
+- Discord bot token and server permissions
+- Redis (optional; in-memory fallback is supported)
 
----
-
-## Quick start (development)
-
-1) Create venv and install dependencies
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-2) Create `.env` in the project root (see Environment variables below)
-
-3) Run
-
-```bash
-python webview_app.py
-```
+Client:
+- Windows 10/11
+- League of Legends + running League Client
 
 ---
 
 ## Environment variables
 
-Create a `.env` file in the project root:
+Copy `.env.example` into `server/.env` and `client/.env` and edit values.
+
+Minimum for server (`server/.env`):
 
 ```ini
-# Required (strict mode)
+APP_MODE=server
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8001
+RIFT_SHARED_KEY=CHANGE_ME
+JWT_SECRET_KEY=CHANGE_ME
+
 DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN
-DISCORD_GUILD_ID=YOUR_SERVER_ID
+DISCORD_GUILD_ID=YOUR_GUILD_ID
+DISCORD_OAUTH_CLIENT_ID=YOUR_OAUTH_CLIENT_ID
+DISCORD_OAUTH_CLIENT_SECRET=YOUR_OAUTH_CLIENT_SECRET
+PUBLIC_BASE_URL=http://your-domain-or-ip:8001
+# OR set DISCORD_OAUTH_REDIRECT_URI explicitly
+```
 
-# Optional (recommended)
-DISCORD_CATEGORY_ID=VOICE_CATEGORY_ID            # where to create temp channels
-DISCORD_OAUTH_CLIENT_ID=YOUR_OAUTH_CLIENT_ID     # if you use Discord account linking
-DISCORD_OAUTH_CLIENT_SECRET=YOUR_OAUTH_SECRET
-DISCORD_OAUTH_REDIRECT_URI=http://127.0.0.1:PORT/discord/callback
+Minimum for client (`client/.env`):
 
-# App behavior
-DEBUG=false
-REDIS_URL=memory://                              # default: in-memory storage
+```ini
+APP_MODE=client
+REMOTE_SERVER_URL=http://127.0.0.1:8001
+RIFT_SHARED_KEY=CHANGE_ME
+JWT_SECRET_KEY=CHANGE_ME
 ```
 
 Notes:
-- If `REDIS_URL` is not set or Redis is unavailable, the app can use in-memory storage.
-- If Discord required variables are missing or the bot cannot connect, the app **won’t start**.
+- `RIFT_SHARED_KEY` must match on server and client.
+- If Redis is not reachable, the app falls back to in-memory storage.
 
 ---
 
-## Discord bot setup
+## Quick start (development)
 
-1) Create an app in Discord Developer Portal, add a **Bot**.
-2) Enable **Privileged Gateway Intents** if your implementation needs them:
-   - *Server Members Intent* (often required to fetch/move members reliably)
-3) Grant permissions:
-   - Manage Channels
-   - Manage Roles
-   - Move Members
-   - View Channels
-   - Connect / Speak
-4) Invite the bot to your server.
+Server:
 
-Make sure your bot role is **above** any roles it needs to assign/manage.
+```bash
+cd server
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+Client:
+
+```bash
+cd client
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python webview_app.py
+```
 
 ---
 
+## Docker (server)
 
-## Build
+Local run:
 
-This repository includes scripts for building a distributable Windows app (exact build steps depend on your chosen toolchain, e.g. PyInstaller).
+```bash
+docker compose up --build redis server
+```
 
-Typical workflow:
+See `DEPLOY_DOCKER.md` for production deployment details.
+
+---
+
+## Tests
+
+```bash
+pip install -r server/requirements.txt -r requirements-dev.txt
+pytest
+```
+
+---
+
+## Build (Windows client)
 
 ```bash
 python build.py
 ```
 
-If you change build tooling, keep **strict mode** behavior: no silent fallbacks when Discord is not available.
-
----
-
-## Troubleshooting
-
-### App fails on startup: “Discord connection failed”
-- Check `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID`
-- Ensure the bot is added to the server and online
-- Verify category/channel permissions and role hierarchy
-
-### LCU not detected
-- Start League Client and ensure the `lockfile` exists
-- Run the app with normal user permissions (or match the permissions level of the League Client)
-
 ---
 
 ## Security notes
 
-- Keep `.env` private (never commit bot tokens).
-- Prefer `127.0.0.1` redirect URIs for local OAuth flows.
-
----
-
-## Contributing
-
-PRs are welcome:
-- Bug fixes and cleanup improvements
-- Better logging and diagnostics
-- UI/UX improvements for the WebView
+- Never commit `.env` files or bot tokens.
+- Use strong secrets for `JWT_SECRET_KEY` and `RIFT_SHARED_KEY`.
 
 ---
 
