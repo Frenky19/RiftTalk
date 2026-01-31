@@ -1,17 +1,25 @@
 [flake8]
-ignore = PT001
-max-line-length = 128
+ignore = PT001, W503
+max-line-length = 91
 paths = 
-    ./app
+    ./client
+    ./server
+    ./shared
 max-complexity = 32
 exclude = 
    tests
    venv
    env
+   __pycache__
+   .git
+   .ruff_cache
+   .mypy_cache
+   .pytest_cache
+   .tox
+   build
+   dist
    alembic/versions/*.py
-   build.py
-   sign_exe_manual.py
-   encrypted_env.py
+   .venv
 
 inline-quotes = '
 multiline-quotes = """
