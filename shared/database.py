@@ -571,7 +571,7 @@ class DatabaseManager:
                 f'Creating memory room: room:{room_id}, match_room:{match_id}'
             )
             # Save room_data
-            await self.redis.hset(f'room:{room_id}', room_data)
+            await self.redis.hset(f'room:{room_id}', mapping=room_data)
             # Set TTL for room
             await self.redis.expire(f'room:{room_id}', ttl)
             # Save match_id -> room_id relation
@@ -685,7 +685,7 @@ class DatabaseManager:
         """Save user match information for automatic voice channel manage."""
         try:
             key = f'user_discord:{discord_user_id}'
-            await self.redis.hset(key, match_info)
+            await self.redis.hset(key, mapping=match_info)
             await self.redis.expire(key, ttl)
             return True
         except Exception as e:
