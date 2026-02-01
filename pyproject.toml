@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 91
+target-version = "py311"
+src = ["client", "server", "shared"]
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "env",
+    "tests",
+    "venv",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "Q", "W"]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
+multiline-quotes = "double"
+docstring-quotes = "double"

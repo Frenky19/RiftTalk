@@ -1,0 +1,16 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: rifttalk-server:local
+
+  nginx:
+    volumes:
+      - ./nginx/conf.d.local:/etc/nginx/conf.d:ro
+    ports:
+      - "80:80"
+
+  certbot:
+    profiles:
+      - prod
