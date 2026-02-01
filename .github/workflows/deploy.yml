@@ -1,12 +1,19 @@
 name: Deploy
 
 on:
-  push:
-    branches: ["main"]
+  workflow_run:
+    workflows: ["Build & Push Docker Image"]
+    types:
+      - completed
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
