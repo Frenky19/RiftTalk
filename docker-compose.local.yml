@@ -2,3 +2,9 @@ services:
   nginx:
     volumes:
       - ./nginx/conf.d.local:/etc/nginx/conf.d:ro
+    ports:
+      - "80:80"
+
+  certbot:
+    profiles:
+      - prod
