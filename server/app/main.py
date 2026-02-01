@@ -21,6 +21,12 @@ from app.services.discord_service import discord_service
 logger = logging.getLogger(__name__)
 
 
+def _resolve_repo_root() -> str:
+    return os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+
+
 def _resolve_static_dir() -> str:
     env_dir = os.environ.get('RIFT_STATIC_DIR')
     if env_dir and os.path.exists(env_dir):
@@ -37,7 +43,28 @@ def _resolve_static_dir() -> str:
     return os.path.join(project_root, 'static')
 
 
+def _resolve_marketing_dir() -> str:
+    env_dir = os.environ.get('RIFT_MARKETING_DIR') or os.environ.get(
+        'RIFT_SITE_DIR'
+    )
+    if env_dir:
+        candidate = env_dir
+        if not os.path.isabs(candidate):
+            candidate = os.path.join(_resolve_repo_root(), candidate)
+        index_path = os.path.join(candidate, 'index.html')
+        if os.path.exists(index_path):
+            return candidate
+
+    default_dir = os.path.join(_resolve_repo_root(), 'rifttalk-site')
+    index_path = os.path.join(default_dir, 'index.html')
+    if os.path.exists(index_path):
+        return default_dir
+
+    return ''
+
+
 static_dir = _resolve_static_dir()
+marketing_dir = _resolve_marketing_dir()
 
 
 @asynccontextmanager
@@ -177,16 +204,6 @@ async def health():
     }
 
 
-@app.get('/')
-async def root():
-    return {
-        'message': 'RiftTalk Server API is running',
-        'status': 'healthy',
-        'platform': 'windows',
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-    }
-
-
 @app.get('/health')
 async def health_check():
     services = {
@@ -226,3 +243,30 @@ async def health_check():
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'message': message,
     })
+
+
+@app.get('/.git/{path:path}', include_in_schema=False)
+async def block_git_access(path: str):
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={'detail': 'Not found'},
+    )
+
+
+if marketing_dir:
+    app.mount(
+        '/',
+        StaticFiles(directory=marketing_dir, html=True),
+        name='marketing',
+    )
+    logger.info(f'Marketing site served from: {marketing_dir}')
+else:
+
+    @app.get('/')
+    async def root():
+        return {
+            'message': 'RiftTalk Server API is running',
+            'status': 'healthy',
+            'platform': 'windows',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }

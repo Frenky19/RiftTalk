@@ -11,6 +11,7 @@ dist/
 signing_certs/
 hooks/
 client/
+rifttalk-site/.git
 server/.env
 client/.env
 .env

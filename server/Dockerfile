@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r /app/server/requirements.txt
 
 COPY server /app/server
 COPY shared /app/shared
+COPY rifttalk-site /app/rifttalk-site
 
 WORKDIR /app/server
 

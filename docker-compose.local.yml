@@ -1,0 +1,4 @@
+services:
+  nginx:
+    volumes:
+      - ./nginx/conf.d.local:/etc/nginx/conf.d:ro

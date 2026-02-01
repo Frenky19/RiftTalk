@@ -33,6 +33,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/certbot:/var/www/certbot
       - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./rifttalk-site:/usr/share/nginx/html:ro
 
   certbot:
     image: certbot/certbot
