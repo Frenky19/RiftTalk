@@ -251,17 +251,7 @@ def _find_signtool_paths() -> list:
     else:
         arch_preference = ['x64', 'x86', 'arm64']
 
-    paths = [
-        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe',
-        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\signtool.exe',
-        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\arm64\signtool.exe',
-        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe',
-        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x86\signtool.exe',
-        r'C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe',
-        r'C:\Program Files (x86)\Windows Kits\10\bin\x86\signtool.exe',
-        r'C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Bin\signtool.exe',
-        'signtool.exe',
-    ]
+    paths = []
     kits_root = r'C:\Program Files (x86)\Windows Kits\10\bin'
     try:
         if os.path.isdir(kits_root):
@@ -274,9 +264,23 @@ def _find_signtool_paths() -> list:
             for ver in versions:
                 for arch in arch_preference:
                     candidate = os.path.join(kits_root, ver, arch, 'signtool.exe')
-                    paths.insert(0, candidate)
+                    paths.append(candidate)
     except Exception:
         pass
+    fallback_paths = [
+        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe',
+        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\signtool.exe',
+        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\arm64\signtool.exe',
+        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe',
+        r'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x86\signtool.exe',
+        r'C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe',
+        r'C:\Program Files (x86)\Windows Kits\10\bin\x86\signtool.exe',
+        r'C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Bin\signtool.exe',
+        'signtool.exe',
+    ]
+    for path in fallback_paths:
+        if path not in paths:
+            paths.append(path)
     return paths
 
 
@@ -302,6 +306,8 @@ def sign_exe_file(exe_path: str) -> bool:
             if os.path.exists(path):
                 signtool = path
                 break
+        if signtool:
+            print(f'Using signtool: {signtool}')
         du_url = 'https://github.com/LoLVoiceChat'  # change if you have a real project URL
         if signtool:
             timestamp_urls = [
