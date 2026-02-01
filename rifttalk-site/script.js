@@ -132,10 +132,24 @@ applyLang("ru");
   const btnNext = root.querySelector('.comic__nav--next');
   const counter = root.querySelector('.comic__counter');
 
-  // Support both naming schemes:
-  const imagesPlain = Array.from({ length: 13 }, (_, i) => `./assets/comic/${i + 1}.png`);
-  const imagesPadded = Array.from({ length: 13 }, (_, i) => `./assets/comic/${String(i + 1).padStart(2, '0')}.png`);
-  let images = imagesPlain;
+  // Support both naming schemes + WebP/PNG
+  const imagesPlainWebp = Array.from(
+    { length: 13 },
+    (_, i) => `./assets/comic/${i + 1}.webp`
+  );
+  const imagesPaddedWebp = Array.from(
+    { length: 13 },
+    (_, i) => `./assets/comic/${String(i + 1).padStart(2, '0')}.webp`
+  );
+  const imagesPlainPng = Array.from(
+    { length: 13 },
+    (_, i) => `./assets/comic/${i + 1}.png`
+  );
+  const imagesPaddedPng = Array.from(
+    { length: 13 },
+    (_, i) => `./assets/comic/${String(i + 1).padStart(2, '0')}.png`
+  );
+  let images = imagesPlainWebp;
 
   let idx = 0;
   let firstRender = true;
@@ -211,26 +225,44 @@ applyLang("ru");
 
   // Detect which naming scheme exists, then render.
   function pickImagesAndStart(){
-    const testPlain = new Image();
-    testPlain.onload = () => {
-      images = imagesPlain;
+    const testPlainWebp = new Image();
+    testPlainWebp.onload = () => {
+      images = imagesPlainWebp;
       preload(images);
       render();
     };
-    testPlain.onerror = () => {
-      const testPad = new Image();
-      testPad.onload = () => {
-        images = imagesPadded;
+    testPlainWebp.onerror = () => {
+      const testPadWebp = new Image();
+      testPadWebp.onload = () => {
+        images = imagesPaddedWebp;
         preload(images);
         render();
       };
-      testPad.onerror = () => {
-        images = Array.from({ length: 12 }, () => './assets/preview.png');
-        render();
+      testPadWebp.onerror = () => {
+        const testPlainPng = new Image();
+        testPlainPng.onload = () => {
+          images = imagesPlainPng;
+          preload(images);
+          render();
+        };
+        testPlainPng.onerror = () => {
+          const testPadPng = new Image();
+          testPadPng.onload = () => {
+            images = imagesPaddedPng;
+            preload(images);
+            render();
+          };
+          testPadPng.onerror = () => {
+            images = Array.from({ length: 12 }, () => './assets/preview.png');
+            render();
+          };
+          testPadPng.src = imagesPaddedPng[0];
+        };
+        testPlainPng.src = imagesPlainPng[0];
       };
-      testPad.src = imagesPadded[0];
+      testPadWebp.src = imagesPaddedWebp[0];
     };
-    testPlain.src = imagesPlain[0];
+    testPlainWebp.src = imagesPlainWebp[0];
   }
 
   pickImagesAndStart();
