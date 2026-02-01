@@ -7,9 +7,8 @@ services:
       - redis_data:/data
 
   server:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
+    # Image is built in CI and pulled from Docker Hub in production
+    image: ${RIFT_DOCKER_IMAGE:-your-dockerhub-user/rifttalk-server:latest}
     env_file:
       - server/.env
     environment:

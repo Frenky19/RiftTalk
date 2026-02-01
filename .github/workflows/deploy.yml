@@ -19,4 +19,5 @@ jobs:
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
             git pull --ff-only
-            docker compose up -d --build --remove-orphans
+            docker compose pull server
+            docker compose up -d --remove-orphans
