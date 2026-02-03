@@ -1,0 +1,300 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RiftTalk — voice chat for League of Legends (Discord)</title>
+    <meta name="description" content="RiftTalk is an automatic Discord voice chat for League of Legends (LoL). It links teammates during a match and cleans up after the game." />
+    <meta name="theme-color" content="#0b0d1f" />
+
+    <link rel="canonical" href="https://rift-talk.ru/en/" />
+    <link rel="alternate" hreflang="ru" href="https://rift-talk.ru/" />
+    <link rel="alternate" hreflang="en" href="https://rift-talk.ru/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://rift-talk.ru/" />
+
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="RiftTalk" />
+    <meta property="og:title" content="RiftTalk — voice chat for League of Legends" />
+    <meta property="og:description" content="RiftTalk is an automatic Discord voice chat for League of Legends (LoL). It links teammates during a match and cleans up after the game." />
+    <meta property="og:url" content="https://rift-talk.ru/en/" />
+    <meta property="og:image" content="https://rift-talk.ru/assets/og/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="RiftTalk — voice chat for League of Legends" />
+    <meta name="twitter:description" content="RiftTalk is an automatic Discord voice chat for League of Legends (LoL). It links teammates during a match and cleans up after the game." />
+    <meta name="twitter:image" content="https://rift-talk.ru/assets/og/og-image.jpg" />
+
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="icon" href="../assets/favicon.ico" sizes="any">
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "RiftTalk",
+        "url": "https://rift-talk.ru/en/",
+        "inLanguage": "en"
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is it safe? Does RiftTalk ask for my Discord password?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Linking uses official Discord OAuth. RiftTalk never asks for or stores your Discord password."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why am I not being moved to the voice channel?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Check: the app is running before the match starts, Discord is running and logged in, your account is linked, and you are on the correct Discord server."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "When are channels created and removed?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Channels are created when the game starts. After the match ends, users are removed, roles are revoked, and temporary channels are deleted."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need to install anything else?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Just run RiftTalk and have Discord and League of Legends installed."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Windows shows a security warning. Is this normal?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Windows/SmartScreen may warn about apps distributed outside the Microsoft Store. Download RiftTalk only from the official GitHub links and run it only if you trust the source."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does RiftTalk read or store my League of Legends account data?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. RiftTalk never asks for your LoL login/password and does not store LoL account data. It only uses local match state (League Client API/LCU) to detect when a game starts/ends."
+            }
+          }
+        ]
+      }
+    </script>
+  </head>
+
+  <body>
+    <div class="bg">
+      <div class="bg__glow"></div>
+      <div class="bg__grain"></div>
+    </div>
+
+    <header class="topbar">
+      <div class="container topbar__inner">
+        <a class="brand" href="/en/" aria-label="RiftTalk">
+          <picture>
+            <source srcset="../assets/logo.webp" type="image/webp">
+            <img src="../assets/logo.png" alt="RiftTalk logo" width="50">
+          </picture>
+          <span class="brand__name">RiftTalk</span>
+        </a>
+
+        <div class="topbar__right">
+          <div class="contacts">
+            <a class="icon-link" href="https://discord.gg/RdapPba7Ba" target="_blank" rel="noopener noreferrer" aria-label="Discord">
+              <i class="fa-brands fa-discord"></i>
+            </a>
+
+            <a class="icon-link" href="https://t.me/Frenky_19" target="_blank" rel="noopener noreferrer" aria-label="Telegram">
+              <i class="fa-brands fa-telegram"></i>
+            </a>
+
+            <a class="icon-link" href="mailto:frenkodetto@yandex.ru" aria-label="Email">
+              <i class="fa-solid fa-envelope"></i>
+            </a>
+          </div>
+          <a class="lang" id="langBtn" href="/" aria-label="Switch language">RU</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="hero">
+        <div class="container hero__inner">
+          <h1 class="hero__title">
+            Voice chat with your teammates in
+            <br class="hero__break" /><span class="accent">League of Legends</span>
+          </h1>
+
+          <p class="hero__desc">
+            Join players building a smoother team‑voice experience.
+          </p>
+
+          <div class="hero__cta" id="download">
+            <a class="btn btn--primary"
+               href="https://github.com/Frenky19/RiftTalk/releases/download/RiftTalk_v1.0.0/RiftTalk.exe"
+               target="_blank" rel="noreferrer">
+              Download RiftTalk (Windows)
+            </a>
+
+            <div class="subLinks">
+              <a class="subLinks__a" href="https://github.com/Frenky19/RiftTalk" target="_blank" rel="noreferrer">
+                source code
+              </a>
+              <span class="dot">•</span>
+              <a class="subLinks__a" href="https://github.com/Frenky19/RiftTalk-Desktop-App" target="_blank" rel="noreferrer">
+                builds repo
+              </a>
+            </div>
+          </div>
+
+          <div class="preview">
+            <div class="preview__frame">
+              <div class="comic" data-comic>
+                <button class="comic__nav comic__nav--prev" type="button" aria-label="Previous">
+                  <span aria-hidden="true">&#x2039;</span>
+                </button>
+
+                <div class="comic__stage" aria-label="RiftTalk comic preview" role="group">
+                  <img class="comic__img comic__img--prev" alt="" />
+                  <img class="comic__img comic__img--current" alt="RiftTalk comic frame" />
+                  <img class="comic__img comic__img--next" alt="" />
+                </div>
+
+                <button class="comic__nav comic__nav--next" type="button" aria-label="Next">
+                  <span aria-hidden="true">&#x203A;</span>
+                </button>
+
+                <div class="comic__counter" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="how" id="how">
+        <div class="container">
+          <div class="how__head">
+            <h2 class="h2">How RiftTalk works</h2>
+            <p class="how__sub">
+              No magic — just careful automation around Discord and match status.
+            </p>
+          </div>
+
+          <div class="how__grid">
+            <article class="step">
+              <div class="step__num">1</div>
+              <h3 class="h3">Link Discord</h3>
+              <p class="p">
+                Authorization uses official Discord OAuth. RiftTalk never asks for your Discord password.
+              </p>
+            </article>
+
+            <article class="step">
+              <div class="step__num">2</div>
+              <h3 class="h3">Match start</h3>
+              <p class="p">
+                When the game starts, temporary voice channels are created and roles/permissions are granted to your team.
+              </p>
+            </article>
+
+            <article class="step">
+              <div class="step__num">3</div>
+              <h3 class="h3">Auto cleanup</h3>
+              <p class="p">
+                After the match ends, users are removed from channels, roles are revoked, and temporary channels are deleted.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq" id="faq">
+        <div class="container">
+          <div class="faq__head">
+            <h2 class="h2">FAQ</h2>
+            <p class="faq__sub">Answers to common questions.</p>
+          </div>
+
+          <div class="faq__list">
+            <details class="faq__item" open>
+              <summary class="faq__q">Is it safe? Does RiftTalk ask for my Discord password?</summary>
+              <div class="faq__a">
+                Yes. Linking uses official Discord OAuth. RiftTalk never asks for or stores your Discord password.
+              </div>
+            </details>
+
+            <details class="faq__item">
+              <summary class="faq__q">Why am I not being moved to the voice channel?</summary>
+              <div class="faq__a">
+                Check: the app is running before the match starts, Discord is running and logged in, your account is linked, and you are on the correct Discord server.
+              </div>
+            </details>
+
+            <details class="faq__item">
+              <summary class="faq__q">When are channels created and removed?</summary>
+              <div class="faq__a">
+                Channels are created when the game starts. After the match ends, users are removed, roles are revoked, and temporary channels are deleted.
+              </div>
+            </details>
+
+            <details class="faq__item">
+              <summary class="faq__q">Do I need to install anything else?</summary>
+              <div class="faq__a">
+                No. Just run RiftTalk and have Discord and League of Legends installed.
+              </div>
+            </details>
+
+            <details class="faq__item">
+              <summary class="faq__q">Windows shows a security warning. Is this normal?</summary>
+              <div class="faq__a">
+                Yes. Windows/SmartScreen may warn about apps distributed outside the Microsoft Store. Download RiftTalk only from the official GitHub links and run it only if you trust the source.
+              </div>
+            </details>
+
+            <details class="faq__item">
+              <summary class="faq__q">Does RiftTalk read or store my League of Legends account data?</summary>
+              <div class="faq__a">
+                No. RiftTalk never asks for your LoL login/password and does not store LoL account data. It only uses local match state (League Client API/LCU) to detect when a game starts/ends.
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="footer__left">
+          <span>© <span id="year"></span> Frenky19</span>
+          <span class="sep">—</span>
+          <a class="f" href="https://github.com/Frenky19/RiftTalk" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+        <p class="disclaimer">
+          RiftTalk is not endorsed by Riot Games and does not reflect the views or opinions of Riot Games or anyone officially involved in producing or managing League of Legends.
+          League of Legends™ and Riot Games are trademarks or registered trademarks of Riot Games, Inc.
+        </p>
+        <p class="disclaimer">
+          RiftTalk is not endorsed by Discord and does not reflect the views or opinions of Discord. Discord and the Discord logo are trademarks or registered trademarks of Discord Inc.
+        </p>
+      </div>
+    </footer>
+
+    <script src="../script.js"></script>
+  </body>
+</html>
