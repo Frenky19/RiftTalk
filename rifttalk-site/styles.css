@@ -6,9 +6,9 @@
   --line: rgba(255,255,255,.12);
   --glass: rgba(255,255,255,.06);
 
-  --accent:#f5c84c;   /* тёплый акцент как на скрине */
-  --accent2:#7c5cff;  /* фиолетовый */
-  --accent3:#2dd4bf;  /* чуть бирюзы */
+  --accent:#f5c84c;
+  --accent2:#7c5cff;
+  --accent3:#2dd4bf;
 
   --shadow: 0 24px 80px rgba(0,0,0,.50);
   --radius: 18px;
@@ -253,9 +253,6 @@ body{
   border: 1px solid rgba(255,255,255,.10);
 }
 
-
-
-/* Comic carousel (12 frames) */
 .comic{
   display:grid;
   grid-template-columns: 44px 1fr 44px;
@@ -290,11 +287,10 @@ body{
 .comic__nav:active{ transform: translateY(0px) scale(.98); }
 .comic__nav span{ font-size: 28px; line-height: 1; }
 
-/* The stage is height-limited so the comic never eats the whole screen */
 .comic__stage{
   position: relative;
   width: 100%;
-  overflow: hidden; /* side frames can go out, but we clip them */
+  overflow: hidden;
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,.10);
   background: rgba(0,0,0,.10);
@@ -310,7 +306,6 @@ body{
   .comic__stage{ height: 62vh; padding: 8px; }
 }
 
-/* Base: don't let global img{width:100%} stretch the comic */
 .comic__stage .comic__img{
   display:block;
   user-select:none;
@@ -320,7 +315,6 @@ body{
   object-fit: contain;
 }
 
-/* Center frame: always fully visible, with smooth fade */
 .comic__stage .comic__img--current{
   position: relative;
   z-index: 3;
@@ -340,7 +334,6 @@ body{
   transform: scale(0.985);
 }
 
-/* Side frames: more transparent */
 .comic__stage .comic__img--prev,
 .comic__stage .comic__img--next{
   position: absolute;
@@ -455,9 +448,8 @@ body{
 }
 .f:hover{ color: rgba(233,236,255,.95); border-bottom-color: rgba(233,236,255,.40); }
 
-/* маленький тюнинг для мобилы */
 @media (max-width: 520px){
-  .chip__text{ display:none; } /* оставим только иконки, чтобы не теснило */
+  .chip__text{ display:none; }
   .btn--primary{ min-width: 100%; }
 }
 
@@ -467,24 +459,22 @@ body{
   align-items:center;
 }
 
-/* прозрачный фон, крупные белые иконки */
 .icon-link{
   color: rgba(255,255,255,0.92);
   text-decoration:none;
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  padding: 6px;              /* удобная зона клика */
-  border-radius: 10px;       /* чтобы hover был мягкий */
+  padding: 6px;
+  border-radius: 10px;
   transition: 160ms ease;
 }
 
 .icon-link i{
-  font-size: 22px;           /* крупнее */
+  font-size: 22px;
   line-height: 1;
 }
 
-/* мягкий hover без “кнопки” */
 .icon-link:hover{
   color: rgba(255,255,255,1);
   transform: translateY(-1px);
