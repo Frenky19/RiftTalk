@@ -26,5 +26,6 @@ jobs:
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
             git pull --ff-only
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             docker compose pull server
             docker compose up -d --remove-orphans
