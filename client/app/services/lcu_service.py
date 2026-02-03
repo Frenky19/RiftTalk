@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.config import settings
 from app.utils.lcu_connector import LCUConnector
+from app.utils.team_utils import extract_teams_from_session
 
 logger = logging.getLogger(__name__)
 
@@ -279,95 +280,45 @@ class LCUService:
     ) -> Optional[Dict[str, Any]]:
         """Extract team data from LCU session with FIX for team swapping bug."""
         try:
-            blue_team = []
-            red_team = []
             logger.info('Searching for team data in session...')
             logger.info(f'Session keys: {list(session.keys())}')
-            # Method 1: Check direct blue_team/red_team keys (most reliable)
-            if 'blue_team' in session or 'red_team' in session:
-                logger.info('Found teams in blue_team/red_team keys')
-                blue_team_data = session.get('blue_team', [])
-                red_team_data = session.get('red_team', [])
-                logger.info(f'Raw blue_team data: {blue_team_data}')
-                logger.info(f'Raw red_team data: {red_team_data}')
-                # Process blue_team
-                if isinstance(blue_team_data, list):
-                    for player in blue_team_data:
-                        if (
-                            player and isinstance(
-                                player, dict) and player.get('summonerId')
-                        ):
-                            blue_team.append({
-                                'summonerId': str(player.get('summonerId')),
-                                'summonerName': player.get('summonerName', 'Unknown'),
-                                'championId': player.get('championId')
-                            })
-                            logger.info(
-                                f'Blue team player: '
-                                f'{player.get("summonerName", "Unknown")} '
-                                f'(ID: {player["summonerId"]})'
-                            )
-                # Process red_team
-                if isinstance(red_team_data, list):
-                    for player in red_team_data:
-                        if (
-                            player and isinstance(
-                                player, dict) and player.get('summonerId')
-                        ):
-                            red_team.append({
-                                'summonerId': str(player.get('summonerId')),
-                                'summonerName': player.get('summonerName', 'Unknown'),
-                                'championId': player.get('championId')
-                            })
-                            logger.info(
-                                f'Red team player: '
-                                f'{player.get("summonerName", "Unknown")} '
-                                f'(ID: {player["summonerId"]})'
-                            )
-            # Method 2: myTeam/theirTeam (fallback)
-            elif 'myTeam' in session and 'theirTeam' in session:
-                logger.info('Found teams in myTeam/theirTeam')
-                for player in session['myTeam']:
-                    if player.get('summonerId'):
-                        blue_team.append({
-                            'summonerId': str(player.get('summonerId')),
-                            'summonerName': player.get('summonerName', 'Unknown'),
-                            'championId': player.get('championId')
-                        })
-                for player in session['theirTeam']:
-                    if player.get('summonerId'):
-                        red_team.append({
-                            'summonerId': str(player.get('summonerId')),
-                            'summonerName': player.get('summonerName', 'Unknown'),
-                            'championId': player.get('championId')
-                        })
-            # Method 3: teams array (fallback)
-            elif 'teams' in session and len(session['teams']) >= 2:
-                logger.info('Found teams in teams array')
-                for player in session['teams'][0].get('players', []):
-                    if player.get('summonerId'):
-                        blue_team.append({
-                            'summonerId': str(player.get('summonerId')),
-                            'summonerName': player.get('summonerName', 'Unknown'),
-                            'championId': player.get('championId')
-                        })
-                for player in session['teams'][1].get('players', []):
-                    if player.get('summonerId'):
-                        red_team.append({
-                            'summonerId': str(player.get('summonerId')),
-                            'summonerName': player.get('summonerName', 'Unknown'),
-                            'championId': player.get('championId')
-                        })
-            # Log final teams
+
+            teams_data = extract_teams_from_session(session)
+            if not teams_data:
+                logger.warning('No team data found in session')
+                return None
+
+            blue_team = []
+            red_team = []
+
+            for player in teams_data.get('blue_team', []):
+                if (
+                    player and isinstance(player, dict)
+                    and player.get('summonerId')
+                ):
+                    blue_team.append({
+                        'summonerId': str(player.get('summonerId')),
+                        'summonerName': player.get('summonerName', 'Unknown'),
+                        'championId': player.get('championId')
+                    })
+
+            for player in teams_data.get('red_team', []):
+                if (
+                    player and isinstance(player, dict)
+                    and player.get('summonerId')
+                ):
+                    red_team.append({
+                        'summonerId': str(player.get('summonerId')),
+                        'summonerName': player.get('summonerName', 'Unknown'),
+                        'championId': player.get('championId')
+                    })
+
             logger.info(
                 f'Final teams - Blue: {[p["summonerId"] for p in blue_team]}, '
                 f'Red: {[p["summonerId"] for p in red_team]}'
             )
             if blue_team or red_team:
-                return {
-                    'blue_team': blue_team,
-                    'red_team': red_team
-                }
+                return {'blue_team': blue_team, 'red_team': red_team}
             logger.warning('No team data found in session')
             return None
         except Exception as e:

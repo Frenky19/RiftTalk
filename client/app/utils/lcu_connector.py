@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import aiohttp
 
 from app.utils.exceptions import LCUException
+from app.utils.team_utils import extract_teams_from_session
 
 logger = logging.getLogger(__name__)
 
@@ -335,42 +336,14 @@ class LCUConnector:
                 logger.debug('No active session found')
                 return None
             logger.info(f'Session keys: {list(session.keys())}')
-            # Different ways to extract team data based on session structure
-            teams_data = None
-            # Method 1: Check gameData
-            game_data = session.get('gameData')
-            if game_data:
-                teams_data = {
-                    'blue_team': game_data.get('teamOne', []),
-                    'red_team': game_data.get('teamTwo', [])
-                }
-                logger.info('Found teams in gameData')
-            # Method 2: Check teams directly
-            elif 'teams' in session:
-                teams = session.get('teams', [])
-                if len(teams) >= 2:
-                    teams_data = {
-                        'blue_team': teams[0].get('players', []),
-                        'red_team': teams[1].get('players', [])
-                    }
-                    logger.info('Found teams in teams array')
-            # Method 3: Check myTeam for current team (during champ select)
-            elif 'myTeam' in session:
-                my_team = session.get('myTeam', [])
-                their_team = session.get('theirTeam', [])
-                if my_team or their_team:
-                    teams_data = {
-                        'blue_team': my_team,
-                        'red_team': their_team
-                    }
-                    logger.info('Found teams in myTeam/theirTeam')
+            teams_data = extract_teams_from_session(session)
             if teams_data:
-                blue_count = len(teams_data['blue_team'])
-                red_count = len(teams_data['red_team'])
+                blue_count = len(teams_data.get('blue_team', []))
+                red_count = len(teams_data.get('red_team', []))
                 logger.info(f'Teams found: Blue={blue_count}, Red={red_count}')
-            else:
-                logger.info('No team data found in current session')
-            return teams_data
+                return teams_data
+            logger.info('No team data found in current session')
+            return None
         except Exception as e:
             logger.error(f'Error getting teams: {e}')
             return None
