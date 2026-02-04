@@ -140,3 +140,4 @@ encrypted_env.py
 .ruff_cache
 hooks
 *.sql
+nginx/letsencrypt/
