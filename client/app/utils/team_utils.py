@@ -93,6 +93,15 @@ def extract_teams_from_session(
         if by_id:
             blue_team, red_team = by_id
             return {'blue_team': blue_team, 'red_team': red_team}
+        if (
+            team_one_players
+            and team_two_players
+            and not team_one_id
+            and not team_two_id
+        ):
+            # Heuristic: when teams are split into teamOne/teamTwo but IDs are
+            # missing, assume teamOne=Blue, teamTwo=Red.
+            return {'blue_team': team_one_players, 'red_team': team_two_players}
 
     teams = session.get('teams')
     if isinstance(teams, list) and teams:
@@ -121,4 +130,31 @@ def extract_teams_from_session(
             blue_team, red_team = by_id
             return {'blue_team': blue_team, 'red_team': red_team}
 
+    return None
+
+
+def extract_teams_from_live_client_data(
+    live_data: Dict[str, Any],
+) -> Optional[Dict[str, List[Dict[str, Any]]]]:
+    """Extract teams from Live Client Data (allgamedata)."""
+    if not isinstance(live_data, dict):
+        return None
+
+    players = live_data.get('allPlayers') or live_data.get('allplayers') or []
+    if not isinstance(players, list):
+        return None
+
+    blue: List[Dict[str, Any]] = []
+    red: List[Dict[str, Any]] = []
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        team_id = _team_id_from_value(player.get('team'))
+        if team_id == 100:
+            blue.append(player)
+        elif team_id == 200:
+            red.append(player)
+
+    if blue or red:
+        return {'blue_team': blue, 'red_team': red}
     return None

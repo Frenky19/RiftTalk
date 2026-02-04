@@ -2,12 +2,16 @@ import asyncio
 import logging
 import os
 import ssl
+from urllib.parse import quote
 from typing import Any, Dict, Optional
 
 import aiohttp
 
 from app.utils.exceptions import LCUException
-from app.utils.team_utils import extract_teams_from_session
+from app.utils.team_utils import (
+    extract_teams_from_session,
+    extract_teams_from_live_client_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,7 @@ class LCUConnector:
         self._last_error: Optional[str] = None
         self._last_connected_at: Optional[float] = None
         self._lockfile_signature: Optional[str] = None
+        self._summoner_id_cache: Dict[str, str] = {}
         # Legacy field kept for compatibility (no longer enforced)
         self.max_attempts = 0
 
@@ -343,6 +348,16 @@ class LCUConnector:
                 logger.info(f'Teams found: Blue={blue_count}, Red={red_count}')
                 return teams_data
             logger.info('No team data found in current session')
+
+            live_teams = await self.get_live_client_teams()
+            if live_teams:
+                blue_count = len(live_teams.get('blue_team', []))
+                red_count = len(live_teams.get('red_team', []))
+                logger.info(
+                    f'Teams found via Live Client Data: '
+                    f'Blue={blue_count}, Red={red_count}'
+                )
+                return live_teams
             return None
         except Exception as e:
             logger.error(f'Error getting teams: {e}')
@@ -350,10 +365,82 @@ class LCUConnector:
 
     async def get_live_client_data(self) -> Optional[Dict[str, Any]]:
         """Get live client data for in-game information."""
-        return await self.make_request(
-            'GET',
-            '/liveclientdata/allgamedata'
-        )
+        url = 'http://127.0.0.1:2999/liveclientdata/allgamedata'
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=3)
+            ) as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    return None
+        except Exception:
+            return None
+
+    async def _get_summoner_id_by_name(self, name: str) -> Optional[str]:
+        if not name:
+            return None
+        key = name.strip().lower()
+        cached = self._summoner_id_cache.get(key)
+        if cached:
+            return cached
+
+        endpoints = [
+            f'/lol-summoner/v1/summoners?name={quote(name)}',
+            f'/lol-summoner/v2/summoners?name={quote(name)}',
+        ]
+        for endpoint in endpoints:
+            data = await self.make_request('GET', endpoint)
+            if isinstance(data, dict):
+                summoner_id = data.get('summonerId')
+                if summoner_id:
+                    summoner_id = str(summoner_id)
+                    self._summoner_id_cache[key] = summoner_id
+                    return summoner_id
+        return None
+
+    async def get_live_client_teams(self) -> Optional[Dict[str, Any]]:
+        """Extract teams using Live Client Data (port 2999)."""
+        live_data = await self.get_live_client_data()
+        if not live_data:
+            return None
+
+        teams = extract_teams_from_live_client_data(live_data)
+        if not teams:
+            return None
+
+        async def normalize(players: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+            result: list[Dict[str, Any]] = []
+            for player in players:
+                if not isinstance(player, dict):
+                    continue
+                summoner_id = (
+                    player.get('summonerId')
+                    or player.get('summonerID')
+                    or player.get('summonerid')
+                )
+                summoner_name = (
+                    player.get('summonerName')
+                    or player.get('summonername')
+                    or player.get('playerName')
+                )
+                if not summoner_id and summoner_name:
+                    summoner_id = await self._get_summoner_id_by_name(
+                        str(summoner_name)
+                    )
+                if summoner_id:
+                    result.append({
+                        'summonerId': str(summoner_id),
+                        'summonerName': str(summoner_name or ''),
+                    })
+            return result
+
+        blue_team = await normalize(teams.get('blue_team', []))
+        red_team = await normalize(teams.get('red_team', []))
+        if not blue_team and not red_team:
+            return None
+
+        return {'blue_team': blue_team, 'red_team': red_team}
 
     async def health_check(self) -> Dict[str, Any]:
         """Get LCU connector health status."""
