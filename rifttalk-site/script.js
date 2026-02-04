@@ -16,19 +16,19 @@ if (yearEl) yearEl.textContent = String(new Date().getFullYear());
   // Support both naming schemes + WebP/PNG
   const imagesPlainWebp = Array.from(
     { length: 13 },
-    (_, i) => `./assets/comic/${i + 1}.webp`
+    (_, i) => `/assets/comic/${i + 1}.webp`
   );
   const imagesPaddedWebp = Array.from(
     { length: 13 },
-    (_, i) => `./assets/comic/${String(i + 1).padStart(2, '0')}.webp`
+    (_, i) => `/assets/comic/${String(i + 1).padStart(2, '0')}.webp`
   );
   const imagesPlainPng = Array.from(
     { length: 13 },
-    (_, i) => `./assets/comic/${i + 1}.png`
+    (_, i) => `/assets/comic/${i + 1}.png`
   );
   const imagesPaddedPng = Array.from(
     { length: 13 },
-    (_, i) => `./assets/comic/${String(i + 1).padStart(2, '0')}.png`
+    (_, i) => `/assets/comic/${String(i + 1).padStart(2, '0')}.png`
   );
   let images = imagesPlainWebp;
 
@@ -134,7 +134,7 @@ if (yearEl) yearEl.textContent = String(new Date().getFullYear());
             render();
           };
           testPadPng.onerror = () => {
-            images = Array.from({ length: 12 }, () => './assets/preview.png');
+            images = Array.from({ length: 12 }, () => '/assets/preview.png');
             render();
           };
           testPadPng.src = imagesPaddedPng[0];
