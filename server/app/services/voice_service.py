@@ -86,16 +86,40 @@ class VoiceService:
                 ):
                     room_id = existing_room.get('room_id')
                     if room_id:
-                        # Update team data
+                        # Update team data safely (do not flip existing assignments)
                         update_data = {}
-                        if team_data.get('blue_team'):
-                            update_data['blue_team'] = json.dumps(
-                                team_data['blue_team']
-                            )
-                        if team_data.get('red_team'):
-                            update_data['red_team'] = json.dumps(
-                                team_data['red_team']
-                            )
+                        existing_blue = safe_json_parse(
+                            existing_room.get('blue_team'), []
+                        ) or []
+                        existing_red = safe_json_parse(
+                            existing_room.get('red_team'), []
+                        ) or []
+                        existing_blue = [str(x) for x in existing_blue]
+                        existing_red = [str(x) for x in existing_red]
+                        incoming_blue = [
+                            str(x) for x in (team_data.get('blue_team') or [])
+                        ]
+                        incoming_red = [
+                            str(x) for x in (team_data.get('red_team') or [])
+                        ]
+
+                        blue_set = set(existing_blue)
+                        red_set = set(existing_red)
+                        for pid in incoming_blue:
+                            if pid in red_set:
+                                continue
+                            if pid not in blue_set:
+                                blue_set.add(pid)
+                        for pid in incoming_red:
+                            if pid in blue_set:
+                                continue
+                            if pid not in red_set:
+                                red_set.add(pid)
+
+                        if blue_set != set(existing_blue):
+                            update_data['blue_team'] = json.dumps(sorted(blue_set))
+                        if red_set != set(existing_red):
+                            update_data['red_team'] = json.dumps(sorted(red_set))
                         if update_data:
                             await self.redis.redis.hset(
                                 f'room:{room_id}',

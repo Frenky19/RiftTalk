@@ -93,8 +93,6 @@ def extract_teams_from_session(
         if by_id:
             blue_team, red_team = by_id
             return {'blue_team': blue_team, 'red_team': red_team}
-        if team_one_players or team_two_players:
-            return {'blue_team': team_one_players, 'red_team': team_two_players}
 
     teams = session.get('teams')
     if isinstance(teams, list) and teams:
@@ -114,11 +112,6 @@ def extract_teams_from_session(
         if by_id:
             blue_team, red_team = by_id
             return {'blue_team': blue_team, 'red_team': red_team}
-        if len(normalized) >= 2:
-            return {
-                'blue_team': normalized[0][0],
-                'red_team': normalized[1][0],
-            }
 
     my_team = session.get('myTeam', [])
     their_team = session.get('theirTeam', [])
@@ -127,6 +120,5 @@ def extract_teams_from_session(
         if by_id:
             blue_team, red_team = by_id
             return {'blue_team': blue_team, 'red_team': red_team}
-        return {'blue_team': list(my_team), 'red_team': list(their_team)}
 
     return None

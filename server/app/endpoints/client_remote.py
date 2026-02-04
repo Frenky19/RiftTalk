@@ -138,6 +138,11 @@ async def client_match_start(
         )
 
     team_name = _get_team_name(summoner_id, blue_team, red_team)
+    if not team_name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail='Team data unavailable (teamId missing)',
+        )
 
     # --- Anti-spam / idempotency guards ---
     # 1) Per-player debounce (prevents role spam & race conditions)

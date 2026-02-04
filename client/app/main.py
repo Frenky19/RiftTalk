@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from app.constants import (
     MATCH_INFO_TTL_SECONDS,
     MATCH_NOTIFY_RETRY_BASE_SECONDS,
     MATCH_NOTIFY_RETRY_MAX_SECONDS,
+    MATCH_TEAM_RETRY_SECONDS,
 )
 from app.database import redis_manager
 from app.endpoints import auth, discord, lcu, voice
@@ -25,6 +27,58 @@ from app.services.shutdown_cleanup import notify_match_leave_on_shutdown
 from app.utils.security import create_access_token
 
 logger = logging.getLogger(__name__)
+
+_match_retry_tasks: dict[str, asyncio.Task] = {}
+
+
+def _cancel_match_retry(summoner_id: str) -> None:
+    task = _match_retry_tasks.pop(summoner_id, None)
+    if task and not task.done():
+        task.cancel()
+
+
+def _schedule_match_start_retry(
+    *,
+    summoner_id: str,
+    match_id: str,
+    delay_seconds: int,
+    reason: str,
+) -> None:
+    existing = _match_retry_tasks.get(summoner_id)
+    if existing and not existing.done():
+        return
+
+    async def _runner() -> None:
+        try:
+            await asyncio.sleep(delay_seconds)
+            try:
+                phase = await lcu_service.lcu_connector.get_game_flow_phase()
+                if phase != 'InProgress':
+                    return
+            except Exception:
+                return
+
+            session = await lcu_service.lcu_connector.get_current_session()
+            game_id = None
+            if session:
+                game_id = session.get('gameData', {}).get('gameId')
+            if not game_id:
+                return
+            current_match_id = f'match_{game_id}'
+            if current_match_id != match_id:
+                return
+
+            await handle_match_start()
+        finally:
+            _match_retry_tasks.pop(summoner_id, None)
+
+    logger.warning(
+        'Scheduling match-start retry in %ss (%s).',
+        delay_seconds,
+        reason,
+    )
+    task = asyncio.create_task(_runner())
+    _match_retry_tasks[summoner_id] = task
 
 
 def _resolve_static_dir() -> str:
@@ -312,7 +366,42 @@ async def handle_match_start():
         except Exception:
             pass
 
-        teams_data = await lcu_service.lcu_connector.get_teams()
+        teams_data = None
+        for _ in range(6):
+            teams_data = await lcu_service.lcu_connector.get_teams()
+            if (
+                teams_data
+                and (teams_data.get('blue_team') or teams_data.get('red_team'))
+            ):
+                break
+            await asyncio.sleep(1)
+
+        if not teams_data or (
+            not teams_data.get('blue_team')
+            and not teams_data.get('red_team')
+        ):
+            logger.warning(
+                'Team data not available (teamId missing).'
+            )
+            try:
+                await redis_manager.redis.hset(
+                    match_info_key,
+                    mapping={
+                        'remote_notified': '0',
+                        'notify_next_retry_ts': str(
+                            now_ts + MATCH_TEAM_RETRY_SECONDS
+                        ),
+                    },
+                )
+            except Exception:
+                pass
+            _schedule_match_start_retry(
+                summoner_id=summoner_id,
+                match_id=match_id,
+                delay_seconds=MATCH_TEAM_RETRY_SECONDS,
+                reason='team data missing',
+            )
+            return
         blue_team_ids = [
             str(p.get('summonerId'))
             for p in (teams_data or {}).get('blue_team', [])
@@ -345,6 +434,7 @@ async def handle_match_start():
                 )
             except Exception:
                 pass
+            _cancel_match_retry(summoner_id)
         except RemoteAPIError as e:
             logger.warning(f'Remote match-start failed: {e}')
             try:
@@ -368,6 +458,12 @@ async def handle_match_start():
                 )
             except Exception:
                 pass
+            _schedule_match_start_retry(
+                summoner_id=summoner_id,
+                match_id=match_id,
+                delay_seconds=delay,
+                reason='remote match-start failed',
+            )
     except Exception as e:
         logger.error(f'handle_match_start error: {e}')
 
@@ -379,6 +475,7 @@ async def handle_match_end(event_data: dict):
         if not current_summoner:
             return
         summoner_id = str(current_summoner.get('summonerId'))
+        _cancel_match_retry(summoner_id)
 
         match_id = None
         try:
@@ -423,6 +520,7 @@ async def handle_match_leave(event_data: dict):
         if not current_summoner:
             return
         summoner_id = str(current_summoner.get('summonerId'))
+        _cancel_match_retry(summoner_id)
 
         match_id = None
         try:
