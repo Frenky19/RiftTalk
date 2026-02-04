@@ -108,6 +108,18 @@
             margin-left: auto;
             margin-right: auto;
         }
+
+        .dev-disclaimer {
+            margin: 12px auto 0;
+            padding: 10px 14px;
+            max-width: 640px;
+            border-radius: var(--border-radius-sm);
+            border: 1px solid #e1e5e9;
+            background: #f7f9ff;
+            color: #4a5568;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
         
         .content-wrapper {
             display: grid;
@@ -874,6 +886,11 @@
         </div>
         <h1 data-i18n="page_title">RiftTalk</h1>
         <p class="subtitle" data-i18n="page_subtitle">Link your Discord account with League of Legends for automatic voice channel connection during matches</p>
+        <p class="dev-disclaimer" data-i18n="dev_disclaimer">RiftTalk is in active development. Bugs and unstable behavior may happen. I will be grateful for your feedback.</p>
+        <p class="dev-disclaimer" data-i18n="dev_disclaimer">
+            RiftTalk is in development. Bugs and unstable behavior may happen.
+            Feedback is very welcome — thanks for helping improve the app.
+        </p>
 <div class="top-controls" aria-label="Preferences">
             <div class="control-group">
                 <label class="sr-only" for="langSelect" data-i18n="label_language">Language</label>
@@ -1064,6 +1081,7 @@
             en: {
                 page_title: "RiftTalk",
                 page_subtitle: "Link your Discord account with League of Legends for automatic voice channel connection during matches",
+                dev_disclaimer: "RiftTalk is in development. Bugs and unstable behavior may happen. I will be grateful for your feedback.",
                 current_user: "Current User",
 
                 label_language: "Language",
@@ -1193,6 +1211,7 @@
             ru: {
                 page_title: "RiftTalk",
                 page_subtitle: "Привяжите Discord к League of Legends, чтобы приложение автоматически подключало вас к голосовому каналу во время матчей",
+                dev_disclaimer: "RiftTalk находится в разработке — возможны баги и нестабильная работа. Буду благодарен за обратную связь.",
                 current_user: "Текущий пользователь",
 
                 label_language: "Язык",
@@ -1419,6 +1438,18 @@
         const voiceInviteLink = document.getElementById('voiceInviteLink');
         const copyInviteBtn = document.getElementById('copyInviteBtn');
         const reconnectBtn = document.getElementById('reconnectBtn');
+        let currentSummonerId = null;
+        let matchPollMs = 6000;
+
+        function startMatchStatusPolling() {
+            if (!currentSummonerId) return;
+            if (window._matchStatusPoller) {
+                clearInterval(window._matchStatusPoller);
+            }
+            window._matchStatusPoller = setInterval(() => {
+                checkMatchStatus(currentSummonerId);
+            }, matchPollMs);
+        }
 
         // Try to get current user information (via local LCU)
         async function loadCurrentUser() {
@@ -1447,6 +1478,7 @@
 
                 userDetails.textContent = `${t('lbl_player')}: ${data.summoner_name} (${t('lbl_id')}: ${data.summoner_id})`;
                 currentUserInfo.style.display = 'block';
+                currentSummonerId = data.summoner_id;
 
                 // Save token for subsequent requests
                 localStorage.setItem('authToken', data.access_token);
@@ -1454,9 +1486,7 @@
                 // Real-time polling (only to show invite link after match starts)
                 checkMatchStatus(data.summoner_id);
                 if (!window._matchStatusPoller) {
-                    window._matchStatusPoller = setInterval(() => {
-                        checkMatchStatus(data.summoner_id);
-                    }, 2000);
+                    startMatchStatusPolling();
                 }
             } catch (error) {
                 showMessage(t('msg_lol_not_running'), 'error');
@@ -1502,8 +1532,16 @@
             // We only show invite link after match starts. No match-status card.
             if (matchInfo && matchInfo.in_progress && matchInfo.voice_channel && matchInfo.voice_channel.invite_url) {
                 displayVoiceChannelInfo(matchInfo);
+                if (matchPollMs !== 15000) {
+                    matchPollMs = 15000;
+                    startMatchStatusPolling();
+                }
             } else {
                 if (voiceChannelInfo) voiceChannelInfo.style.display = 'none';
+                if (matchPollMs !== 6000) {
+                    matchPollMs = 6000;
+                    startMatchStatusPolling();
+                }
             }
         }
 

@@ -184,11 +184,14 @@ async def get_match_status(
             cache_ts = float(cache_ts_raw)
         except Exception:
             cache_ts = 0.0
+        cached_voice = _parse_json(cached.get('remote_voice_channel'))
+        has_cached_voice = bool(cached_voice)
 
-        use_cache = (
-            cache_match_id == match_id
-            and cache_ts > 0
-            and (now_ts - cache_ts) < MATCH_STATUS_REMOTE_REFRESH_SECONDS
+        use_cache = cache_match_id == match_id and (
+            has_cached_voice or (
+                cache_ts > 0
+                and (now_ts - cache_ts) < MATCH_STATUS_REMOTE_REFRESH_SECONDS
+            )
         )
 
         try:
@@ -196,7 +199,7 @@ async def get_match_status(
                 remote = {
                     'match_id': cache_match_id,
                     'team_name': cached.get('remote_team_name'),
-                    'voice_channel': _parse_json(cached.get('remote_voice_channel')),
+                    'voice_channel': cached_voice,
                     'linked': _parse_bool(cached.get('remote_linked')),
                     'assigned': _parse_bool(cached.get('remote_assigned')),
                 }
@@ -227,7 +230,7 @@ async def get_match_status(
                 remote = {
                     'match_id': cache_match_id,
                     'team_name': cached.get('remote_team_name'),
-                    'voice_channel': _parse_json(cached.get('remote_voice_channel')),
+                    'voice_channel': cached_voice,
                     'linked': _parse_bool(cached.get('remote_linked')),
                     'assigned': _parse_bool(cached.get('remote_assigned')),
                 }

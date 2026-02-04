@@ -183,6 +183,17 @@ body{
   color: rgba(169,176,214,.92);
   max-width: 860px;
 }
+.hero__notice{
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(233,236,255,.92);
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  max-width: 760px;
+}
 
 .hero__cta{
   margin-top: 22px;
