@@ -13,24 +13,12 @@ if (yearEl) yearEl.textContent = String(new Date().getFullYear());
   const btnNext = root.querySelector('.comic__nav--next');
   const counter = root.querySelector('.comic__counter');
 
-  // Support both naming schemes + WebP/PNG
-  const imagesPlainWebp = Array.from(
-    { length: 13 },
-    (_, i) => `/assets/comic/${i + 1}.webp`
-  );
+  // Use zero-padded WebP frames (01.webp ... 13.webp)
   const imagesPaddedWebp = Array.from(
     { length: 13 },
     (_, i) => `/assets/comic/${String(i + 1).padStart(2, '0')}.webp`
   );
-  const imagesPlainPng = Array.from(
-    { length: 13 },
-    (_, i) => `/assets/comic/${i + 1}.png`
-  );
-  const imagesPaddedPng = Array.from(
-    { length: 13 },
-    (_, i) => `/assets/comic/${String(i + 1).padStart(2, '0')}.png`
-  );
-  let images = imagesPlainWebp;
+  let images = imagesPaddedWebp;
 
   let idx = 0;
   let firstRender = true;
@@ -104,46 +92,18 @@ if (yearEl) yearEl.textContent = String(new Date().getFullYear());
     });
   }
 
-  // Detect which naming scheme exists, then render.
+  // Verify the first frame loads; otherwise fallback.
   function pickImagesAndStart(){
-    const testPlainWebp = new Image();
-    testPlainWebp.onload = () => {
-      images = imagesPlainWebp;
+    const test = new Image();
+    test.onload = () => {
       preload(images);
       render();
     };
-    testPlainWebp.onerror = () => {
-      const testPadWebp = new Image();
-      testPadWebp.onload = () => {
-        images = imagesPaddedWebp;
-        preload(images);
-        render();
-      };
-      testPadWebp.onerror = () => {
-        const testPlainPng = new Image();
-        testPlainPng.onload = () => {
-          images = imagesPlainPng;
-          preload(images);
-          render();
-        };
-        testPlainPng.onerror = () => {
-          const testPadPng = new Image();
-          testPadPng.onload = () => {
-            images = imagesPaddedPng;
-            preload(images);
-            render();
-          };
-          testPadPng.onerror = () => {
-            images = Array.from({ length: 12 }, () => '/assets/preview.png');
-            render();
-          };
-          testPadPng.src = imagesPaddedPng[0];
-        };
-        testPlainPng.src = imagesPlainPng[0];
-      };
-      testPadWebp.src = imagesPaddedWebp[0];
+    test.onerror = () => {
+      images = Array.from({ length: 12 }, () => '/assets/preview.png');
+      render();
     };
-    testPlainWebp.src = imagesPlainWebp[0];
+    test.src = images[0];
   }
 
   pickImagesAndStart();
