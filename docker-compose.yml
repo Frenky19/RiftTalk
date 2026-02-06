@@ -5,6 +5,10 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   server:
     # Image is built in CI and pulled from Docker Hub in production
@@ -18,6 +22,16 @@ services:
     ports:
       - "8001:8001"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8001/health', timeout=2).read(); sys.exit(0)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   nginx:
     image: nginx:1.27
@@ -33,6 +47,10 @@ services:
       - ./nginx/certbot:/var/www/certbot
       - ./nginx/letsencrypt:/etc/letsencrypt
       - ./rifttalk-site:/usr/share/nginx/html:ro
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   certbot:
     image: certbot/certbot
