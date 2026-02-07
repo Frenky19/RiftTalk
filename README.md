@@ -1,49 +1,62 @@
-﻿# RiftTalk (Discord-integrated team voice)
+﻿# RiftTalk — automatic Discord voice for League of Legends
 
 [English](README.md) | [Russian](README.ru.md)
 
-RiftTalk is split into two parts:
+RiftTalk is an opt-in Discord voice helper for LoL. Only players who run the
+client are connected; speaking is optional (listen-only works).
 
-- Server: FastAPI + Discord bot that creates and cleans temporary voice channels.
-- Client: Windows desktop app (WebView) that detects match state via LCU and
-  calls the server.
+It consists of:
 
-> Strict mode: the server must connect to Discord successfully on startup;
-> no silent demo fallbacks.
+- Server: FastAPI + Discord bot that creates/cleans voice channels and handles OAuth.
+- Client (Windows): WebView app that reads LCU state and calls the server.
 
 ---
 
-## Desktop client
+## How it works (short)
 
-Prebuilt .exe: https://github.com/Frenky19/RiftTalk-Desktop-App
+1. Client reads the LCU lockfile and tracks match phases.
+2. On match start it posts to the server API.
+3. Server creates rooms/roles and moves connected users into their team channels.
+4. On match end it cleans everything up.
 
 ---
 
 ## Repo layout
 
-- `client/` - Windows app (WebView UI + LCU integration)
+- `client/` - Windows client (WebView UI + LCU integration)
 - `server/` - FastAPI server + Discord bot
 - `shared/` - shared models/services
-- `nginx/` - optional reverse proxy configs
+- `rifttalk-site/` - marketing site (optional)
+- `nginx/` - reverse proxy + certbot configs
 
 ---
 
 ## Requirements
 
 Server:
+
 - Python 3.11+ (or Docker)
-- Discord bot token and server permissions
-- Redis (optional; in-memory fallback is supported)
+- Discord bot token + permissions in your guild
+- Redis (optional; in-memory fallback exists)
 
 Client:
+
 - Windows 10/11
 - League of Legends + running League Client
+- Python 3.12/3.13 recommended (pythonnet does not support 3.14)
 
 ---
 
-## Environment variables
+## Configuration (.env)
 
-Copy `.env.example` into `server/.env` and `client/.env` and edit values.
+Use `.env.example` as a starting point. Create:
+
+- `server/.env`
+- `client/.env`
+
+Must match on both server and client:
+
+- `RIFT_SHARED_KEY`
 
 Minimum for server (`server/.env`):
 
@@ -58,22 +71,27 @@ DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN
 DISCORD_GUILD_ID=YOUR_GUILD_ID
 DISCORD_OAUTH_CLIENT_ID=YOUR_OAUTH_CLIENT_ID
 DISCORD_OAUTH_CLIENT_SECRET=YOUR_OAUTH_CLIENT_SECRET
-PUBLIC_BASE_URL=http://your-domain-or-ip:8001
-# OR set DISCORD_OAUTH_REDIRECT_URI explicitly
+PUBLIC_BASE_URL=https://your-domain.com
 ```
 
 Minimum for client (`client/.env`):
 
 ```ini
 APP_MODE=client
-REMOTE_SERVER_URL=http://127.0.0.1:8001
+REMOTE_SERVER_URL=https://your-domain.com
 RIFT_SHARED_KEY=CHANGE_ME
 JWT_SECRET_KEY=CHANGE_ME
+SERVER_PORT=8000
 ```
 
+Optional:
+
+- `RIFT_MARKETING_DIR` or `RIFT_SITE_DIR` to serve the marketing site from a custom path.
+
 Notes:
-- `RIFT_SHARED_KEY` must match on server and client.
-- If Redis is not reachable, the app falls back to in-memory storage.
+
+- `REMOTE_SERVER_URL` should point to your server domain (behind Nginx in prod).
+- If Redis is not reachable, the server falls back to in-memory storage.
 
 ---
 
@@ -103,22 +121,26 @@ python webview_app.py
 
 ## Docker (server)
 
-Local run:
+Production (server + redis + nginx + certbot):
 
 ```bash
-docker compose up --build redis server
+docker compose up -d
 ```
 
-See `DEPLOY_DOCKER.md` for production deployment details.
+Local dev (build server image locally):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+```
+
+See `DEPLOY_DOCKER.md` for VPS + HTTPS setup.
 
 ---
 
-## Tests
+## Health checks
 
-```bash
-pip install -r server/requirements.txt -r requirements-dev.txt
-pytest
-```
+- `GET /api/health` - basic API health
+- `GET /health` - API + Redis + Discord status
 
 ---
 
