@@ -43,7 +43,9 @@ class VoiceService:
         """Backward-compatible helper used by endpoints."""
         return safe_json_parse(data, default)
 
-    async def get_active_match_id_for_summoner(self, summoner_id: str) -> str:
+    async def get_active_match_id_for_summoner(
+        self, summoner_id: str
+    ) -> str | None:
         """Get active match ID for a summoner."""
         try:
             # Check different keys where match_id might be stored
@@ -422,10 +424,12 @@ class VoiceService:
             logger.error(f'handle_player_left_match error: {e}')
             return False
 
-    async def add_player_to_existing_room(self,
-                                          summoner_id: str,
-                                          match_id: str,
-                                          team_name: str) -> bool:
+    async def add_player_to_existing_room(
+        self,
+        summoner_id: str,
+        match_id: str,
+        team_name: str
+    ) -> bool:
         """Add a player to an existing voice room and assign to team."""
         try:
             logger.info(

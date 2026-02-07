@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/discord', tags=['discord-client'])
 
+
 def _decode_redis_value(value):
     """Decode bytes values returned by Redis into UTF-8 strings."""
     if isinstance(value, (bytes, bytearray)):

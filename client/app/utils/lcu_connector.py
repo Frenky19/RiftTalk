@@ -2,15 +2,15 @@ import asyncio
 import logging
 import os
 import ssl
-from urllib.parse import quote
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 import aiohttp
 
 from app.utils.exceptions import LCUException
 from app.utils.team_utils import (
-    extract_teams_from_session,
     extract_teams_from_live_client_data,
+    extract_teams_from_session,
 )
 
 logger = logging.getLogger(__name__)
@@ -374,7 +374,8 @@ class LCUConnector:
                     if response.status == 200:
                         return await response.json()
                     return None
-        except Exception:
+        except Exception as e:
+            logger.debug('Live client data unavailable: %s', e)
             return None
 
     async def _get_summoner_id_by_name(self, name: str) -> Optional[str]:

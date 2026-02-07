@@ -218,6 +218,10 @@ async def cleanup_services():
             await notify_match_leave_on_shutdown()
         except Exception:
             pass
+        try:
+            await remote_api.close()
+        except Exception:
+            pass
     except Exception as e:
         logger.warning(f'Cleanup error: {e}')
 

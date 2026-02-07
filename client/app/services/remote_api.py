@@ -26,6 +26,18 @@ class RemoteAPI:
     def __init__(self):
         self.base_url = (settings.REMOTE_SERVER_URL or '').rstrip('/')
         self.shared_key = settings.RIFT_SHARED_KEY or ''
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session and not self._session.closed:
+            return self._session
+        self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._session = None
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -69,7 +81,8 @@ class RemoteAPI:
             ).encode('utf-8')
         headers = self._headers()
         headers.update(self._signature_headers(method, path, body_bytes))
-        async with aiohttp.ClientSession() as session:
+        session = await self._get_session()
+        try:
             async with session.request(
                 method,
                 url,
@@ -91,6 +104,12 @@ class RemoteAPI:
                         f'{resp.status} {detail or text}'
                     )
                 return data if data is not None else text
+        except aiohttp.ClientError as e:
+            await self.close()
+            raise RemoteAPIError(
+                f'Remote API {method} {path} failed: '
+                f'network error {type(e).__name__}: {e}'
+            ) from e
 
     async def health(self) -> Any:
         return await self._request(

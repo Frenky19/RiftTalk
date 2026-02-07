@@ -100,7 +100,7 @@ class DiscordService:
             except Exception as e:
                 # Store init error and keep the service in "not ready" state
                 self._connect_error = e
-                logger.error(f'Discord initialization error: {e}')
+                logger.exception('Discord initialization error')
 
         @self.client.event
         async def on_disconnect():
@@ -287,7 +287,7 @@ class DiscordService:
             )
         except Exception as e:
             self._connect_error = e
-            logger.error(f'Discord connection error: {e}')
+            logger.exception('Discord connection error')
 
     async def _initialize_guild_and_category(self):
         """Initialize guild and category for Discord with improved error handling."""
@@ -394,8 +394,8 @@ class DiscordService:
                 except Exception as e:
                     logger.debug(f'Orphan GC on startup skipped: {e}')
             logger.info('Discord service fully initialized')
-        except Exception as e:
-            logger.error(f'Error initializing Discord: {e}')
+        except Exception:
+            logger.exception('Error initializing Discord')
             raise RuntimeError('Discord initialization failed')
 
     async def _initialize_channel_cache(self):
