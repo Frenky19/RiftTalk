@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -52,6 +53,11 @@ class DiscordService:
         self.category: Optional[CategoryChannel] = None
         self.connected = False
         self.connection_task: Optional[asyncio.Task] = None
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self._reconnect_lock: asyncio.Lock = asyncio.Lock()
+        self._shutdown = False
+        self._last_disconnect: Optional[float] = None
+        self._reconnect_attempts = 0
         self._ready_event: asyncio.Event = asyncio.Event()
         self._initialized_event: asyncio.Event = asyncio.Event()
         self._connect_error: Optional[BaseException] = None
@@ -75,6 +81,7 @@ class DiscordService:
 
         if self.connected:
             return True
+        self._shutdown = False
         # Reset state
         self._connect_error = None
         self._ready_event.clear()
@@ -106,6 +113,8 @@ class DiscordService:
         async def on_disconnect():
             logger.warning('Discord bot disconnected')
             self.connected = False
+            self._last_disconnect = time.time()
+            self.schedule_reconnect('on_disconnect')
 
         # Start connection in background
         self.connection_task = asyncio.create_task(self._connect_internal())
@@ -132,6 +141,33 @@ class DiscordService:
             await self.disconnect()
             raise RuntimeError('Discord connection failed (not connected after startup)')
         return True
+
+    def schedule_reconnect(self, reason: str) -> None:
+        """Schedule a reconnect loop if not already running."""
+        if self._shutdown:
+            return
+        if self.connected:
+            return
+        if self._reconnect_task and not self._reconnect_task.done():
+            return
+        logger.warning(f'Scheduling Discord reconnect: {reason}')
+        self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+
+    async def _reconnect_loop(self) -> None:
+        backoff = 5
+        async with self._reconnect_lock:
+            while not self._shutdown:
+                if self.connected:
+                    return
+                self._reconnect_attempts += 1
+                try:
+                    await self.disconnect()
+                    await self.connect()
+                    return
+                except Exception as e:
+                    logger.warning(f'Discord reconnect attempt failed: {e}')
+                await asyncio.sleep(backoff)
+                backoff = min(60, backoff * 2)
 
     def setup_event_handlers(self):
         """Setup Discord event handlers for automatic voice channel management."""
@@ -1435,9 +1471,11 @@ class DiscordService:
             logger.error(f'Failed to force disconnect all matches: {e}')
             return None
 
-    async def disconnect(self):
+    async def disconnect(self, intentional: bool = False):
         """Disconnect from Discord."""
         try:
+            if intentional:
+                self._shutdown = True
             if self.connection_task:
                 self.connection_task.cancel()
                 try:
@@ -1459,6 +1497,8 @@ class DiscordService:
             'guild_available': self.guild is not None,
             'category_available': self.category is not None,
             'cached_matches': len(self._match_channels_cache),
+            'reconnect_attempts': self._reconnect_attempts,
+            'last_disconnect': self._last_disconnect,
             'status': ('connected' if self.connected else 'disconnected')
         }
 

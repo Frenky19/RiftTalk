@@ -83,28 +83,16 @@ async def initialize_services():
             'Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in .env'
         )
 
-    async def _discord_reconnect_loop():
-        backoff = 5
-        while True:
-            try:
-                if not discord_service.connected:
-                    await discord_service.connect()
-                backoff = 5
-            except Exception as e:
-                logger.warning(f'Discord reconnect attempt failed: {e}')
-                backoff = min(60, backoff * 2)
-            await asyncio.sleep(backoff)
-
     try:
         await discord_service.connect()
         if discord_service.connected:
             logger.info('Discord service: CONNECTED')
         else:
             logger.warning('Discord service: NOT CONNECTED (will retry)')
-            asyncio.create_task(_discord_reconnect_loop())
+            discord_service.schedule_reconnect('startup_not_connected')
     except Exception as e:
         logger.error(f'Discord service failed to start: {e}')
-        asyncio.create_task(_discord_reconnect_loop())
+        discord_service.schedule_reconnect('startup_exception')
 
     try:
         await cleanup_service.start_cleanup_service()
@@ -120,7 +108,7 @@ async def cleanup_services():
         except Exception:
             pass
         try:
-            await discord_service.disconnect()
+            await discord_service.disconnect(intentional=True)
         except Exception:
             pass
     except Exception as e:
