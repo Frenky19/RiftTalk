@@ -57,6 +57,8 @@ class DiscordService:
         self._reconnect_lock: asyncio.Lock = asyncio.Lock()
         self._shutdown = False
         self._last_disconnect: Optional[float] = None
+        self._last_disconnect_code: Optional[int] = None
+        self._last_disconnect_reason: Optional[str] = None
         self._reconnect_attempts = 0
         self._ready_event: asyncio.Event = asyncio.Event()
         self._initialized_event: asyncio.Event = asyncio.Event()
@@ -110,11 +112,38 @@ class DiscordService:
                 logger.exception('Discord initialization error')
 
         @self.client.event
+        async def on_connect():
+            logger.info('Discord websocket connected')
+
+        @self.client.event
+        async def on_resumed():
+            logger.info('Discord session resumed')
+
+        @self.client.event
         async def on_disconnect():
-            logger.warning('Discord bot disconnected')
+            close_code = None
+            close_reason = None
+            try:
+                ws = getattr(self.client, 'ws', None)
+                if ws is not None:
+                    close_code = getattr(ws, 'close_code', None)
+                    close_reason = getattr(ws, 'close_reason', None)
+            except Exception:
+                pass
+            self._last_disconnect_code = close_code
+            self._last_disconnect_reason = close_reason
+            logger.warning(
+                'Discord bot disconnected (code=%s, reason=%s)',
+                close_code,
+                close_reason,
+            )
             self.connected = False
             self._last_disconnect = time.time()
             self.schedule_reconnect('on_disconnect')
+
+        @self.client.event
+        async def on_error(event, *args, **kwargs):
+            logger.exception(f'Discord event error: {event}')
 
         # Start connection in background
         self.connection_task = asyncio.create_task(self._connect_internal())
@@ -160,9 +189,15 @@ class DiscordService:
                 if self.connected:
                     return
                 self._reconnect_attempts += 1
+                logger.info(
+                    'Discord reconnect attempt %s (backoff=%ss)',
+                    self._reconnect_attempts,
+                    backoff,
+                )
                 try:
                     await self.disconnect()
                     await self.connect()
+                    logger.info('Discord reconnect successful')
                     return
                 except Exception as e:
                     logger.warning(f'Discord reconnect attempt failed: {e}')
@@ -311,6 +346,13 @@ class DiscordService:
         """Internal method to handle Discord connection."""
         try:
             await self.client.start(settings.DISCORD_BOT_TOKEN)
+        except discord.ConnectionClosed as e:
+            self._connect_error = e
+            logger.error(
+                'Discord connection closed: code=%s reason=%s',
+                getattr(e, 'code', None),
+                getattr(e, 'reason', None),
+            )
         except discord.LoginFailure:
             self._connect_error = RuntimeError('Invalid Discord bot token')
             logger.error('Invalid Discord bot token')
@@ -1486,7 +1528,7 @@ class DiscordService:
                 await self.client.close()
             self.connected = False
             self._match_channels_cache = {}
-            logger.info('Discord service disconnected')
+            logger.info('Discord service disconnected (intentional=%s)', intentional)
         except Exception as e:
             logger.error(f'Error during Discord disconnect: {e}')
 
@@ -1499,6 +1541,8 @@ class DiscordService:
             'cached_matches': len(self._match_channels_cache),
             'reconnect_attempts': self._reconnect_attempts,
             'last_disconnect': self._last_disconnect,
+            'last_disconnect_code': self._last_disconnect_code,
+            'last_disconnect_reason': self._last_disconnect_reason,
             'status': ('connected' if self.connected else 'disconnected')
         }
 
