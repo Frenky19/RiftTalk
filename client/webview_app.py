@@ -216,7 +216,7 @@ def start_fastapi_server():
     return True
 
 
-def check_server_ready(timeout=30):
+def check_server_ready(timeout=60):
     """Poll the backend health endpoint until it responds or a timeout is reached.
 
         Args:
@@ -224,22 +224,60 @@ def check_server_ready(timeout=30):
 
         Returns:
             bool: True if the server answered with HTTP 200, otherwise False."""
-    import requests
-    logger.info('Waiting for server to start...')
+    from urllib.error import HTTPError, URLError
+    from urllib.request import ProxyHandler, Request, build_opener
+
+    _, _, base_url = _get_server_config()
+    health_url = f'{base_url}/api/health'
+    logger.info(f'Waiting for server to start at: {health_url}')
+    # Force direct localhost checks: never use system HTTP(S) proxy here.
+    opener = build_opener(ProxyHandler({}))
+    last_error = None
     for i in range(timeout):
         try:
-            response = requests.get(
-                f'{_get_server_config()[2]}/health',
-                timeout=2
-            )
-            if response.status_code == 200:
+            req = Request(health_url, method='GET')
+            with opener.open(req, timeout=2) as response:
+                status = response.getcode()
+                body_preview = (
+                    response.read(200).decode('utf-8', errors='ignore').strip()
+                )
+            if status == 200:
                 logger.info('Server started')
                 return True
-        except Exception:
+            body_preview = body_preview.replace('\n', ' ')
+            if len(body_preview) > 160:
+                body_preview = body_preview[:160] + '...'
+            last_error = f'HTTP {status} body={body_preview}'
+            if i % 10 == 0:
+                logger.warning(
+                    f'Healthcheck non-200 ({i + 1}/{timeout}): {last_error}'
+                )
+        except HTTPError as e:
+            body_preview = ''
+            try:
+                body_preview = (
+                    e.read(200).decode('utf-8', errors='ignore').strip()
+                )
+            except Exception:
+                body_preview = ''
+            body_preview = body_preview.replace('\n', ' ')
+            if len(body_preview) > 160:
+                body_preview = body_preview[:160] + '...'
+            last_error = f'HTTP {e.code} body={body_preview}'
+            if i % 10 == 0:
+                logger.warning(
+                    f'Healthcheck non-200 ({i + 1}/{timeout}): {last_error}'
+                )
+        except URLError as e:
+            last_error = f'request failed: {e.reason}'
+            if i % 5 == 0:
+                logger.info(f'Waiting... ({i + 1}/{timeout})')
+        except Exception as e:
+            last_error = f'request failed: {e}'
             if i % 5 == 0:
                 logger.info(f'Waiting... ({i + 1}/{timeout})')
         time.sleep(1)
-    logger.error('Server did not start')
+    logger.error(f'Server did not start (last_error={last_error})')
     return False
 
 
